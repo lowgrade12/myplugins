@@ -50,9 +50,17 @@ settings:
     displayName: Allow unsafe characters
     description: If enabled, the plugin will allow unsafe characters in file names and directory paths.
     type: BOOLEAN
+  directoryFilter:
+    displayName: Directory filter
+    description: When set, the "Rename scenes in directory" task will only rename scenes whose files are in this directory (or its subdirectories).
+    type: STRING
 
 tasks:
   - name: Rename scenes
     description: Rename all of your scene's files based on your configuration.
     defaultArgs:
       action: rename-all
+  - name: Rename scenes in directory
+    description: Rename scene files only within the directory specified in the "Directory filter" setting.
+    defaultArgs:
+      action: rename-directory

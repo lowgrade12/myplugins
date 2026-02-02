@@ -2,6 +2,7 @@ from stashapi.stashapp import StashInterface
 from stashapi import log
 from config_parser import Config
 from file_manager import StashFile
+import pathlib
 
 SCENE_FRAGMENT = """
 id
@@ -63,3 +64,37 @@ def rename_all_scenes(stash: StashInterface, config: Config):
         for file in scene["files"]:
             stash_file = StashFile(stash, config, scene, file)
             stash_file.rename_file()
+
+def rename_scenes_in_directory(stash: StashInterface, config: Config):
+    """Rename scenes whose files are within the specified directory filter."""
+    directory_filter = config.directory_filter
+    
+    if not directory_filter:
+        log.error("No directory filter specified. Please set the 'Directory filter' setting.")
+        return
+    
+    filter_path = pathlib.Path(directory_filter).resolve()
+    log.info(f"Renaming scenes in directory: {filter_path}")
+    
+    # Find all scenes and filter by directory
+    scenes = stash.find_scenes(fragment=SCENE_FRAGMENT)
+    
+    for scene in scenes:
+        if not config.rename_unorganized and not scene["organized"]:
+            log.debug(f"Scene {scene['id']} is not marked as organized, skipping.")
+            continue
+            
+        for file in scene["files"]:
+            file_path = pathlib.Path(file["path"]).resolve()
+            
+            # Check if the file is within the filter directory
+            try:
+                file_path.relative_to(filter_path)
+                # File is within the filter directory, proceed with rename
+                log.debug(f"File {file_path} is within filter directory {filter_path}")
+                stash_file = StashFile(stash, config, scene, file)
+                stash_file.rename_file()
+            except ValueError:
+                # File is not within the filter directory, skip
+                log.debug(f"File {file_path} is not within filter directory {filter_path}, skipping.")
+                continue

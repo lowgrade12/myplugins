@@ -8,6 +8,7 @@ class Config:
         "removeExtraSpacesFromFileName": False,
         "duplicateFileSuffix": " ($index$)",
         "renameDirectory": True,
+        "directoryFilter": "",
     }
 
     def __init__(self, config):
