@@ -1,6 +1,7 @@
 from operator import itemgetter
 from stashapi.stashapp import StashInterface
 from stashapi import log
+import glob
 import pathlib
 import re
 
@@ -179,9 +180,10 @@ class StashFile:
 
         old_directory = old_path.parent
         new_directory = new_path.parent
+        escaped_stem = glob.escape(old_path.stem)
         related_files = [
             path
-            for path in old_directory.glob(f"{old_path.stem}.*")
+            for path in old_directory.glob(f"{escaped_stem}.*")
             if path != old_path
         ]
 
