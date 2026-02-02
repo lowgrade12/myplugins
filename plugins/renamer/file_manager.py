@@ -106,39 +106,35 @@ class StashFile:
 
         return path.absolute()
 
+    def _clean_path_component(self, part: str, remove_unsafe: bool, remove_extra_spaces: bool) -> str:
+        """Clean a single path component by removing unsafe characters and/or extra spaces."""
+        cleaned = part
+        if remove_unsafe:
+            cleaned = re.sub(r"[<>:\"/\\|?*]", "", cleaned)
+        if remove_extra_spaces:
+            cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned
+
+    def _clean_directory_path(self, directory_path: str, remove_unsafe: bool, remove_extra_spaces: bool) -> pathlib.Path:
+        """Clean a directory path by processing each component while preserving the root/anchor."""
+        path_obj = pathlib.Path(directory_path)
+        cleaned_parts = []
+        for part in path_obj.parts:
+            # Preserve root/anchor (e.g., "/" or "C:\")
+            if part == path_obj.anchor:
+                cleaned_parts.append(part)
+            else:
+                cleaned_parts.append(self._clean_path_component(part, remove_unsafe, remove_extra_spaces))
+        return pathlib.Path(*cleaned_parts) if cleaned_parts else path_obj
+
     def get_new_file_folder(self) -> pathlib.Path:
         if self.config.default_directory_path_format:
             directory_path = apply_format(self.config.default_directory_path_format, self.stash, self.scene_data, self.file_data)
             
             # Apply the same character filtering as file names, but preserve path separators
-            if not self.config.allow_unsafe_characters:
-                # Split by path separators, clean each component, and rejoin
-                path_obj = pathlib.Path(directory_path)
-                cleaned_parts = []
-                for part in path_obj.parts:
-                    # Preserve root/anchor (e.g., "/" or "C:\")
-                    if part == path_obj.anchor or part == path_obj.root:
-                        cleaned_parts.append(part)
-                    else:
-                        # Remove unsafe characters from path component
-                        cleaned_part = re.sub(r"[<>:\"/\\|?*]", "", part)
-                        if self.config.remove_extra_spaces_from_file_name:
-                            cleaned_part = re.sub(r"\s+", " ", cleaned_part)
-                        cleaned_parts.append(cleaned_part)
-                directory_path = pathlib.Path(*cleaned_parts) if cleaned_parts else pathlib.Path(directory_path)
-            elif self.config.remove_extra_spaces_from_file_name:
-                # Only apply extra spaces removal
-                path_obj = pathlib.Path(directory_path)
-                cleaned_parts = []
-                for part in path_obj.parts:
-                    if part == path_obj.anchor or part == path_obj.root:
-                        cleaned_parts.append(part)
-                    else:
-                        cleaned_part = re.sub(r"\s+", " ", part)
-                        cleaned_parts.append(cleaned_part)
-                directory_path = pathlib.Path(*cleaned_parts) if cleaned_parts else pathlib.Path(directory_path)
-            else:
-                directory_path = pathlib.Path(directory_path)
+            remove_unsafe = not self.config.allow_unsafe_characters
+            remove_extra_spaces = self.config.remove_extra_spaces_from_file_name
+            directory_path = self._clean_directory_path(directory_path, remove_unsafe, remove_extra_spaces)
             
             directory_path = directory_path.absolute()
         else:
