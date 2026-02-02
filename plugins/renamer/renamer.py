@@ -51,3 +51,15 @@ def rename_scene(stash: StashInterface, config: Config, args):
 
 def rename_all_scenes(stash: StashInterface, config: Config):
     log.info("Checking all scenes")
+    
+    # Find all scenes and rename them
+    scenes = stash.find_scenes(fragment=SCENE_FRAGMENT)
+    
+    for scene in scenes:
+        if not config.rename_unorganized and not scene["organized"]:
+            log.debug(f"Scene {scene['id']} is not marked as organized, skipping.")
+            continue
+            
+        for file in scene["files"]:
+            stash_file = StashFile(stash, config, scene, file)
+            stash_file.rename_file()

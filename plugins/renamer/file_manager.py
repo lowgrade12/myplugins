@@ -67,7 +67,7 @@ def clean_optional_from_format(formatted_string: str) -> str:
     formatted_string = re.sub(r"\{.*\$\w+\$.*\}", "", formatted_string)
 
     # Remove any remaining curly braces
-    formatted_string = formatted_string.replace(r"{", "").replace(r"}", "")
+    formatted_string = formatted_string.replace("{", "").replace("}", "")
 
     return formatted_string
 
@@ -179,11 +179,17 @@ class StashFile:
                 log.error(f"Failed to rename related file from {related_file} to {target_path}: {error}")
 
     def rename_directory(self, old_path: pathlib.Path, new_path: pathlib.Path, dry_run: bool):
-        """Rename the parent directory to match the new file name."""
+        """Rename the parent directory to match the new file name.
+        
+        Note: This renames the parent directory of the file to match the file's
+        stem (filename without extension). For example, if a file is renamed to
+        "MyScene.mp4", the parent directory will be renamed to "MyScene".
+        """
         if not self.config.rename_directory:
             return
 
-        old_directory = old_path.parent
+        # Use the new path's parent as the current directory since the file has been moved
+        old_directory = new_path.parent
         new_directory_name = new_path.stem  # Use the file stem (without extension) as directory name
         
         # Get the parent of the current directory
