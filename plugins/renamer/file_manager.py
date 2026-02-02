@@ -248,6 +248,50 @@ class StashFile:
         except OSError as error:
             log.error(f"Failed to rename directory from {old_directory} to {new_directory_path}: {error}")
 
+    def delete_empty_directory(self, old_path: pathlib.Path, new_path: pathlib.Path, dry_run: bool):
+        """Delete the original directory if it is empty after renaming.
+        
+        Note: This only deletes the immediate parent directory of the old file path
+        if it is empty. It does not recursively delete parent directories.
+        """
+        if not self.config.delete_empty_directory:
+            return
+
+        old_directory = old_path.parent
+        new_directory = new_path.parent
+
+        # Skip if the file was renamed within the same directory
+        if old_directory == new_directory:
+            log.debug("File was renamed within the same directory, skipping empty directory check.")
+            return
+
+        if not old_directory.exists():
+            log.debug(f"Directory {old_directory} does not exist, nothing to delete.")
+            return
+
+        # Check if the directory is empty
+        try:
+            directory_contents = list(old_directory.iterdir())
+        except OSError as error:
+            log.error(f"Failed to list contents of directory {old_directory}: {error}")
+            return
+
+        if directory_contents:
+            log.debug(f"Directory {old_directory} is not empty, not deleting.")
+            return
+
+        log.info(f"Deleting empty directory: {old_directory}")
+
+        if dry_run:
+            log.info("Dry run enabled, not actually deleting the directory.")
+            return
+
+        try:
+            old_directory.rmdir()
+            log.info(f"Empty directory deleted successfully: {old_directory}")
+        except OSError as error:
+            log.error(f"Failed to delete empty directory {old_directory}: {error}")
+
     def rename_file(self):
         old_path = self.get_old_file_path()
         new_path = self.get_new_file_path()
@@ -275,6 +319,7 @@ class StashFile:
             log.info("Dry run enabled, not actually renaming the file.")
             self.rename_related_files(old_path, new_path, dry_run=True)
             self.rename_directory(old_path, new_path, dry_run=True)
+            self.delete_empty_directory(old_path, new_path, dry_run=True)
             return
 
         moved_file = self.stash.call_GQL(
@@ -290,3 +335,4 @@ class StashFile:
         log.info(f"File renamed successfully: {moved_file}")
         self.rename_related_files(old_path, new_path, dry_run=False)
         self.rename_directory(old_path, new_path, dry_run=False)
+        self.delete_empty_directory(old_path, new_path, dry_run=False)

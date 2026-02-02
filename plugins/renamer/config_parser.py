@@ -9,6 +9,7 @@ class Config:
         "duplicateFileSuffix": " ($index$)",
         "renameDirectory": True,
         "directoryFilter": "",
+        "deleteEmptyDirectory": False,
     }
 
     def __init__(self, config):
