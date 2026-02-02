@@ -1,0 +1,58 @@
+name: Renamer
+description: Renames files and directories when they are updated in Stash.
+version: 0.1.0
+exec:
+  - python
+  - "{pluginDir}/renamer_main.py"
+interface: raw
+
+hooks:
+  - name: Rename scene files on update
+    description: Rename a scene's files and directory when it is updated.
+    triggeredBy:
+      - Scene.Update.Post
+
+settings:
+  renameUnorganized:
+    displayName: Rename unorganized scenes
+    description: Rename files for scenes that are not marked as organized.
+    type: BOOLEAN
+  renameRelatedFiles:
+    displayName: Rename/move files with the same name but different extensions
+    description: If enabled, the plugin will rename additional files that share the same base name (e.g. .funscript, .vtt).
+    type: BOOLEAN
+  renameDirectory:
+    displayName: Rename directory
+    description: If enabled, the plugin will also rename the parent directory to match the new file name.
+    type: BOOLEAN
+  defaultDirectoryPathFormat:
+    displayName: Default directory path format
+    description: The default directory path to put renamed scene files in.
+    type: STRING
+  defaultFileNameFormat:
+    displayName: Default file name format
+    description: The default file name to use for renamed scene files.
+    type: STRING
+  dryRun:
+    displayName: Dry Run
+    description: If enabled, the plugin will not actually rename files, but will log what it would do.
+    type: BOOLEAN
+  duplicateFileSuffix:
+    displayName: Duplicate file suffix
+    description: |
+      The suffix to append to duplicate files (default: ' ($index$)')
+    type: STRING
+  removeExtraSpacesFromFileName:
+    displayName: Remove extra spaces from file name
+    description: If enabled, the plugin will remove extra spaces from the file name.
+    type: BOOLEAN
+  allowUnsafeCharacters:
+    displayName: Allow unsafe characters
+    description: If enabled, the plugin will allow unsafe characters in file names and directory paths.
+    type: BOOLEAN
+
+tasks:
+  - name: Rename scenes
+    description: Rename all of your scene's files based on your configuration.
+    defaultArgs:
+      action: rename-all
