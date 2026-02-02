@@ -113,6 +113,8 @@ class StashFile:
             cleaned = re.sub(r"[<>:\"/\\|?*]", "", cleaned)
         if remove_extra_spaces:
             cleaned = re.sub(r"\s+", " ", cleaned)
+        # Replace three or more consecutive dots with a single dot
+        cleaned = re.sub(r"\.{3,}", ".", cleaned)
         return cleaned
 
     def _clean_directory_path(self, directory_path: str, remove_unsafe: bool, remove_extra_spaces: bool) -> pathlib.Path:
@@ -162,6 +164,9 @@ class StashFile:
 
         if self.config.remove_extra_spaces_from_file_name:
             file_name = re.sub(r"\s+", " ", file_name)
+
+        # Replace three or more consecutive dots with a single dot
+        file_name = re.sub(r"\.{3,}", ".", file_name)
 
         return file_name
 
