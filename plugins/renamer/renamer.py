@@ -88,6 +88,7 @@ def rename_scenes_in_directory(stash: StashInterface, config: Config):
             file_path = pathlib.Path(file["path"]).resolve()
             
             # Check if the file is within the filter directory
+            # We use relative_to() which raises ValueError if the path is not relative to filter_path
             try:
                 file_path.relative_to(filter_path)
                 # File is within the filter directory, proceed with rename
