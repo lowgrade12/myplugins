@@ -54,6 +54,10 @@ settings:
     displayName: Directory filter
     description: When set, the "Rename scenes in directory" task will only rename scenes whose files are in this directory (or its subdirectories).
     type: STRING
+  deleteEmptyDirectory:
+    displayName: Delete empty directory after renaming
+    description: If enabled, the plugin will delete the original directory after renaming if it becomes empty.
+    type: BOOLEAN
 
 tasks:
   - name: Rename scenes

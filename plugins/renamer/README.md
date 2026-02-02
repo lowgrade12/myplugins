@@ -27,6 +27,7 @@ A plugin for [Stash](https://stashapp.cc/) that automatically renames scene file
 | `Rename unorganized scenes` | Boolean | `false` | When disabled, only scenes marked as "Organized" will be renamed |
 | `Rename/move files with the same name but different extensions` | Boolean | `true` | Rename related files (e.g., `.funscript`, `.vtt`) alongside the main video file |
 | `Rename directory` | Boolean | `true` | Rename the parent directory to match the new file name (stem only) |
+| `Delete empty directory after renaming` | Boolean | `false` | Delete the original directory after renaming if it becomes empty |
 | `Default directory path format` | String | `""` | Template for the destination directory path |
 | `Default file name format` | String | `""` | Template for the new file name |
 | `Dry Run` | Boolean | `false` | Log what would happen without actually renaming files |
@@ -48,6 +49,11 @@ When **enabled**, the parent directory of the file will be renamed to match the 
 - Parent directory renamed to: `My Scene Title`
 
 **Note**: This renames the immediate parent directory, not the entire path structure.
+
+#### Delete Empty Directory
+When **enabled**, the plugin will delete the original parent directory after renaming if it becomes empty. This is useful for cleaning up leftover empty folders when files are moved to a new location.
+
+**Note**: This only deletes the immediate parent directory of the original file if it is empty after the rename operation.
 
 #### Duplicate Handling
 When a file with the target name already exists, the plugin appends the duplicate suffix. The `$index$` variable in the suffix is replaced with an incrementing number:
