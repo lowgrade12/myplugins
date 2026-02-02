@@ -1,15 +1,10 @@
 name: Renamer
 description: Renames files and directories when they are updated in Stash.
-version: 0.2.0
+version: 0.1.0
 exec:
   - python
   - "{pluginDir}/renamer_main.py"
 interface: raw
-ui:
-  javascript:
-    - renamer.js
-  css:
-    - renamer.css
 
 hooks:
   - name: Rename scene files on update
