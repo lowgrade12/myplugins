@@ -33,6 +33,7 @@ A plugin for [Stash](https://stashapp.cc/) that automatically renames scene file
 | `Duplicate file suffix` | String | `" ($index$)"` | Suffix appended when a file with the same name exists |
 | `Remove extra spaces from file name` | Boolean | `false` | Collapse multiple consecutive spaces into a single space |
 | `Allow unsafe characters` | Boolean | `false` | Allow characters that may cause issues on some filesystems (`<>:"/\|?*`) |
+| `Directory filter` | String | `""` | Directory path filter for the "Rename scenes in directory" task |
 
 ### Behavior Details
 
@@ -53,6 +54,14 @@ When a file with the target name already exists, the plugin appends the duplicat
 - First file: `My Scene.mp4`
 - Duplicate: `My Scene (1).mp4`
 - Second duplicate: `My Scene (2).mp4`
+
+#### Directory Filter
+When the "Rename scenes in directory" task is used, only scenes whose files are located within the specified directory (or its subdirectories) will be renamed. This is useful for:
+- Renaming scenes from a specific source folder
+- Processing files in batches by directory
+- Targeting a specific part of your library
+
+**Example:** If your directory filter is `/media/videos/Studio1`, only scenes with files in `/media/videos/Studio1` or `/media/videos/Studio1/subfolder` will be renamed.
 
 ## Template Variables
 
@@ -203,6 +212,7 @@ The plugin responds to the following Stash hook:
 | Task | Description |
 |------|-------------|
 | `Rename scenes` | Batch rename all scene files based on your configuration |
+| `Rename scenes in directory` | Rename only scene files within the directory specified in the "Directory filter" setting |
 
 ## Troubleshooting
 

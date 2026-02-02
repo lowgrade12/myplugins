@@ -3,7 +3,7 @@ import json
 import sys
 
 from config_parser import Config
-from renamer import rename_scene, rename_all_scenes
+from renamer import rename_scene, rename_all_scenes, rename_scenes_in_directory
 
 STASH_DATA = json.loads(sys.stdin.read())
 
@@ -23,3 +23,5 @@ if "hookContext" in ARGS:
         rename_scene(stash, config, ARGS)
 elif ACTION == "rename-all":
     rename_all_scenes(stash, config)
+elif ACTION == "rename-directory":
+    rename_scenes_in_directory(stash, config)
