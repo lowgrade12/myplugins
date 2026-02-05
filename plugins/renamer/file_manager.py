@@ -73,7 +73,19 @@ def clean_optional_from_format(formatted_string: str) -> str:
     return formatted_string
 
 
-def apply_format(format_template: str, stash: StashInterface, scene_data, file_data)-> str:
+def apply_format(format_template: str, stash: StashInterface, scene_data, file_data, sanitize_path_separators: bool = False)-> str:
+    """Apply variable substitution to a format template.
+    
+    Args:
+        format_template: The template string with $variable$ placeholders
+        stash: StashInterface instance
+        scene_data: Scene data dictionary
+        file_data: File data dictionary
+        sanitize_path_separators: If True, removes "/" and "\\" from variable values
+            to prevent accidental folder creation. Note: This does NOT sanitize
+            the $parent_studio_chain$ variable, which intentionally uses "/" for
+            folder hierarchy.
+    """
     variables = find_variables(format_template)
 
     formatted_template = format_template
@@ -87,7 +99,14 @@ def apply_format(format_template: str, stash: StashInterface, scene_data, file_d
         if not value:
             continue
 
-        formatted_template = formatted_template.replace(f"${variable}$", str(value))
+        value_str = str(value)
+        
+        # Sanitize path separators from variable values (except parent_studio_chain
+        # which intentionally uses "/" for folder hierarchy)
+        if sanitize_path_separators and variable != "parent_studio_chain":
+            value_str = re.sub(r"[/\\]", "", value_str)
+        
+        formatted_template = formatted_template.replace(f"${variable}$", value_str)
 
     formatted_template = clean_optional_from_format(formatted_template)
 
@@ -132,7 +151,7 @@ class StashFile:
 
     def get_new_file_folder(self) -> pathlib.Path:
         if self.config.default_directory_path_format:
-            directory_path = apply_format(self.config.default_directory_path_format, self.stash, self.scene_data, self.file_data)
+            directory_path = apply_format(self.config.default_directory_path_format, self.stash, self.scene_data, self.file_data, sanitize_path_separators=True)
             
             # Apply the same character filtering as file names, but preserve path separators
             remove_unsafe = not self.config.allow_unsafe_characters
