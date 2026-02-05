@@ -52,7 +52,7 @@ def handle_scene_update_hook(scene_input, plugin_settings):
 
 ## How to Apply
 
-1. Open `/root/.stash/plugins/missingScenes/missing_scenes.py`
+1. Open `<your_stash_directory>/plugins/missingScenes/missing_scenes.py`
 2. Find the function `handle_scene_update_hook` (around line 2170)
 3. Add the null check at the beginning of the function, right after the docstring
 4. Save the file
