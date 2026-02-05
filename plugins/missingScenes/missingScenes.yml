@@ -1,0 +1,110 @@
+name: Missing Scenes
+description: Discover scenes from StashDB that you don't have locally. View missing scenes for performers and studios, with optional Whisparr integration for automated downloading and cleanup.
+version: 1.3.0
+url: https://github.com/carrotwaxr/stash-plugins
+
+# UI plugin - injects button and modal on performer/studio pages
+ui:
+  javascript:
+    - missing-scenes-core.js
+    - missing-scenes.js
+    - missing-scenes-browse.js
+  css:
+    - missing-scenes.css
+
+# Plugin settings configurable in Stash UI (Settings > Plugins)
+# Note: Stash doesn't support YAML defaults. Defaults are handled in code.
+settings:
+  # Stash-box endpoint selection
+  stashBoxEndpoint:
+    displayName: Stash-Box Endpoint
+    description: Which stash-box to query for missing scenes. Leave empty to use the first configured endpoint (usually StashDB). Enter the full GraphQL URL (e.g., https://stashdb.org/graphql).
+    type: STRING
+
+  # Whisparr integration (optional)
+  whisparrUrl:
+    displayName: Whisparr URL
+    description: Optional. URL to your Whisparr instance (e.g., http://localhost:6969). Leave empty to disable Whisparr integration.
+    type: STRING
+  whisparrApiKey:
+    displayName: Whisparr API Key
+    description: Optional. API key for Whisparr (found in Settings > General > Security).
+    type: STRING
+  whisparrQualityProfile:
+    displayName: Whisparr Quality Profile ID
+    description: Optional. Quality profile ID to use when adding scenes (default is 1). Find IDs in Whisparr Settings > Profiles.
+    type: NUMBER
+  whisparrRootFolder:
+    displayName: Whisparr Root Folder
+    description: Optional. Root folder path for downloaded scenes (e.g., /data/videos). Must match a root folder configured in Whisparr.
+    type: STRING
+  whisparrSearchOnAdd:
+    displayName: Search on Add
+    description: Automatically search for scenes when adding to Whisparr. Enabled by default.
+    type: BOOLEAN
+
+  # Automation settings
+  enableAutoCleanup:
+    displayName: Auto-cleanup Whisparr
+    description: Automatically remove scenes from Whisparr when they get tagged in Stash (receive a StashDB ID). Requires Whisparr to be configured.
+    type: BOOLEAN
+  unmonitorOnly:
+    displayName: Unmonitor Instead of Delete
+    description: When auto-cleanup is enabled, unmonitor scenes in Whisparr instead of deleting them. This keeps the scene in Whisparr but prevents re-downloading.
+    type: BOOLEAN
+  scanPath:
+    displayName: Scan Path for New Scenes
+    description: Path to scan for new downloaded scenes (e.g., /data/unsorted). Used by the "Scan for New Scenes" task.
+    type: STRING
+
+  # StashDB API settings (advanced - for rate limiting and error handling)
+  stashbox_request_delay:
+    displayName: Request Delay (seconds)
+    description: Delay between paginated StashDB requests to avoid rate limiting. Default is 0.5 seconds. Increase if you see 429 errors.
+    type: NUMBER
+  stashbox_max_retries:
+    displayName: Max Retries
+    description: Number of times to retry failed StashDB requests (for 504, 503, connection errors). Default is 3.
+    type: NUMBER
+  stashbox_max_pages_performer:
+    displayName: Max Pages (Performer)
+    description: Maximum pages to fetch when querying performer scenes (100 scenes per page). Default is 25 (2500 scenes max). Reduce for faster results.
+    type: NUMBER
+  stashbox_max_pages_studio:
+    displayName: Max Pages (Studio)
+    description: Maximum pages to fetch when querying studio scenes (100 scenes per page). Default is 25 (2500 scenes max). Reduce for faster results.
+    type: NUMBER
+
+  # Content filtering
+  excludedTags:
+    displayName: Excluded Tags
+    description: Comma-separated list of StashDB Tag UUIDs to exclude from all Missing Scenes results. Find tag UUIDs on StashDB tag pages (e.g., https://stashdb.org/tags/uuid).
+    type: STRING
+  favoriteLimit:
+    displayName: Favorite Limit
+    description: Maximum number of favorites to use per filter type (default 100). Favorites are sorted by engagement (performers by last activity, studios/tags by scene count).
+    type: NUMBER
+
+# Tasks that can be run manually or scheduled
+tasks:
+  - name: Scan for New Scenes
+    description: Trigger a Stash scan on the configured scan path to discover newly downloaded scenes.
+    defaultArgs:
+      mode: scan
+  - name: Cleanup Whisparr
+    description: Remove scenes from Whisparr that are now tagged in Stash. Prevents duplicate downloads.
+    defaultArgs:
+      mode: cleanup
+
+# Hook to automatically cleanup Whisparr when a scene is tagged
+hooks:
+  - name: Whisparr Auto-Cleanup
+    description: Remove scene from Whisparr when it receives a StashDB ID (gets tagged)
+    triggeredBy:
+      - Scene.Update.Post
+
+# Python backend for StashDB queries (called via runPluginOperation from JS)
+exec:
+  - python
+  - "{pluginDir}/missing_scenes.py"
+interface: raw
