@@ -1,4 +1,4 @@
---- missing_scenes.py.original
+--- missing_scenes.py.orig
 +++ missing_scenes.py
 @@ -2173,6 +2173,11 @@ def handle_scene_update_hook(scene_input, plugin_settings):
      If all conditions are met, we remove/unmonitor the scene from Whisparr.
