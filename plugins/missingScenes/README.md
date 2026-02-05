@@ -1,77 +1,21 @@
 # Missing Scenes Plugin - Custom Version
 
-This directory contains setup instructions and a bug fix for the Missing Scenes plugin.
+This directory contains the complete Missing Scenes plugin with a bug fix already applied.
 
-## Setup Instructions
+## Pre-Applied Bug Fix
 
-### Step 1: Download the Original Plugin
-
-Download the plugin files from the source repository:
-
-```bash
-# Navigate to your plugins directory
-cd plugins/missingScenes
-
-# Download the plugin files using curl or wget
-curl -O https://raw.githubusercontent.com/carrotwaxr/stash-plugins/main/plugins/missingScenes/missingScenes.yml
-curl -O https://raw.githubusercontent.com/carrotwaxr/stash-plugins/main/plugins/missingScenes/missing_scenes.py
-curl -O https://raw.githubusercontent.com/carrotwaxr/stash-plugins/main/plugins/missingScenes/missing-scenes.js
-curl -O https://raw.githubusercontent.com/carrotwaxr/stash-plugins/main/plugins/missingScenes/missing-scenes-core.js
-curl -O https://raw.githubusercontent.com/carrotwaxr/stash-plugins/main/plugins/missingScenes/missing-scenes-browse.js
-curl -O https://raw.githubusercontent.com/carrotwaxr/stash-plugins/main/plugins/missingScenes/missing-scenes.css
-curl -O https://raw.githubusercontent.com/carrotwaxr/stash-plugins/main/plugins/missingScenes/log.py
-curl -O https://raw.githubusercontent.com/carrotwaxr/stash-plugins/main/plugins/missingScenes/stashbox_api.py
-```
-
-Or clone the entire stash-plugins repository:
-
-```bash
-git clone https://github.com/carrotwaxr/stash-plugins.git
-cp -r stash-plugins/plugins/missingScenes/* /path/to/your/stash/plugins/missingScenes/
-```
-
-### Step 2: Apply the Bug Fix
-
-After downloading the plugin, apply the bug fix for the `Scene.Update.Post` hook error.
-
-#### The Issue
-
-The plugin crashes with this error when the hook is triggered:
+This version includes a fix for the `Scene.Update.Post` hook error where the plugin would crash with:
 
 ```
 AttributeError: 'NoneType' object has no attribute 'get'
 scene_id = scene_input.get("id")
 ```
 
-#### The Fix
+The fix adds a null check at the beginning of the `handle_scene_update_hook` function in `missing_scenes.py` to guard against `None` scene data.
 
-Edit `missing_scenes.py` and find the function `handle_scene_update_hook` (around line 2170).
+## Setup
 
-Add the following null check at the beginning of the function, right after the docstring:
-
-```python
-def handle_scene_update_hook(scene_input, plugin_settings):
-    """Handle Scene.Update.Post hook - cleanup Whisparr when scene is tagged.
-    ...existing docstring...
-    """
-    # FIX: Guard against None scene_input to prevent AttributeError
-    if scene_input is None:
-        log.LogDebug("Hook received no scene data, skipping")
-        return {"success": True, "message": "No scene data provided"}
-
-    # ... rest of the existing function code ...
-```
-
-You can also apply the patch file included in this directory:
-
-```bash
-cd plugins/missingScenes
-patch -p0 < fix_null_check.patch
-```
-
-### Step 3: Restart Stash
-
-After applying the fix, restart Stash or reload the plugins for the changes to take effect.
+The plugin files are already included in this directory. Simply install them with your Stash plugins and restart Stash.
 
 ## Alternative: Disable the Hook
 
@@ -86,6 +30,14 @@ Original plugin: https://github.com/carrotwaxr/stash-plugins/tree/main/plugins/m
 
 ## Files in This Directory
 
-- `README.md` - This setup guide
-- `fix_null_check.patch` - Patch file for the bug fix
-- `download_plugin.sh` - Helper script to download plugin files
+- `missingScenes.yml` - Plugin manifest
+- `missing_scenes.py` - Main plugin Python code (with bug fix applied)
+- `missing-scenes.js` - Main JavaScript UI code
+- `missing-scenes-core.js` - Core JavaScript functionality
+- `missing-scenes-browse.js` - Browse functionality JavaScript
+- `missing-scenes.css` - Plugin CSS styles
+- `log.py` - Logging utility
+- `stashbox_api.py` - StashDB/Stash-Box API utilities
+- `README.md` - This documentation
+- `fix_null_check.patch` - Original patch file (kept for reference)
+- `download_plugin.sh` - Original download script (kept for reference)
