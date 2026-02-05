@@ -1,0 +1,13 @@
+--- missing_scenes.py.original
++++ missing_scenes.py
+@@ -2173,6 +2173,11 @@ def handle_scene_update_hook(scene_input, plugin_settings):
+     If all conditions are met, we remove/unmonitor the scene from Whisparr.
+     """
++    # FIX: Guard against None scene_input to prevent AttributeError
++    if scene_input is None:
++        log.LogDebug("Hook received no scene data, skipping")
++        return {"success": True, "message": "No scene data provided"}
++
+     # Check if auto-cleanup is enabled
+     if not plugin_settings.get("enableAutoCleanup", False):
+         log.LogDebug("Auto-cleanup is disabled, skipping")
