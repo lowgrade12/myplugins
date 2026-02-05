@@ -55,8 +55,10 @@ def is_already_exists_error(status, resp):
     if status == 409:
         return True
     
-    if status == 400 and isinstance(resp, list):
-        for error in resp:
+    if status == 400:
+        # Response could be a list of errors, a dict, or a string
+        errors = resp if isinstance(resp, list) else [resp] if isinstance(resp, dict) else []
+        for error in errors:
             if isinstance(error, dict):
                 error_code = error.get("errorCode", "")
                 if error_code == "MovieExistsValidator":
@@ -101,7 +103,7 @@ def main():
     whisparr_url = (plugin_cfg.get("WHISPARR_URL") or "").rstrip("/")
     whisparr_key = plugin_cfg.get("WHISPARR_API_KEY") or ""
     match_substr = plugin_cfg.get("STASHDB_ENDPOINT_SUBSTR") or "stashdb.org"
-    monitored = (plugin_cfg.get("MONITORED") or True)
+    monitored = plugin_cfg.get("MONITORED", True)
 
     if not whisparr_url or not whisparr_key:
         log.error("Missing Whisparr settings (URL/API key).")
