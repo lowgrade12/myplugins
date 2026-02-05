@@ -361,6 +361,17 @@
   // ============================================
 
   /**
+   * Check if we're on a scene page (individual scene detail page)
+   * Scene pages should not show the top performer widget
+   * @returns {boolean} True if on a scene page
+   */
+  function isScenePage() {
+    const path = window.location.pathname;
+    // Match /scenes/123 or /scenes/123/... patterns (scene ID followed by slash or end of path)
+    return /^\/scenes\/\d+(?:\/|$)/.test(path);
+  }
+
+  /**
    * Check if we're on a page that may have studio cards
    * This includes the studios page and the main/home page
    * @returns {boolean} True if on a page that may show studios
@@ -411,6 +422,10 @@
    * @returns {boolean} True if we should process studio cards
    */
   function shouldProcessStudios() {
+    // Never show on scene pages
+    if (isScenePage()) {
+      return false;
+    }
     return isPageWithPotentialStudios() || hasStudioCardsOnPage();
   }
 
