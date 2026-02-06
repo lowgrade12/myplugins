@@ -65,8 +65,10 @@
                 const data = await stash.getStashBoxes();
                 for (const performer of performers) {
                     for (const { endpoint, stash_id } of performer.stash_ids) {
-                        const api_key = data.data.configuration.general.stashBoxes.find(o => o.endpoint = endpoint).api_key;
-                        runSetStashBoxFavoritePerformerTask(endpoint, api_key, stash_id, performer.favorite);
+                        const api_key = data.data.configuration.general.stashBoxes.find(o => o.endpoint === endpoint)?.api_key;
+                        if (api_key) {
+                            runSetStashBoxFavoritePerformerTask(endpoint, api_key, stash_id, performer.favorite);
+                        }
                     }
                 }
             }
