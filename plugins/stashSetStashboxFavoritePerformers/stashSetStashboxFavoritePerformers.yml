@@ -1,7 +1,7 @@
 name: Stash Set Stashbox Favorite Performers
 # requires: stashUserscriptLibrary7dJx1qP
 description: Set Stashbox favorite performers according to stash favorites
-version: 0.6.5
+version: 0.6.6
 url: https://github.com/7dJx1qP/stash-plugins#stash-set-stashbox-favorite-performers
 ui:
   requires: 
@@ -22,6 +22,11 @@ exec:
   - python
   - "{pluginDir}/stashSetStashboxFavoritePerformers.py"
 interface: raw
+hooks:
+  - name: Sync performer favorite on update
+    description: Syncs performer favorite status to stashdb.org when a performer is updated
+    triggeredBy:
+      - Performer.Update.Post
 tasks:
   - name: Set Stashbox Favorite Performers
     description: Set Stashbox favorite performers according to stash favorites
