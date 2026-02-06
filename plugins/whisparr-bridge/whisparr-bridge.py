@@ -93,7 +93,7 @@ def refresh_movie(whisparr_url, api_key, movie_id):
     url = f"{whisparr_url}/api/v3/command"
     body = {
         "name": "RefreshMovie",
-        "movieId": movie_id
+        "movieIds": [movie_id]
     }
     
     status, resp = http_post_json(url, body, api_key)
