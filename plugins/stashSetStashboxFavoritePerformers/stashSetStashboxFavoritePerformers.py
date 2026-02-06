@@ -69,6 +69,28 @@ def get_stashboxes():
         return []
     return result.get("configuration", {}).get("general", {}).get("stashBoxes", [])
 
+
+def get_stashdb_credentials(endpoint, api_key):
+    """Get endpoint and api_key for stashdb.org, fetching from config if not provided.
+    
+    Args:
+        endpoint: Provided endpoint or None/empty
+        api_key: Provided api_key or None/empty
+    
+    Returns:
+        Tuple of (endpoint, api_key) or (None, None) if not configured
+    """
+    if endpoint and api_key:
+        return endpoint, api_key
+    
+    stashboxes = get_stashboxes()
+    stashbox_map = {sb.get('endpoint'): sb.get('api_key') for sb in stashboxes if sb.get('endpoint') and sb.get('api_key')}
+    if STASHDB_ENDPOINT in stashbox_map:
+        return STASHDB_ENDPOINT, stashbox_map[STASHDB_ENDPOINT]
+    
+    log.error(f"No stashdb.org endpoint configured in Stash. Please configure a stash-box with endpoint {STASHDB_ENDPOINT}")
+    return None, None
+
 def get_performer(performer_id):
     """Get performer details including stash_ids and favorite status"""
     result = stash_graphql("""
@@ -178,24 +200,24 @@ if hook_context:
 
 # Handle task execution (triggered manually or by JS)
 elif name == 'favorite_performers_sync':
-    endpoint = args.get('endpoint')
-    api_key = args.get('api_key')
-    set_stashbox_favorite_performers(server_connection, endpoint, api_key, tag_errors, tag_name)
+    endpoint, api_key = get_stashdb_credentials(args.get('endpoint'), args.get('api_key'))
+    if endpoint and api_key:
+        set_stashbox_favorite_performers(server_connection, endpoint, api_key, tag_errors, tag_name)
 elif name == 'favorite_performer_sync':
-    endpoint = args.get('endpoint')
-    api_key = args.get('api_key')
+    endpoint, api_key = get_stashdb_credentials(args.get('endpoint'), args.get('api_key'))
     stash_id = args.get('stash_id')
     favorite = args.get('favorite')
     log.debug(f"Favorite performer sync: endpoint={endpoint}, stash_id={stash_id}, favorite={favorite}")
-    set_stashbox_favorite_performer(endpoint, api_key, stash_id, favorite)
+    if endpoint and api_key and stash_id is not None:
+        set_stashbox_favorite_performer(endpoint, api_key, stash_id, favorite)
 elif name == 'favorite_studios_sync':
-    endpoint = args.get('endpoint')
-    api_key = args.get('api_key')
-    set_stashbox_favorite_studios(server_connection, endpoint, api_key, tag_errors, tag_name)
+    endpoint, api_key = get_stashdb_credentials(args.get('endpoint'), args.get('api_key'))
+    if endpoint and api_key:
+        set_stashbox_favorite_studios(server_connection, endpoint, api_key, tag_errors, tag_name)
 elif name == 'favorite_studio_sync':
-    endpoint = args.get('endpoint')
-    api_key = args.get('api_key')
+    endpoint, api_key = get_stashdb_credentials(args.get('endpoint'), args.get('api_key'))
     stash_id = args.get('stash_id')
     favorite = args.get('favorite')
     log.debug(f"Favorite studio sync: endpoint={endpoint}, stash_id={stash_id}, favorite={favorite}")
-    set_stashbox_favorite_studio(endpoint, api_key, stash_id, favorite)
+    if endpoint and api_key and stash_id is not None:
+        set_stashbox_favorite_studio(endpoint, api_key, stash_id, favorite)
