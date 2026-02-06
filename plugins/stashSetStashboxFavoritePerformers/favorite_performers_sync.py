@@ -5,7 +5,8 @@ import log
 try:
     import requests
 except ModuleNotFoundError:
-    print("If you have pip (normally installed with python), run this command in a terminal (cmd): pip install requests)", file=sys.stderr)
+    print(f"requests module not found. Install it using: {sys.executable} -m pip install requests", file=sys.stderr)
+    print(f"Make sure the Python Executable Path in Stash settings matches: {sys.executable}", file=sys.stderr)
     sys.exit()
 
 try:
@@ -13,7 +14,8 @@ try:
     from stashlib.stash_database import StashDatabase
     from stashlib.stash_models import PerformersRow
 except ModuleNotFoundError:
-    print("If you have pip (normally installed with python), run this command in a terminal (cmd): pip install pystashlib)", file=sys.stderr)
+    print(f"pystashlib module not found. Install it using: {sys.executable} -m pip install pystashlib", file=sys.stderr)
+    print(f"Make sure the Python Executable Path in Stash settings matches: {sys.executable}", file=sys.stderr)
     sys.exit()
 
 def stashbox_call_graphql(endpoint, boxapi_key, query, variables=None):
