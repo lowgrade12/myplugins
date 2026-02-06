@@ -508,3 +508,366 @@ def set_stashbox_favorite_performer(endpoint, boxapi_key, stash_id, favorite):
         log.info(f'Updated Stashbox performer {stash_id} favorite={favorite}')
     else:
         log.info(f'Stashbox performer {stash_id} already in sync favorite={favorite}')
+
+
+# ============ STUDIO SYNC FUNCTIONS ============
+
+def get_stashbox_studio_favorite(endpoint, boxapi_key, stash_id):
+    query = """
+query FullStudio($id: ID!) {
+  findStudio(id: $id) {
+    id
+    is_favorite
+  }
+}
+    """
+
+    variables = {
+        "id": stash_id
+    }
+
+    return stashbox_call_graphql(endpoint, boxapi_key, query, variables)
+
+
+def update_stashbox_studio_favorite(endpoint: str, boxapi_key: str, stash_id: str, favorite: bool):
+    query = """
+mutation FavoriteStudio($id: ID!, $favorite: Boolean!) {
+  favoriteStudio(id: $id, favorite: $favorite)
+}
+"""
+
+    variables = {
+        "id": stash_id,
+        "favorite": favorite
+    }
+
+    return stashbox_call_graphql(endpoint, boxapi_key, query, variables)
+
+
+def get_favorite_studios_from_stashbox(endpoint: str, boxapi_key: str):
+    query = """
+query Studios($input: StudioQueryInput!) {
+  queryStudios(input: $input) {
+    count
+    studios {
+      id
+      is_favorite
+    }
+  }
+}
+"""
+
+    per_page = 100
+
+    variables = {
+        "input": {
+            "names": "",
+            "is_favorite": True,
+            "page": 1,
+            "per_page": per_page,
+            "sort": "NAME",
+            "direction": "ASC"
+        }
+    }
+
+    studios = set()
+
+    total_count = None
+    request_count = 0
+    max_request_count = 1
+
+    studiocounts = {}
+
+    while request_count < max_request_count:
+        result = stashbox_call_graphql(endpoint, boxapi_key, query, variables)
+        request_count += 1
+        variables["input"]["page"] += 1
+        if not result:
+            break
+        query_studios = result.get("queryStudios")
+        if not query_studios:
+            break
+        if total_count is None:
+            total_count = query_studios.get("count")
+            max_request_count = math.ceil(total_count / per_page)
+
+        log.info(f'Received page {variables["input"]["page"] - 1} of {max_request_count}')
+        log.progress(((variables["input"]["page"] - 1) / max_request_count) * 0.5)
+        for studio in query_studios.get("studios"):
+            studio_id = studio['id']
+            if studio_id not in studiocounts:
+                studiocounts[studio_id] = 1
+            else:
+                studiocounts[studio_id] += 1
+        studios.update([studio["id"] for studio in query_studios.get("studios")])
+    return studios, studiocounts
+
+
+def get_favorite_studios_stash_ids(endpoint: str):
+    """Get stash_ids for all favorite studios linked to a specific stash-box endpoint.
+    
+    Uses Stash GraphQL API instead of direct database access.
+    
+    Args:
+        endpoint: StashDB endpoint URL to match stash_ids against
+        
+    Returns:
+        Set of StashDB IDs for favorites linked to that endpoint
+    """
+    query = """
+    query FindFavoriteStudios($filter: FindFilterType) {
+        findStudios(
+            filter: $filter
+            studio_filter: { is_missing: null }
+        ) {
+            count
+            studios {
+                id
+                name
+                favorite
+                stash_ids {
+                    endpoint
+                    stash_id
+                }
+            }
+        }
+    }
+    """
+    
+    stash_ids = set()
+    page = 1
+    per_page = 100
+    
+    while True:
+        data = stash_graphql(query, {
+            "filter": {
+                "page": page,
+                "per_page": per_page
+            }
+        })
+        
+        if not data or "findStudios" not in data:
+            break
+        
+        result = data["findStudios"]
+        studios = result.get("studios", [])
+        
+        if not studios:
+            break
+        
+        for studio in studios:
+            # Only include favorite studios
+            if not studio.get("favorite"):
+                continue
+            for sid in studio.get("stash_ids", []):
+                if sid.get("endpoint") == endpoint:
+                    stash_ids.add(sid.get("stash_id"))
+        
+        # Check if we've fetched all items
+        total = result.get("count", 0)
+        if page * per_page >= total:
+            break
+        
+        page += 1
+    
+    log.info(f"Found {len(stash_ids)} favorite studios linked to {endpoint}")
+    return stash_ids
+
+
+def find_studio_by_stash_id(stash_id: str, endpoint: str):
+    """Find a local studio by their stash_id.
+    
+    Args:
+        stash_id: The StashDB studio ID
+        endpoint: The StashDB endpoint URL
+        
+    Returns:
+        Studio dict with id, name, and tag_ids, or None
+    """
+    query = """
+    query FindStudios($filter: FindFilterType) {
+        findStudios(filter: $filter) {
+            count
+            studios {
+                id
+                name
+                tags {
+                    id
+                    name
+                }
+                stash_ids {
+                    endpoint
+                    stash_id
+                }
+            }
+        }
+    }
+    """
+    
+    page = 1
+    per_page = 100
+    
+    while True:
+        data = stash_graphql(query, {
+            "filter": {
+                "page": page,
+                "per_page": per_page
+            }
+        })
+        
+        if not data or "findStudios" not in data:
+            break
+        
+        result = data["findStudios"]
+        studios = result.get("studios", [])
+        
+        if not studios:
+            break
+        
+        for studio in studios:
+            for sid in studio.get("stash_ids", []):
+                if sid.get("endpoint") == endpoint and sid.get("stash_id") == stash_id:
+                    return {
+                        "id": studio["id"],
+                        "name": studio["name"],
+                        "tag_ids": [tag["id"] for tag in studio.get("tags", [])]
+                    }
+        
+        total = result.get("count", 0)
+        if page * per_page >= total:
+            break
+        
+        page += 1
+    
+    return None
+
+
+def tag_studio_by_stash_id(stash_id: str, endpoint: str, tag_id: str):
+    """Tag a studio by their stash_id using GraphQL API.
+    
+    Args:
+        stash_id: The StashDB studio ID
+        endpoint: The StashDB endpoint URL
+        tag_id: The ID of the tag to add
+    """
+    studio = find_studio_by_stash_id(stash_id, endpoint)
+    if not studio:
+        log.debug(f'Could not find studio with stash_id {stash_id}')
+        return
+    
+    # Check if already tagged
+    if tag_id in studio["tag_ids"]:
+        log.debug(f'Studio already tagged {stash_id} {studio["id"]} {studio["name"]}')
+        return
+    
+    # Add the tag using studioUpdate mutation
+    update_query = """
+    mutation StudioUpdate($input: StudioUpdateInput!) {
+        studioUpdate(input: $input) {
+            id
+        }
+    }
+    """
+    
+    new_tag_ids = studio["tag_ids"] + [tag_id]
+    
+    data = stash_graphql(update_query, {
+        "input": {
+            "id": studio["id"],
+            "tag_ids": new_tag_ids
+        }
+    })
+    
+    if data:
+        log.debug(f'Tagging studio {stash_id} {studio["id"]} {studio["name"]}')
+    else:
+        log.warning(f'Failed to tag studio {stash_id} {studio["id"]}')
+
+
+def set_stashbox_favorite_studios(server_connection, endpoint: str, boxapi_key: str, tag_errors: bool, tag_name: str):
+    """Sync favorite studios between local Stash and StashDB.
+    
+    Uses GraphQL API instead of direct database access.
+    
+    Args:
+        server_connection: Stash server connection info from plugin input
+        endpoint: StashDB endpoint URL
+        boxapi_key: StashDB API key
+        tag_errors: Whether to tag studios with sync errors
+        tag_name: Name of the tag to use for errors
+    """
+    # Initialize Stash connection for GraphQL calls
+    init_stash_connection(server_connection)
+    
+    # Get favorite studios from local Stash via GraphQL
+    stash_ids = get_favorite_studios_stash_ids(endpoint)
+    
+    log.info(f'Stashbox endpoint {endpoint}')
+    log.info(f'Stash {len(stash_ids)} favorite studios')
+    
+    tag = None
+    if tag_errors and tag_name:
+        log.info(f'Tagging errors with tag: {tag_name}')
+        tag = get_or_create_tag(tag_name)
+    else:
+        log.info(f'Not tagging errors')
+    
+    log.info(f'Fetching Stashbox favorite studios...')
+    stashbox_stash_ids, studiocounts = get_favorite_studios_from_stashbox(endpoint, boxapi_key)
+    log.info(f'Stashbox {len(stashbox_stash_ids)} favorite studios')
+
+    favorites_to_add = stash_ids - stashbox_stash_ids
+    favorites_to_remove = stashbox_stash_ids - stash_ids
+    dupes_to_remove = [[studio_id, count] for [studio_id, count] in studiocounts.items() if count > 1]
+    log.info(f'{len(favorites_to_add)} favorites to add')
+    log.info(f'{len(favorites_to_remove)} favorites to remove')
+    log.info(f'{len(dupes_to_remove)} duplicates to remove')
+    total_work = len(favorites_to_add) + len(favorites_to_remove) + len(dupes_to_remove)
+    
+    if total_work == 0:
+        log.info('Already in sync!')
+        log.progress(1)
+        return
+
+    i = 0
+    for stash_id in favorites_to_add:
+        log.trace(f'Adding stashbox favorite {endpoint} {stash_id}')
+        if not (update_stashbox_studio_favorite(endpoint, boxapi_key, stash_id, True) or {}).get('favoriteStudio'):
+            log.warning(f'Failed adding stashbox favorite studio {stash_id}')
+            if tag:
+                tag_studio_by_stash_id(stash_id, endpoint, tag["id"])
+        i += 1
+        log.progress((i / total_work) * 0.5 + 0.5)
+    log.info('Add done.')
+
+    i = 0
+    for stash_id in favorites_to_remove:
+        log.trace(f'Removing stashbox favorite {endpoint} {stash_id}')
+        if not (update_stashbox_studio_favorite(endpoint, boxapi_key, stash_id, False) or {}).get('favoriteStudio'):
+            log.warning(f'Failed removing stashbox favorite studio {stash_id}')
+            if tag:
+                tag_studio_by_stash_id(stash_id, endpoint, tag["id"])
+        i += 1
+        log.progress((i / total_work) * 0.5 + 0.5)
+    log.info('Remove done.')
+
+    i = 0
+    for studio_id, count in dupes_to_remove:
+        log.trace(f'Fixing duplicate stashbox favorite {endpoint} {studio_id} count={count}')
+        update_stashbox_studio_favorite(endpoint, boxapi_key, studio_id, False)
+        update_stashbox_studio_favorite(endpoint, boxapi_key, studio_id, True)
+        i += 1
+        log.progress((i / total_work) * 0.5 + 0.5)
+    log.info('Fixed duplicates.')
+    log.progress(1)
+
+
+def set_stashbox_favorite_studio(endpoint, boxapi_key, stash_id, favorite):
+    result = get_stashbox_studio_favorite(endpoint, boxapi_key, stash_id)
+    if not result:
+        return
+    if favorite != result["findStudio"]["is_favorite"]:
+        update_stashbox_studio_favorite(endpoint, boxapi_key, stash_id, favorite)
+        log.info(f'Updated Stashbox studio {stash_id} favorite={favorite}')
+    else:
+        log.info(f'Stashbox studio {stash_id} already in sync favorite={favorite}')
