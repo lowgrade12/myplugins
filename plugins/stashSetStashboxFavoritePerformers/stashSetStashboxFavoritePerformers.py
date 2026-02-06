@@ -148,8 +148,7 @@ if hook_context:
                 set_stashbox_favorite_studio(endpoint, api_key, stash_id, favorite)
         else:
             log.debug(f"Studio {entity_id} has no stash_ids, skipping")
-    elif entity_id:
-        # Default to performer hook (Performer.Update.Post) for backward compatibility
+    elif hook_type == 'Performer.Update.Post' and entity_id:
         log.debug(f"Hook triggered for performer ID: {entity_id}")
         performer = get_performer(entity_id)
         if performer and performer.get('stash_ids'):
@@ -175,7 +174,7 @@ if hook_context:
         else:
             log.debug(f"Performer {entity_id} has no stash_ids, skipping")
     else:
-        log.debug("No entity ID in hook context")
+        log.debug(f"Unhandled hook type or no entity ID: type={hook_type}, id={entity_id}")
 
 # Handle task execution (triggered manually or by JS)
 elif name == 'favorite_performers_sync':
