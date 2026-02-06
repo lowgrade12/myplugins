@@ -500,8 +500,14 @@ def set_stashbox_favorite_performers(server_connection, endpoint: str, boxapi_ke
     log.progress(1)
 
 def set_stashbox_favorite_performer(endpoint, boxapi_key, stash_id, favorite):
+    if not stash_id:
+        log.warning(f'Empty stash_id provided, skipping performer sync')
+        return
     result = get_stashbox_performer_favorite(endpoint, boxapi_key, stash_id)
     if not result:
+        return
+    if not result.get("findPerformer"):
+        log.warning(f'Performer not found on stashbox: {stash_id}')
         return
     if favorite != result["findPerformer"]["is_favorite"]:
         update_stashbox_performer_favorite(endpoint, boxapi_key, stash_id, favorite)
@@ -863,8 +869,14 @@ def set_stashbox_favorite_studios(server_connection, endpoint: str, boxapi_key: 
 
 
 def set_stashbox_favorite_studio(endpoint, boxapi_key, stash_id, favorite):
+    if not stash_id:
+        log.warning(f'Empty stash_id provided, skipping studio sync')
+        return
     result = get_stashbox_studio_favorite(endpoint, boxapi_key, stash_id)
     if not result:
+        return
+    if not result.get("findStudio"):
+        log.warning(f'Studio not found on stashbox: {stash_id}')
         return
     if favorite != result["findStudio"]["is_favorite"]:
         update_stashbox_studio_favorite(endpoint, boxapi_key, stash_id, favorite)
