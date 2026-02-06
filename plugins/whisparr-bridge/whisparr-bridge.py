@@ -66,6 +66,39 @@ def is_already_exists_error(status, resp):
     
     return False
 
+def lookup_movie_by_stashid(whisparr_url, api_key, stashdb_id):
+    """Lookup a movie in Whisparr by its StashDB ID.
+    
+    Returns the movie dict if found, None otherwise.
+    """
+    url = f"{whisparr_url}/api/v3/movie?stashId={stashdb_id}"
+    status, resp = http_get_json(url, api_key)
+    
+    if status == 200:
+        # Response is a list of movies matching the stashId
+        if isinstance(resp, list) and resp:
+            return resp[0]  # Return first match
+        # Response might be a single movie dict
+        if isinstance(resp, dict) and resp.get("id"):
+            return resp
+    
+    return None
+
+def refresh_movie(whisparr_url, api_key, movie_id):
+    """Trigger a metadata refresh for a movie in Whisparr.
+    
+    Uses the /api/v3/command endpoint with RefreshMovie command.
+    Returns True if successful, False otherwise.
+    """
+    url = f"{whisparr_url}/api/v3/command"
+    body = {
+        "name": "RefreshMovie",
+        "movieId": movie_id
+    }
+    
+    status, resp = http_post_json(url, body, api_key)
+    return status in (200, 201)
+
 def load_plugin_settings(stash: StashInterface) -> dict:
     """Return this plugin's settings using the manifest name."""
     try:
@@ -165,7 +198,17 @@ def main():
     if status in (200, 201):
         log.info(f"Whisparr add OK ({status})")
     elif is_already_exists_error(status, resp):
-        log.info(f"Whisparr: item already exists (status {status})")
+        log.info(f"Whisparr: item already exists (status {status}), attempting refresh...")
+        # Lookup the existing movie by stashId to get its Whisparr ID
+        existing_movie = lookup_movie_by_stashid(whisparr_url, whisparr_key, stashdb_id)
+        movie_id = existing_movie.get("id") if existing_movie else None
+        if movie_id:
+            if refresh_movie(whisparr_url, whisparr_key, movie_id):
+                log.info(f"Whisparr: refreshed movie id={movie_id}")
+            else:
+                log.error(f"Whisparr: failed to refresh movie id={movie_id}")
+        else:
+            log.info("Whisparr: could not lookup existing movie for refresh")
     else:
         log.error(f"Whisparr error {status}: {resp}")
 
