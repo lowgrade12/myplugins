@@ -4,7 +4,10 @@ import sys
 import ssl
 import urllib.request
 import urllib.error
-from favorite_performers_sync import set_stashbox_favorite_performers, set_stashbox_favorite_performer
+from favorite_performers_sync import (
+    set_stashbox_favorite_performers, set_stashbox_favorite_performer,
+    set_stashbox_favorite_studios, set_stashbox_favorite_studio
+)
 
 # Create SSL context that doesn't verify certificates (for self-signed certs)
 SSL_CONTEXT = ssl.create_default_context()
@@ -85,6 +88,25 @@ def get_performer(performer_id):
         return None
     return result.get("findPerformer")
 
+def get_studio(studio_id):
+    """Get studio details including stash_ids and favorite status"""
+    result = stash_graphql("""
+        query FindStudio($id: ID!) {
+            findStudio(id: $id) {
+                id
+                name
+                favorite
+                stash_ids {
+                    endpoint
+                    stash_id
+                }
+            }
+        }
+    """, {"id": studio_id})
+    if not result:
+        return None
+    return result.get("findStudio")
+
 def get_plugin_settings():
     """Get plugin settings from Stash configuration"""
     result = stash_graphql("""query Configuration { configuration { plugins } }""")
@@ -96,12 +118,39 @@ plugin_settings = get_plugin_settings()
 tag_errors = plugin_settings.get('tagErrors', False)
 tag_name = plugin_settings.get('tagName')
 
-# Handle hook context (triggered by Performer.Update.Post)
+# Handle hook context (triggered by Performer.Update.Post or Studio.Update.Post)
 if hook_context:
-    performer_id = hook_context.get('id')
-    if performer_id:
-        log.debug(f"Hook triggered for performer ID: {performer_id}")
-        performer = get_performer(performer_id)
+    hook_type = hook_context.get('type')
+    entity_id = hook_context.get('id')
+    
+    if hook_type == 'Studio.Update.Post' and entity_id:
+        log.debug(f"Hook triggered for studio ID: {entity_id}")
+        studio = get_studio(entity_id)
+        if studio and studio.get('stash_ids'):
+            stashboxes = get_stashboxes()
+            stashbox_map = {sb.get('endpoint'): sb.get('api_key') for sb in stashboxes if sb.get('endpoint') and sb.get('api_key')}
+            
+            for stash_id_entry in studio['stash_ids']:
+                endpoint = stash_id_entry.get('endpoint')
+                stash_id = stash_id_entry.get('stash_id')
+                
+                # Only sync with stashdb.org
+                if endpoint != STASHDB_ENDPOINT:
+                    continue
+                
+                api_key = stashbox_map.get(endpoint)
+                if not api_key:
+                    log.warning(f"No API key found for endpoint: {endpoint}")
+                    continue
+                
+                favorite = studio.get('favorite', False)
+                log.info(f"Syncing studio {studio.get('name')} (stash_id={stash_id}) favorite={favorite} to {endpoint}")
+                set_stashbox_favorite_studio(endpoint, api_key, stash_id, favorite)
+        else:
+            log.debug(f"Studio {entity_id} has no stash_ids, skipping")
+    elif hook_type == 'Performer.Update.Post' and entity_id:
+        log.debug(f"Hook triggered for performer ID: {entity_id}")
+        performer = get_performer(entity_id)
         if performer and performer.get('stash_ids'):
             stashboxes = get_stashboxes()
             stashbox_map = {sb.get('endpoint'): sb.get('api_key') for sb in stashboxes if sb.get('endpoint') and sb.get('api_key')}
@@ -123,9 +172,9 @@ if hook_context:
                 log.info(f"Syncing performer {performer.get('name')} (stash_id={stash_id}) favorite={favorite} to {endpoint}")
                 set_stashbox_favorite_performer(endpoint, api_key, stash_id, favorite)
         else:
-            log.debug(f"Performer {performer_id} has no stash_ids, skipping")
+            log.debug(f"Performer {entity_id} has no stash_ids, skipping")
     else:
-        log.debug("No performer ID in hook context")
+        log.debug(f"Unhandled hook type or no entity ID: type={hook_type}, id={entity_id}")
 
 # Handle task execution (triggered manually or by JS)
 elif name == 'favorite_performers_sync':
@@ -139,3 +188,14 @@ elif name == 'favorite_performer_sync':
     favorite = args.get('favorite')
     log.debug(f"Favorite performer sync: endpoint={endpoint}, stash_id={stash_id}, favorite={favorite}")
     set_stashbox_favorite_performer(endpoint, api_key, stash_id, favorite)
+elif name == 'favorite_studios_sync':
+    endpoint = args.get('endpoint')
+    api_key = args.get('api_key')
+    set_stashbox_favorite_studios(server_connection, endpoint, api_key, tag_errors, tag_name)
+elif name == 'favorite_studio_sync':
+    endpoint = args.get('endpoint')
+    api_key = args.get('api_key')
+    stash_id = args.get('stash_id')
+    favorite = args.get('favorite')
+    log.debug(f"Favorite studio sync: endpoint={endpoint}, stash_id={stash_id}, favorite={favorite}")
+    set_stashbox_favorite_studio(endpoint, api_key, stash_id, favorite)
