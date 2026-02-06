@@ -362,17 +362,25 @@
 
   /**
    * Check if we're on a scene-related page where the top performer widget should not appear
-   * This includes individual scene pages and scene listing pages (e.g., /studios/{id}/scenes)
+   * This includes individual scene pages and scene listing pages
    * @returns {boolean} True if on a scene-related page
    */
   function isSceneRelatedPage() {
     const path = window.location.pathname;
+    // Match /scenes - main scenes listing page (with or without query params)
+    if (path === "/scenes" || path === "/scenes/") {
+      return true;
+    }
     // Match /scenes/123 or /scenes/123/... patterns (scene ID followed by slash or end of path)
     if (/^\/scenes\/\d+(?:\/|$)/.test(path)) {
       return true;
     }
-    // Match /studios/{id}/scenes - this is a scene listing page for a specific studio
+    // Match /studios/{id}/scenes - scene listing page for a specific studio
     if (/^\/studios\/\d+\/scenes(?:\/|$|\?)/.test(path)) {
+      return true;
+    }
+    // Match /performers/{id}/scenes - scene listing page for a specific performer
+    if (/^\/performers\/\d+\/scenes(?:\/|$|\?)/.test(path)) {
       return true;
     }
     return false;
