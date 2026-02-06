@@ -1,16 +1,15 @@
 import json
 import log
-import os
-import pathlib
 import sys
+import ssl
+import urllib.request
+import urllib.error
 from favorite_performers_sync import set_stashbox_favorite_performers, set_stashbox_favorite_performer
-try:
-    from stashlib.stash_database import StashDatabase
-    from stashlib.stash_interface import StashInterface
-except ModuleNotFoundError:
-    print(f"pystashlib module not found. Install it using: {sys.executable} -m pip install pystashlib", file=sys.stderr)
-    print(f"Make sure the Python Executable Path in Stash settings matches: {sys.executable}", file=sys.stderr)
-    sys.exit()
+
+# Create SSL context that doesn't verify certificates (for self-signed certs)
+SSL_CONTEXT = ssl.create_default_context()
+SSL_CONTEXT.check_hostname = False
+SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
 STASHDB_ENDPOINT = 'https://stashdb.org/graphql'
 
@@ -18,25 +17,58 @@ json_input = json.loads(sys.stdin.read())
 args = json_input.get('args', {})
 name = args.get('name')
 hook_context = args.get('hookContext')
+server_connection = json_input.get("server_connection", {})
 
-client = StashInterface(json_input["server_connection"])
 
-def get_database_config():
-    result = client.callGraphQL("""query Configuration { configuration { general { databasePath, blobsPath, blobsStorage } } }""")
-    database_path = result["configuration"]["general"]["databasePath"]
-    blobs_path = result["configuration"]["general"]["blobsPath"]
-    blobs_storage = result["configuration"]["general"]["blobsStorage"]
-    log.debug(f"databasePath: {database_path}")
-    return database_path, blobs_path, blobs_storage
+def get_stash_url():
+    """Build the Stash GraphQL URL from server connection info."""
+    host = server_connection.get("Host", "localhost")
+    if host == "0.0.0.0":
+        host = "localhost"
+    return f"{server_connection.get('Scheme', 'http')}://{host}:{server_connection.get('Port', 9999)}/graphql"
+
+
+def stash_graphql(query, variables=None):
+    """Make a GraphQL request to local Stash instance."""
+    url = get_stash_url()
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    
+    # Use session cookie if available
+    session_cookie = server_connection.get("SessionCookie", {}).get("Value")
+    if session_cookie:
+        headers["Cookie"] = f"session={session_cookie}"
+    
+    data = json.dumps({
+        "query": query,
+        "variables": variables or {}
+    }).encode("utf-8")
+    
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            if result.get("errors"):
+                log.warning(f"Stash GraphQL errors: {result['errors']}")
+            return result.get("data")
+    except Exception as e:
+        log.error(f"Stash request error: {e}")
+        return None
 
 def get_stashboxes():
     """Get configured stashboxes from Stash"""
-    result = client.callGraphQL("""query Configuration { configuration { general { stashBoxes { endpoint api_key } } } }""")
+    result = stash_graphql("""query Configuration { configuration { general { stashBoxes { endpoint api_key } } } }""")
+    if not result:
+        return []
     return result.get("configuration", {}).get("general", {}).get("stashBoxes", [])
 
 def get_performer(performer_id):
     """Get performer details including stash_ids and favorite status"""
-    result = client.callGraphQL("""
+    result = stash_graphql("""
         query FindPerformer($id: ID!) {
             findPerformer(id: $id) {
                 id
@@ -49,9 +81,18 @@ def get_performer(performer_id):
             }
         }
     """, {"id": performer_id})
+    if not result:
+        return None
     return result.get("findPerformer")
 
-plugin_settings = client.callGraphQL("""query Configuration { configuration { plugins } }""")['configuration']['plugins'].get('stashSetStashboxFavoritePerformers', {})
+def get_plugin_settings():
+    """Get plugin settings from Stash configuration"""
+    result = stash_graphql("""query Configuration { configuration { plugins } }""")
+    if not result:
+        return {}
+    return result.get('configuration', {}).get('plugins', {}).get('stashSetStashboxFavoritePerformers', {})
+
+plugin_settings = get_plugin_settings()
 tag_errors = plugin_settings.get('tagErrors', False)
 tag_name = plugin_settings.get('tagName')
 
@@ -90,13 +131,7 @@ if hook_context:
 elif name == 'favorite_performers_sync':
     endpoint = args.get('endpoint')
     api_key = args.get('api_key')
-    try:
-        db = StashDatabase(*get_database_config())
-    except Exception as e:
-        log.error(str(e))
-        sys.exit(0)
-    set_stashbox_favorite_performers(db, endpoint, api_key, tag_errors, tag_name)
-    db.close()
+    set_stashbox_favorite_performers(server_connection, endpoint, api_key, tag_errors, tag_name)
 elif name == 'favorite_performer_sync':
     endpoint = args.get('endpoint')
     api_key = args.get('api_key')

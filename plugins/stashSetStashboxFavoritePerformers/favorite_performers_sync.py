@@ -1,57 +1,49 @@
 import math
 import sys
+import json
+import ssl
+import urllib.request
+import urllib.error
 import log
 
-try:
-    import requests
-except ModuleNotFoundError:
-    print(f"requests module not found. Install it using: {sys.executable} -m pip install requests", file=sys.stderr)
-    print(f"Make sure the Python Executable Path in Stash settings matches: {sys.executable}", file=sys.stderr)
-    sys.exit()
-
-try:
-    from stashlib.common import get_timestamp
-    from stashlib.stash_database import StashDatabase
-    from stashlib.stash_models import PerformersRow
-except ModuleNotFoundError:
-    print(f"pystashlib module not found. Install it using: {sys.executable} -m pip install pystashlib", file=sys.stderr)
-    print(f"Make sure the Python Executable Path in Stash settings matches: {sys.executable}", file=sys.stderr)
-    sys.exit()
+# Create SSL context that doesn't verify certificates (for self-signed certs)
+SSL_CONTEXT = ssl.create_default_context()
+SSL_CONTEXT.check_hostname = False
+SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
 def stashbox_call_graphql(endpoint, boxapi_key, query, variables=None):
-    # this is basically the same code as call_graphql except it calls out to the stashbox.
-
+    """Make a GraphQL request to a stash-box endpoint using standard library."""
     headers = {
-        "Accept-Encoding": "gzip, deflate, br",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Connection": "keep-alive",
-        "DNT": "1",
         "ApiKey": boxapi_key
     }
-    json = {
-        'query': query
-    }
-    if variables is not None:
-        json['variables'] = variables
+    
+    data = json.dumps({
+        "query": query,
+        "variables": variables or {}
+    }).encode("utf-8")
+    
+    req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
+    
     try:
-        response = requests.post(endpoint, json=json, headers=headers)
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("error"):
-                for error in result["error"]["errors"]:
-                    raise Exception("GraphQL error: {}".format(error))
-            if result.get("data"):
-                return result.get("data")
-        elif response.status_code == 401:
-            log.error(
-                "[ERROR][GraphQL] HTTP Error 401, Unauthorised. You need to add a Stash box instance and API Key in your Stash config")
-            return None
+        with urllib.request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            if result.get("errors"):
+                for error in result["errors"]:
+                    log.error("GraphQL error: {}".format(error.get("message", error)))
+            return result.get("data")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            log.error("[ERROR][GraphQL] HTTP Error 401, Unauthorised. You need to add a Stash box instance and API Key in your Stash config")
         else:
-            raise ConnectionError(
-                "GraphQL query failed:{} - {}".format(response.status_code, response.content))
+            log.error(f"GraphQL query failed: {e.code} - {e.reason}")
+        return None
+    except urllib.error.URLError as e:
+        log.error(f"Connection error: {e.reason}")
+        return None
     except Exception as err:
-        log.error(err)
+        log.error(str(err))
         return None
 
 def get_stashbox_performer_favorite(endpoint, boxapi_key, stash_id):
@@ -142,40 +134,322 @@ query Performers($input: PerformerQueryInput!) {
         performers.update([performer["id"] for performer in query_performers.get("performers")])
     return performers, performercounts
 
-def tag_performer(db: StashDatabase, stash_id: str, tag_id: int):
-    rows = db.fetchall("""SELECT a.*
-FROM performers a
-JOIN performer_stash_ids b ON a.id = b.performer_id
-WHERE b.stash_id = ?""", (stash_id, ))
-    performers = [PerformersRow().from_sqliterow(row) for row in rows]
-    for performer in performers:
-        tag_ids = [performer_tag.tag_id for performer_tag in db.performers_tags.select_performer_id(performer.id)]
-        if tag_id not in tag_ids:
-            log.debug(f'Tagging performer {stash_id} {performer.id} {performer.name}')
-            db.performers_tags.insert(performer.id, tag_id)
-        else:
-            log.debug(f'Performer already tagged {stash_id} {performer.id} {performer.name}')
 
-def set_stashbox_favorite_performers(db: StashDatabase, endpoint: str, boxapi_key: str, tag_errors: bool, tag_name: str):
-    stash_ids = set([row["stash_id"] for row in db.fetchall("""SELECT DISTINCT b.stash_id
-FROM performers a
-JOIN performer_stash_ids b
-ON a.id = b.performer_id
-WHERE a.favorite = 1 AND b.endpoint = ?""", (endpoint, ))])
+# Global to store Stash connection for local GraphQL calls
+_stash_connection = None
+
+
+def init_stash_connection(server_connection):
+    """Initialize the Stash connection from the plugin input."""
+    global _stash_connection
+    
+    # Handle 0.0.0.0 binding - can't connect TO 0.0.0.0, use localhost instead
+    host = server_connection.get("Host", "localhost")
+    if host == "0.0.0.0":
+        host = "localhost"
+    
+    _stash_connection = {
+        "url": server_connection.get("Scheme", "http") + "://" +
+               host + ":" +
+               str(server_connection.get("Port", 9999)) + "/graphql",
+        "session_cookie": server_connection.get("SessionCookie", {}).get("Value"),
+    }
+
+
+def stash_graphql(query, variables=None):
+    """Make a GraphQL request to local Stash instance."""
+    global _stash_connection
+    
+    if not _stash_connection:
+        log.error("Stash connection not initialized")
+        return None
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    
+    # Use session cookie if available
+    if _stash_connection.get("session_cookie"):
+        headers["Cookie"] = f"session={_stash_connection['session_cookie']}"
+    
+    data = json.dumps({
+        "query": query,
+        "variables": variables or {}
+    }).encode("utf-8")
+    
+    req = urllib.request.Request(_stash_connection["url"], data=data, headers=headers, method="POST")
+    
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            if result.get("errors"):
+                log.warning(f"Stash GraphQL errors: {result['errors']}")
+            return result.get("data")
+    except Exception as e:
+        log.error(f"Stash request error: {e}")
+        return None
+
+
+def get_favorite_performers_stash_ids(endpoint: str):
+    """Get stash_ids for all favorite performers linked to a specific stash-box endpoint.
+    
+    Uses Stash GraphQL API instead of direct database access.
+    
+    Args:
+        endpoint: StashDB endpoint URL to match stash_ids against
+        
+    Returns:
+        Set of StashDB IDs for favorites linked to that endpoint
+    """
+    query = """
+    query FindFavoritePerformers($filter: FindFilterType) {
+        findPerformers(
+            filter: $filter
+            performer_filter: { filter_favorites: true }
+        ) {
+            count
+            performers {
+                id
+                name
+                stash_ids {
+                    endpoint
+                    stash_id
+                }
+            }
+        }
+    }
+    """
+    
+    stash_ids = set()
+    page = 1
+    per_page = 100
+    
+    while True:
+        data = stash_graphql(query, {
+            "filter": {
+                "page": page,
+                "per_page": per_page
+            }
+        })
+        
+        if not data or "findPerformers" not in data:
+            break
+        
+        result = data["findPerformers"]
+        performers = result.get("performers", [])
+        
+        if not performers:
+            break
+        
+        for performer in performers:
+            for sid in performer.get("stash_ids", []):
+                if sid.get("endpoint") == endpoint:
+                    stash_ids.add(sid.get("stash_id"))
+        
+        # Check if we've fetched all items
+        total = result.get("count", 0)
+        if page * per_page >= total:
+            break
+        
+        page += 1
+    
+    log.info(f"Found {len(stash_ids)} favorite performers linked to {endpoint}")
+    return stash_ids
+
+
+def find_performer_by_stash_id(stash_id: str, endpoint: str):
+    """Find a local performer by their stash_id.
+    
+    Args:
+        stash_id: The StashDB performer ID
+        endpoint: The StashDB endpoint URL
+        
+    Returns:
+        Performer dict with id, name, and tag_ids, or None
+    """
+    # Stash doesn't have a direct way to query by stash_id, so we need to 
+    # search performers that have stash_ids matching this endpoint
+    query = """
+    query FindPerformers($filter: FindFilterType) {
+        findPerformers(filter: $filter) {
+            count
+            performers {
+                id
+                name
+                tags {
+                    id
+                    name
+                }
+                stash_ids {
+                    endpoint
+                    stash_id
+                }
+            }
+        }
+    }
+    """
+    
+    page = 1
+    per_page = 100
+    
+    while True:
+        data = stash_graphql(query, {
+            "filter": {
+                "page": page,
+                "per_page": per_page
+            }
+        })
+        
+        if not data or "findPerformers" not in data:
+            break
+        
+        result = data["findPerformers"]
+        performers = result.get("performers", [])
+        
+        if not performers:
+            break
+        
+        for performer in performers:
+            for sid in performer.get("stash_ids", []):
+                if sid.get("endpoint") == endpoint and sid.get("stash_id") == stash_id:
+                    return {
+                        "id": performer["id"],
+                        "name": performer["name"],
+                        "tag_ids": [tag["id"] for tag in performer.get("tags", [])]
+                    }
+        
+        total = result.get("count", 0)
+        if page * per_page >= total:
+            break
+        
+        page += 1
+    
+    return None
+
+
+def get_or_create_tag(tag_name: str):
+    """Get or create a tag by name.
+    
+    Args:
+        tag_name: Name of the tag to find or create
+        
+    Returns:
+        Tag dict with id and name, or None
+    """
+    # First try to find the tag
+    find_query = """
+    query FindTag($name: String!) {
+        findTags(tag_filter: { name: { value: $name, modifier: EQUALS } }) {
+            tags {
+                id
+                name
+            }
+        }
+    }
+    """
+    
+    data = stash_graphql(find_query, {"name": tag_name})
+    if data and "findTags" in data:
+        tags = data["findTags"].get("tags", [])
+        if tags:
+            return tags[0]
+    
+    # Create the tag if it doesn't exist
+    create_query = """
+    mutation TagCreate($input: TagCreateInput!) {
+        tagCreate(input: $input) {
+            id
+            name
+        }
+    }
+    """
+    
+    log.info(f'Tag "{tag_name}" missing. Creating...')
+    data = stash_graphql(create_query, {
+        "input": {
+            "name": tag_name,
+            "description": "Tag created by Set Stashbox Favorite Performers plugin. Applied to performers found to have stash ids deleted from stashbox."
+        }
+    })
+    
+    if data and "tagCreate" in data:
+        return data["tagCreate"]
+    
+    log.error(f"Failed to create tag: {tag_name}")
+    return None
+
+
+def tag_performer_by_stash_id(stash_id: str, endpoint: str, tag_id: str):
+    """Tag a performer by their stash_id using GraphQL API.
+    
+    Args:
+        stash_id: The StashDB performer ID
+        endpoint: The StashDB endpoint URL
+        tag_id: The ID of the tag to add
+    """
+    performer = find_performer_by_stash_id(stash_id, endpoint)
+    if not performer:
+        log.debug(f'Could not find performer with stash_id {stash_id}')
+        return
+    
+    # Check if already tagged
+    if tag_id in performer["tag_ids"]:
+        log.debug(f'Performer already tagged {stash_id} {performer["id"]} {performer["name"]}')
+        return
+    
+    # Add the tag using performerUpdate mutation
+    update_query = """
+    mutation PerformerUpdate($input: PerformerUpdateInput!) {
+        performerUpdate(input: $input) {
+            id
+        }
+    }
+    """
+    
+    new_tag_ids = performer["tag_ids"] + [tag_id]
+    
+    data = stash_graphql(update_query, {
+        "input": {
+            "id": performer["id"],
+            "tag_ids": new_tag_ids
+        }
+    })
+    
+    if data:
+        log.debug(f'Tagging performer {stash_id} {performer["id"]} {performer["name"]}')
+    else:
+        log.warning(f'Failed to tag performer {stash_id} {performer["id"]}')
+
+
+def set_stashbox_favorite_performers(server_connection, endpoint: str, boxapi_key: str, tag_errors: bool, tag_name: str):
+    """Sync favorite performers between local Stash and StashDB.
+    
+    Uses GraphQL API instead of direct database access.
+    
+    Args:
+        server_connection: Stash server connection info from plugin input
+        endpoint: StashDB endpoint URL
+        boxapi_key: StashDB API key
+        tag_errors: Whether to tag performers with sync errors
+        tag_name: Name of the tag to use for errors
+    """
+    # Initialize Stash connection for GraphQL calls
+    init_stash_connection(server_connection)
+    
+    # Get favorite performers from local Stash via GraphQL
+    stash_ids = get_favorite_performers_stash_ids(endpoint)
+    
     log.info(f'Stashbox endpoint {endpoint}')
     log.info(f'Stash {len(stash_ids)} favorite performers')
+    
     tag = None
     if tag_errors and tag_name:
         log.info(f'Tagging errors with performer tag: {tag_name}')
-        tag = db.tags.selectone_name(tag_name)
-        if not tag:
-            log.info(f'Tag missing. Creating...')
-            db.tags.insert(tag_name, get_timestamp(), get_timestamp(), True, 'Tag created by Set Stashbox Favorite Performers plugin. Applied to performers found to have stash ids deleted from stashbox.', None)
-            tag = db.tags.selectone_name(tag_name)
-            if not tag:
-                log.error(f"Failed to create tag.")
+        tag = get_or_create_tag(tag_name)
     else:
         log.info(f'Not tagging errors')
+    
     log.info(f'Fetching Stashbox favorite performers...')
     stashbox_stash_ids, performercounts = get_favorite_performers_from_stashbox(endpoint, boxapi_key)
     log.info(f'Stashbox {len(stashbox_stash_ids)} favorite performers')
@@ -187,6 +461,11 @@ WHERE a.favorite = 1 AND b.endpoint = ?""", (endpoint, ))])
     log.info(f'{len(favorites_to_remove)} favorites to remove')
     log.info(f'{len(dupes_to_remove)} duplicates to remove')
     total_work = len(favorites_to_add) + len(favorites_to_remove) + len(dupes_to_remove)
+    
+    if total_work == 0:
+        log.info('Already in sync!')
+        log.progress(1)
+        return
 
     i = 0
     for stash_id in favorites_to_add:
@@ -194,7 +473,7 @@ WHERE a.favorite = 1 AND b.endpoint = ?""", (endpoint, ))])
         if not (update_stashbox_performer_favorite(endpoint, boxapi_key, stash_id, True) or {}).get('favoritePerformer'):
             log.warning(f'Failed adding stashbox favorite {stash_id}')
             if tag:
-                tag_performer(db, stash_id, tag.id)
+                tag_performer_by_stash_id(stash_id, endpoint, tag["id"])
         i += 1
         log.progress((i / total_work) * 0.5 + 0.5)
     log.info('Add done.')
@@ -205,7 +484,7 @@ WHERE a.favorite = 1 AND b.endpoint = ?""", (endpoint, ))])
         if not (update_stashbox_performer_favorite(endpoint, boxapi_key, stash_id, False) or {}).get('favoritePerformer'):
             log.warning(f'Failed removing stashbox favorite {stash_id}')
             if tag:
-                tag_performer(db, stash_id, tag.id)
+                tag_performer_by_stash_id(stash_id, endpoint, tag["id"])
         i += 1
         log.progress((i / total_work) * 0.5 + 0.5)
     log.info('Remove done.')
