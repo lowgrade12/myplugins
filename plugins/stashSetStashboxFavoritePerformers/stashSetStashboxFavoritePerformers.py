@@ -62,7 +62,7 @@ if hook_context:
         performer = get_performer(performer_id)
         if performer and performer.get('stash_ids'):
             stashboxes = get_stashboxes()
-            stashbox_map = {sb['endpoint']: sb['api_key'] for sb in stashboxes}
+            stashbox_map = {sb.get('endpoint'): sb.get('api_key') for sb in stashboxes if sb.get('endpoint') and sb.get('api_key')}
             
             for stash_id_entry in performer['stash_ids']:
                 endpoint = stash_id_entry.get('endpoint')
