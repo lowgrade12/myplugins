@@ -1838,10 +1838,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       });
       
       if (belowOpponents.length === 0) {
-        // Hit the bottom - they're the lowest, place them here
-        const finalRank = performers.length;
-        const finalRating = 1; // Lowest rating
-        updatePerformerRating(gauntletFallingItem.id, finalRating);
+        // No more undefeated opponents below - found their floor!
+        // The falling performer stays at their current position because:
+        // 1. Everyone below them was already defeated during their climb, OR
+        // 2. They're at the absolute bottom
+        // Keep their current rating (they've proven themselves against those below)
+        const currentRating = gauntletFallingItem.rating100 || 50;
+        const finalRank = fallingIndex + 1;
         
         return {
           performers: [gauntletFallingItem],
@@ -1850,7 +1853,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           isFalling: true,
           isPlacement: true,
           placementRank: finalRank,
-          placementRating: finalRating
+          placementRating: currentRating
         };
       } else {
         // Get next opponent below (first one, closest to falling performer)
@@ -3284,7 +3287,10 @@ async function fetchPerformerCount(performerFilter = {}) {
         // Champion LOST - start falling to find their floor
         gauntletFalling = true;
         gauntletFallingItem = loserItem; // The old champion is now falling
-        gauntletDefeated = [winnerId]; // They lost to this item
+        // Preserve the list of opponents already defeated during the climb
+        // Add the winner (who beat them) to the list so they don't fight them again
+        // This prevents the falling performer from dropping below people they've already beaten
+        gauntletDefeated.push(winnerId);
         
         // Winner becomes the new climbing champion
         gauntletChampion = winnerItem;
