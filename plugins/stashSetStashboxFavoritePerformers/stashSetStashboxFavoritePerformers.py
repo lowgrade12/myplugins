@@ -8,7 +8,8 @@ try:
     from stashlib.stash_database import StashDatabase
     from stashlib.stash_interface import StashInterface
 except ModuleNotFoundError:
-    print("If you have pip (normally installed with python), run this command in a terminal (cmd): pip install pystashlib)", file=sys.stderr)
+    print(f"pystashlib module not found. Install it using: {sys.executable} -m pip install pystashlib", file=sys.stderr)
+    print(f"Make sure the Python Executable Path in Stash settings matches: {sys.executable}", file=sys.stderr)
     sys.exit()
 
 STASHDB_ENDPOINT = 'https://stashdb.org/graphql'
