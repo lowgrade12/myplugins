@@ -47,10 +47,17 @@ A plugin for [Stash](https://stashapp.cc/) that uses an ELO-style rating system 
 - Beating higher-rated items earns more points
 - Losing to lower-rated items costs more points
 
+**Performer Card Display:**
+During battles, the performer card shows:
+- Name and profile image
+- Birthdate, ethnicity, and country (if available)
+- Scene count (number of scenes in your library)
+- Current rating
+
 **Adaptive K-Factor:**
-- New performers (<10 matches): K=32 for fast initial positioning
-- Moderately established (10-30 matches): K=24 for balanced adjustments
-- Well-established (30+ matches): K=16 for stable rankings
+- New performers (<10 matches): K=16 for initial positioning
+- Moderately established (10-29 matches): K=12 for balanced adjustments
+- Well-established (30+ matches): K=8 for stable rankings
 
 **Scene Count Weighting (Performers):**
 Performers with more scenes have more stable ratings (lower K-factor):

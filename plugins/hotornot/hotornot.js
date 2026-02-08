@@ -1254,18 +1254,23 @@
       winnerGain = applyDiminishingReturns(winnerRating, baseGain);
       loserLoss = Math.max(0, Math.round(loserK * expectedWinner));
     } else {
-      // Swiss mode: True ELO - both change based on expected outcome
+      // Swiss mode: True ELO with zero-sum property
+      // Both performers change by the same amount to maintain rating pool integrity
       const expectedWinner = 1 / (1 + Math.pow(10, ratingDiff / 40));
       
-      // Use individual K-factors for each performer for more accurate adjustments
+      // Use individual K-factors but average them for the match
+      // This maintains fairness while preserving zero-sum property
       const winnerK = getKFactor(winnerRating, winnerMatchCount, "swiss", winnerSceneCount);
       const loserK = getKFactor(loserRating, loserMatchCount, "swiss", loserSceneCount);
+      const avgK = (winnerK + loserK) / 2;
       
-      // Calculate changes using their respective K-factors
-      const baseGain = Math.max(0, Math.round(winnerK * (1 - expectedWinner)));
-      // Apply diminishing returns - harder to gain points at higher ratings
-      winnerGain = applyDiminishingReturns(winnerRating, baseGain);
-      loserLoss = Math.max(0, Math.round(loserK * expectedWinner));
+      // Calculate single rating change for zero-sum (winner gains what loser loses)
+      const baseChange = Math.max(0, Math.round(avgK * (1 - expectedWinner)));
+      
+      // Apply diminishing returns based on winner's rating (makes reaching 100 harder)
+      // Then set loser's loss equal to winner's gain (zero-sum)
+      winnerGain = applyDiminishingReturns(winnerRating, baseChange);
+      loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
     }
     
     let newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));
@@ -1443,6 +1448,33 @@
     const newRating = Math.max(1, winnerRating - 1);
     updateItemRating(championId, newRating);
     return newRating;
+  }
+  
+  /**
+   * Calculate the minimum acceptable final rating for a gauntlet performer.
+   * This ensures they don't drop below performers they've already beaten.
+   * @param {Array} performers - All performers sorted by rating (from fetchGauntletPairPerformers query)
+   * @returns {number} Minimum rating (highest defeated performer's rating + 1) or 1 if no defeats
+   */
+  function getMinimumRatingAboveDefeated(performers) {
+    if (!gauntletDefeated || gauntletDefeated.length === 0) {
+      return 1;
+    }
+    
+    // Find the highest rating among performers that were defeated
+    let maxDefeatedRating = 0;
+    for (const performer of performers) {
+      if (gauntletDefeated.includes(performer.id)) {
+        const rating = performer.rating100 || 50;
+        if (rating > maxDefeatedRating) {
+          maxDefeatedRating = rating;
+        }
+      }
+    }
+    
+    // Return a rating that's at least 1 point above the highest defeated performer
+    // This ensures the falling performer stays ranked above everyone they beat
+    return maxDefeatedRating > 0 ? maxDefeatedRating + 1 : 1;
   }
 
 
@@ -1842,9 +1874,18 @@ async function fetchPerformerCount(performerFilter = {}) {
         // The falling performer stays at their current position because:
         // 1. Everyone below them was already defeated during their climb, OR
         // 2. They're at the absolute bottom
-        // Keep their current rating (they've proven themselves against those below)
+        
+        // IMPORTANT: Ensure final rating is above all defeated performers
+        // This prevents dropping below performers they've already beaten
+        const minRating = getMinimumRatingAboveDefeated(performers);
         const currentRating = gauntletFallingItem.rating100 || 50;
-        const finalRank = fallingIndex + 1;
+        const finalRating = Math.max(minRating, currentRating);
+        
+        // Recalculate rank based on the adjusted final rating
+        // Count how many performers have ratings higher than finalRating
+        const finalRank = performers.filter(p => 
+          p.id !== gauntletFallingItem.id && (p.rating100 || 50) > finalRating
+        ).length + 1;
         
         return {
           performers: [gauntletFallingItem],
@@ -1853,7 +1894,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           isFalling: true,
           isPlacement: true,
           placementRank: finalRank,
-          placementRating: currentRating
+          placementRating: finalRating
         };
       } else {
         // Get next opponent below (first one, closest to falling performer)
@@ -2271,6 +2312,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     const birthdate = performer.birthdate || null;
     const ethnicity = performer.ethnicity || null;
     const country = performer.country || null;
+    const sceneCount = performer.scene_count || 0;
     const stashRating = performer.rating100 ? `${performer.rating100}/100` : "Unrated";
     
     // Handle numeric ranks and string ranks
@@ -2311,6 +2353,7 @@ async function fetchPerformerCount(performerFilter = {}) {
               ${birthdate ? `<div class="hon-meta-item"><strong>Birthdate:</strong> ${birthdate}</div>` : ''}
               ${ethnicity ? `<div class="hon-meta-item"><strong>Ethnicity:</strong> ${ethnicity}</div>` : ''}
               ${country ? `<div class="hon-meta-item"><strong>Country:</strong> ${country}</div>` : ''}
+              <div class="hon-meta-item"><strong>Scenes:</strong> ${sceneCount}</div>
               <div class="hon-meta-item"><strong>Rating:</strong> ${stashRating}</div>
             </div>
           </div>
@@ -3195,8 +3238,34 @@ async function fetchPerformerCount(performerFilter = {}) {
       if (gauntletFalling && gauntletFallingItem) {
         if (winnerId === gauntletFallingItem.id) {
           // Falling item won - found their floor!
-          // Set their rating to just above the item they beat
-          const finalRating = Math.min(100, loserRating + 1);
+          
+          // Fetch all performers to calculate proper placement
+          // This ensures we don't drop below anyone we've already beaten
+          const performerFilter = getPerformerFilter();
+          const performersQuery = `
+            query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
+              findPerformers(performer_filter: $performer_filter, filter: $filter) {
+                performers {
+                  id
+                  rating100
+                }
+              }
+            }
+          `;
+          
+          const performersResult = await graphqlQuery(performersQuery, {
+            performer_filter: performerFilter,
+            filter: { per_page: -1, sort: "rating", direction: "DESC" }
+          });
+          
+          const allPerformers = performersResult.findPerformers.performers || [];
+          
+          // Calculate minimum rating (must be above all defeated performers)
+          const minRating = getMinimumRatingAboveDefeated(allPerformers);
+          
+          // Final rating is the higher of: just above loser, or minimum to stay above defeated
+          const baseRating = Math.min(100, loserRating + 1);
+          const finalRating = Math.max(baseRating, minRating);
           
           // Fetch latest performer data to get current stats before updating (parallel fetch for performance)
           let freshFallingPerformer = gauntletFallingItem;
@@ -3217,9 +3286,11 @@ async function fetchPerformerCount(performerFilter = {}) {
           // Track participation for the loser (defender)
           updateItemRating(loserId, loserRating, freshLoserPerformer, null);
           
-          // Final rank is one above the opponent (we beat them, so we're above them)
-          const opponentRank = loserId === currentPair.left.id ? currentRanks.left : currentRanks.right;
-          const finalRank = Math.max(1, (opponentRank || 1) - 1);
+          // Calculate final rank based on adjusted rating
+          // Count performers with ratings higher than finalRating
+          const finalRank = allPerformers.filter(p => 
+            p.id !== gauntletFallingItem.id && (p.rating100 || 50) > finalRating
+          ).length + 1;
           
           // Visual feedback
           winnerCard.classList.add("hon-winner");
