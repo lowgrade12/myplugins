@@ -2271,6 +2271,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     const birthdate = performer.birthdate || null;
     const ethnicity = performer.ethnicity || null;
     const country = performer.country || null;
+    const sceneCount = performer.scene_count || 0;
     const stashRating = performer.rating100 ? `${performer.rating100}/100` : "Unrated";
     
     // Handle numeric ranks and string ranks
@@ -2311,6 +2312,7 @@ async function fetchPerformerCount(performerFilter = {}) {
               ${birthdate ? `<div class="hon-meta-item"><strong>Birthdate:</strong> ${birthdate}</div>` : ''}
               ${ethnicity ? `<div class="hon-meta-item"><strong>Ethnicity:</strong> ${ethnicity}</div>` : ''}
               ${country ? `<div class="hon-meta-item"><strong>Country:</strong> ${country}</div>` : ''}
+              <div class="hon-meta-item"><strong>Scenes:</strong> ${sceneCount}</div>
               <div class="hon-meta-item"><strong>Rating:</strong> ${stashRating}</div>
             </div>
           </div>
