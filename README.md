@@ -55,9 +55,9 @@ During battles, the performer card shows:
 - Current rating
 
 **Adaptive K-Factor:**
-- New performers (<10 matches): K=32 for fast initial positioning
-- Moderately established (10-30 matches): K=24 for balanced adjustments
-- Well-established (30+ matches): K=16 for stable rankings
+- New performers (<10 matches): K=16 for initial positioning
+- Moderately established (10-29 matches): K=12 for balanced adjustments
+- Well-established (30+ matches): K=8 for stable rankings
 
 **Scene Count Weighting (Performers):**
 Performers with more scenes have more stable ratings (lower K-factor):
