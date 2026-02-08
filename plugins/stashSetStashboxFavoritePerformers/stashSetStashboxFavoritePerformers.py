@@ -198,26 +198,12 @@ if hook_context:
     else:
         log.debug(f"Unhandled hook type or no entity ID: type={hook_type}, id={entity_id}")
 
-# Handle task execution (triggered manually or by JS)
+# Handle task execution (triggered manually)
 elif name == 'favorite_performers_sync':
     endpoint, api_key = get_stashdb_credentials(args.get('endpoint'), args.get('api_key'))
     if endpoint and api_key:
         set_stashbox_favorite_performers(server_connection, endpoint, api_key, tag_errors, tag_name)
-elif name == 'favorite_performer_sync':
-    endpoint, api_key = get_stashdb_credentials(args.get('endpoint'), args.get('api_key'))
-    stash_id = args.get('stash_id')
-    favorite = args.get('favorite')
-    log.debug(f"Favorite performer sync: endpoint={endpoint}, stash_id={stash_id}, favorite={favorite}")
-    if endpoint and api_key and stash_id is not None:
-        set_stashbox_favorite_performer(endpoint, api_key, stash_id, favorite)
 elif name == 'favorite_studios_sync':
     endpoint, api_key = get_stashdb_credentials(args.get('endpoint'), args.get('api_key'))
     if endpoint and api_key:
         set_stashbox_favorite_studios(server_connection, endpoint, api_key, tag_errors, tag_name)
-elif name == 'favorite_studio_sync':
-    endpoint, api_key = get_stashdb_credentials(args.get('endpoint'), args.get('api_key'))
-    stash_id = args.get('stash_id')
-    favorite = args.get('favorite')
-    log.debug(f"Favorite studio sync: endpoint={endpoint}, stash_id={stash_id}, favorite={favorite}")
-    if endpoint and api_key and stash_id is not None:
-        set_stashbox_favorite_studio(endpoint, api_key, stash_id, favorite)
