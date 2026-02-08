@@ -1449,33 +1449,6 @@
     updateItemRating(championId, newRating);
     return newRating;
   }
-  
-  /**
-   * Calculate the minimum acceptable final rating for a gauntlet performer.
-   * This ensures they don't drop below performers they've already beaten.
-   * @param {Array} performers - All performers sorted by rating (from fetchGauntletPairPerformers query)
-   * @returns {number} Minimum rating (highest defeated performer's rating + 1) or 1 if no defeats
-   */
-  function getMinimumRatingAboveDefeated(performers) {
-    if (!gauntletDefeated || gauntletDefeated.length === 0) {
-      return 1;
-    }
-    
-    // Find the highest rating among performers that were defeated
-    let maxDefeatedRating = 0;
-    for (const performer of performers) {
-      if (gauntletDefeated.includes(performer.id)) {
-        const rating = performer.rating100 || 50;
-        if (rating > maxDefeatedRating) {
-          maxDefeatedRating = rating;
-        }
-      }
-    }
-    
-    // Return a rating that's at least 1 point above the highest defeated performer
-    // This ensures the falling performer stays ranked above everyone they beat
-    return maxDefeatedRating > 0 ? maxDefeatedRating + 1 : 1;
-  }
 
 
   // ============================================
@@ -1871,20 +1844,12 @@ async function fetchPerformerCount(performerFilter = {}) {
       
       if (belowOpponents.length === 0) {
         // No more undefeated opponents below - found their floor!
-        // The falling performer stays at their current position because:
-        // 1. Everyone below them was already defeated during their climb, OR
-        // 2. They're at the absolute bottom
-        
-        // IMPORTANT: Ensure final rating is above all defeated performers
-        // This prevents dropping below performers they've already beaten
-        const minRating = getMinimumRatingAboveDefeated(performers);
+        // Simply place them at their current position
         const currentRating = gauntletFallingItem.rating100 || 50;
-        const finalRating = Math.max(minRating, currentRating);
         
-        // Recalculate rank based on the adjusted final rating
-        // Count how many performers have ratings higher than finalRating
+        // Calculate rank based on current rating
         const finalRank = performers.filter(p => 
-          p.id !== gauntletFallingItem.id && (p.rating100 || 50) > finalRating
+          p.id !== gauntletFallingItem.id && (p.rating100 || 50) > currentRating
         ).length + 1;
         
         return {
@@ -1894,7 +1859,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           isFalling: true,
           isPlacement: true,
           placementRank: finalRank,
-          placementRating: finalRating
+          placementRating: currentRating
         };
       } else {
         // Get next opponent below (first one, closest to falling performer)
@@ -3238,9 +3203,12 @@ async function fetchPerformerCount(performerFilter = {}) {
       if (gauntletFalling && gauntletFallingItem) {
         if (winnerId === gauntletFallingItem.id) {
           // Falling item won - found their floor!
+          // Simple placement: place them just above the person they beat
           
-          // Fetch all performers to calculate proper placement
-          // This ensures we don't drop below anyone we've already beaten
+          // Final rating is just above the loser they beat
+          const finalRating = Math.min(100, loserRating + 1);
+          
+          // Fetch all performers to calculate rank for display
           const performerFilter = getPerformerFilter();
           const performersQuery = `
             query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
@@ -3259,13 +3227,6 @@ async function fetchPerformerCount(performerFilter = {}) {
           });
           
           const allPerformers = performersResult.findPerformers.performers || [];
-          
-          // Calculate minimum rating (must be above all defeated performers)
-          const minRating = getMinimumRatingAboveDefeated(allPerformers);
-          
-          // Final rating is the higher of: just above loser, or minimum to stay above defeated
-          const baseRating = Math.min(100, loserRating + 1);
-          const finalRating = Math.max(baseRating, minRating);
           
           // Fetch latest performer data to get current stats before updating (parallel fetch for performance)
           let freshFallingPerformer = gauntletFallingItem;
@@ -3286,7 +3247,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           // Track participation for the loser (defender)
           updateItemRating(loserId, loserRating, freshLoserPerformer, null);
           
-          // Calculate final rank based on adjusted rating
+          // Calculate final rank based on the final rating
           // Count performers with ratings higher than finalRating
           const finalRank = allPerformers.filter(p => 
             p.id !== gauntletFallingItem.id && (p.rating100 || 50) > finalRating
@@ -3303,7 +3264,8 @@ async function fetchPerformerCount(performerFilter = {}) {
           return;
         } else {
           // Falling item lost again - keep falling
-          gauntletDefeated.push(winnerId);
+          // Note: We don't add winners to gauntletDefeated during falling phase
+          // gauntletDefeated is only for performers beaten during the climb
           
           // Fetch latest performer data to get current stats before updating (parallel fetch for performance)
           let freshFallingPerformer = gauntletFallingItem;
@@ -3358,10 +3320,11 @@ async function fetchPerformerCount(performerFilter = {}) {
         // Champion LOST - start falling to find their floor
         gauntletFalling = true;
         gauntletFallingItem = loserItem; // The old champion is now falling
+        // Update the falling item's rating to match what handleComparison calculated
+        gauntletFallingItem.rating100 = newLoserRating;
         // Preserve the list of opponents already defeated during the climb
-        // Add the winner (who beat them) to the list so they don't fight them again
-        // This prevents the falling performer from dropping below people they've already beaten
-        gauntletDefeated.push(winnerId);
+        // Note: Don't add the winner to gauntletDefeated - they beat us fair and square
+        // gauntletDefeated is only for performers we actually defeated
         
         // Winner becomes the new climbing champion
         gauntletChampion = winnerItem;
