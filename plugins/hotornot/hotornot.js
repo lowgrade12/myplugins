@@ -1254,18 +1254,23 @@
       winnerGain = applyDiminishingReturns(winnerRating, baseGain);
       loserLoss = Math.max(0, Math.round(loserK * expectedWinner));
     } else {
-      // Swiss mode: True ELO - both change based on expected outcome
+      // Swiss mode: True ELO with zero-sum property
+      // Both performers change by the same amount to maintain rating pool integrity
       const expectedWinner = 1 / (1 + Math.pow(10, ratingDiff / 40));
       
-      // Use individual K-factors for each performer for more accurate adjustments
+      // Use individual K-factors but average them for the match
+      // This maintains fairness while preserving zero-sum property
       const winnerK = getKFactor(winnerRating, winnerMatchCount, "swiss", winnerSceneCount);
       const loserK = getKFactor(loserRating, loserMatchCount, "swiss", loserSceneCount);
+      const avgK = (winnerK + loserK) / 2;
       
-      // Calculate changes using their respective K-factors
-      const baseGain = Math.max(0, Math.round(winnerK * (1 - expectedWinner)));
-      // Apply diminishing returns - harder to gain points at higher ratings
-      winnerGain = applyDiminishingReturns(winnerRating, baseGain);
-      loserLoss = Math.max(0, Math.round(loserK * expectedWinner));
+      // Calculate single rating change for zero-sum (winner gains what loser loses)
+      const baseChange = Math.max(0, Math.round(avgK * (1 - expectedWinner)));
+      
+      // Apply diminishing returns based on winner's rating (makes reaching 100 harder)
+      // Then set loser's loss equal to winner's gain (zero-sum)
+      winnerGain = applyDiminishingReturns(winnerRating, baseChange);
+      loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
     }
     
     let newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));

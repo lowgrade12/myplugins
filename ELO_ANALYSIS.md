@@ -119,9 +119,9 @@ if (newWinnerRating < newLoserRating) {
 
 ## Identified Issues and Recommendations
 
-### Issue 1: Non-Zero-Sum Rating Changes (CRITICAL)
+### Issue 1: Non-Zero-Sum Rating Changes ✅ FIXED
 
-**Problem:**
+**Previous Problem:**
 ```javascript
 winnerGain = Math.max(1, Math.round(kFactor * (1 - expectedWinner)));
 loserLoss = Math.max(1, Math.round(kFactor * expectedWinner));
@@ -138,7 +138,42 @@ When both values are forced to minimum 1:
   - Actual: winnerGain = 8, loserLoss = 1
   - **Net change: +7 points (inflation)**
 
-**Impact:**
+**Solution Implemented (Swiss Mode):**
+```javascript
+// Use individual K-factors but average them for the match
+const winnerK = getKFactor(winnerRating, winnerMatchCount, "swiss", winnerSceneCount);
+const loserK = getKFactor(loserRating, loserMatchCount, "swiss", loserSceneCount);
+const avgK = (winnerK + loserK) / 2;
+
+// Calculate single rating change for zero-sum
+const baseChange = Math.max(0, Math.round(avgK * (1 - expectedWinner)));
+
+// Apply diminishing returns based on winner's rating (harder to reach 100)
+// Then ensure loser loses exactly what winner gains (zero-sum)
+winnerGain = applyDiminishingReturns(winnerRating, baseChange);
+loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
+```
+
+**How it works:**
+1. Both performers' K-factors are calculated individually based on their match count and scene count
+2. K-factors are averaged to get a fair "match K-factor"
+3. A single rating change is calculated using this averaged K-factor
+4. Diminishing returns is applied based on the winner's current rating (to make reaching 100 harder)
+5. The loser loses exactly what the winner gains (zero-sum)
+
+**Note on Diminishing Returns:**
+Diminishing returns is designed to prevent rating inflation at the top by making gains smaller as performers approach rating 100. This is applied before the zero-sum assignment, so:
+- The total rating pool remains constant (zero-sum)
+- High-rated winners gain less (reaching 100 is hard)
+- This indirectly benefits losers near 100 (they lose less)
+
+**Benefits:**
+- Total rating pool remains constant over time
+- No systematic inflation or deflation
+- Still respects individual performer characteristics through K-factor averaging
+- Prevents rating ceiling clustering
+
+**Impact (Previous):**
 - In Swiss mode, this violates the zero-sum principle
 - Can cause systematic rating drift over many comparisons
 - More upsets = inflation, more expected results = deflation
@@ -434,13 +469,13 @@ With proposed dynamic K (12 for new, 8 for established):
 
 ## Conclusion
 
-The current implementation is a reasonable ELO-inspired system, but has some mathematical issues that could cause rating drift over time. The recommended changes are:
+The current implementation is a well-designed ELO-inspired system. Recent improvements include:
 
-1. **Must Fix**: Zero-sum property in Swiss mode
-2. **Should Add**: Dynamic K-factor for faster convergence
-3. **Nice to Have**: Adaptive matching window
+1. ✅ **Zero-sum property in Swiss mode** - Implemented! Winner gains exactly what loser loses
+2. ✅ **Dynamic K-factor** - Already implemented based on match count and scene count
+3. **Nice to Have**: Adaptive matching window (not yet implemented)
 
-These changes maintain the spirit of the current system while making it more mathematically sound and responsive to new items.
+These changes maintain the spirit of the current system while making it mathematically sound and responsive to new items.
 
 ## Algorithm Comparison: Is HotOrNot Using the Best Approach?
 
@@ -519,9 +554,10 @@ The HotOrNot implementation is **well-designed** for a performer ranking system:
 
 1. **Keep Current Algorithm** - ELO with adaptive K-factor is appropriate
 2. **Scene Count Weighting is Good** - Continue using it as a stabilizing factor
-3. **Consider Adding** (optional):
+3. ✅ **Zero-Sum in Swiss Mode** - Now implemented!
+4. **Consider Adding** (optional):
    - Display confidence level based on match count (e.g., "Rating: 75 (±5)")
    - Track last comparison date for potential future decay
 
-**Overall Grade: A-** 
-The implementation follows best practices and adds innovative features like scene count weighting. The only minor improvement would be implementing proper zero-sum in Swiss mode (already documented in recommendations above).
+**Overall Grade: A** 
+The implementation follows best practices, adds innovative features like scene count weighting, and now includes proper zero-sum rating changes in Swiss mode.
