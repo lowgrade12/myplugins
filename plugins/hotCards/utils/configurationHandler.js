@@ -20,27 +20,6 @@ const DEFAULTS = {
     animate: false,
   },
 };
-
-// Simple style shortcuts - users can just type "gold" instead of full config
-// These map to the style presets defined in hotCards.js (STYLES object)
-const STYLE_SHORTCUTS = ["default", "hot", "bronze", "silver", "gold", "holo"];
-
-// Common CSS color names for quick card styling
-// These allow users to use simple color names directly (e.g., "red", "blue")
-// Colors not in this list can still be used via hex codes (#ff0000) or CSS functions (rgb/hsl)
-const CSS_COLOR_NAMES = [
-  "red", "blue", "green", "yellow", "orange", "purple", "pink", "cyan",
-  "magenta", "lime", "teal", "navy", "maroon", "olive", "aqua", "fuchsia",
-  "white", "black", "gray", "grey", "crimson", "coral", "tomato", "salmon",
-  "indianred", "darkred", "firebrick", "lightcoral", "darkorange", "goldenrod",
-  "khaki", "plum", "violet", "orchid", "indigo", "slateblue", "darkslateblue",
-  "mediumseagreen", "forestgreen", "darkgreen", "lightgreen", "springgreen",
-  "darkturquoise", "deepskyblue", "dodgerblue", "royalblue", "steelblue",
-  "midnightblue", "darkviolet", "darkmagenta", "deeppink", "hotpink",
-  "chocolate", "saddlebrown", "sienna", "peru", "tan", "burlywood",
-  "slategray", "slategrey", "darkslategray", "darkslategrey", "dimgray", "dimgrey",
-  "lightgray", "lightgrey", "gainsboro", "whitesmoke", "snow", "ivory"
-];
 const CARD_KEYS = {
   galleries: "gallery",
   images: "image",
@@ -69,35 +48,7 @@ function parseSettings(settings) {
 }
 
 function parseField(input) {
-  const inputStr = input.toString().trim();
-  
-  // Simple shortcut: if input is just a style name (e.g., "gold", "silver", "bronze"),
-  // automatically expand it to full configuration with that style
-  if (isSimpleStyleShortcut(inputStr)) {
-    return {
-      criterion: DEFAULTS.criterion,
-      value: DEFAULTS.value,
-      style: [inputStr],
-      gradient_opts: [DEFAULTS.gradient_opts],
-      hover_opts: [DEFAULTS.hover_opts],
-      card_opts: [DEFAULTS.card_opts],
-    };
-  }
-  
-  // Color shortcut: if input looks like a color (e.g., "#ff0000", "red", "rgb(...)"),
-  // automatically expand it to full configuration with that color
-  if (isColorValue(inputStr)) {
-    return {
-      criterion: DEFAULTS.criterion,
-      value: DEFAULTS.value,
-      style: [inputStr],
-      gradient_opts: [DEFAULTS.gradient_opts],
-      hover_opts: [DEFAULTS.hover_opts],
-      card_opts: [DEFAULTS.card_opts],
-    };
-  }
-  
-  const segments = inputStr.split(SEPARATOR);
+  const segments = input.toString().split(SEPARATOR);
 
   return {
     criterion: segments[0] || DEFAULTS.criterion,
@@ -118,35 +69,6 @@ function parseField(input) {
       "animate",
     ]),
   };
-}
-
-/**
- * Check if input is a simple style shortcut (e.g., "gold", "silver", "bronze")
- * These map directly to the preset styles in the STYLES object (defined in hotCards.js).
- * If a matching preset exists, it will use that style's gradient, hover, and card settings.
- * If the preset doesn't exist, the input will be treated as a CSS color value instead.
- */
-function isSimpleStyleShortcut(input) {
-  return STYLE_SHORTCUTS.includes(input.toLowerCase());
-}
-
-/**
- * Check if input looks like a color value.
- * Supports: hex colors (#fff, #ffffff), CSS color names, rgb(), rgba(), hsl(), hsla()
- * For color names not in CSS_COLOR_NAMES, users can use hex codes or CSS functions.
- */
-function isColorValue(input) {
-  // Hex color patterns: #fff or #ffffff or #ffffffff (with alpha)
-  if (/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(input)) {
-    return true;
-  }
-  
-  // CSS color functions: rgb(), rgba(), hsl(), hsla()
-  if (/^(rgb|rgba|hsl|hsla)\s*\(/i.test(input)) {
-    return true;
-  }
-  
-  return CSS_COLOR_NAMES.includes(input.toLowerCase());
 }
 
 function parseArraySegment(segment, defaults, keys) {
