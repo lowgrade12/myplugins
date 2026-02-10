@@ -123,14 +123,35 @@ async function setConfiguration() {
   Object.assign(CARDS, getCards(settings));
 }
 
+/**
+ * Creates a default config object with proper structure.
+ * Used when settings for a card type are not defined.
+ */
+function getDefaultConfig() {
+  return {
+    criterion: DEFAULTS.criterion,
+    value: DEFAULTS.value,
+    style: DEFAULTS.style,
+    gradient_opts: [DEFAULTS.gradient_opts],
+    hover_opts: [DEFAULTS.hover_opts],
+    card_opts: [DEFAULTS.card_opts],
+  };
+}
+
 function getCards(settings) {
   return Object.entries(CARD_KEYS).reduce((acc, [plural, singular]) => {
+    const cardSettings = settings[plural];
+    // If settings exist and have valid structure (object with criterion property), use them
+    // Otherwise, use default config to prevent "config.value is undefined" errors
+    const hasValidConfig = cardSettings && typeof cardSettings === 'object' && 'criterion' in cardSettings;
+    
     acc[singular] = {
       type: singular,
       class: `${singular}-card`,
-      config: settings[plural] || "",
+      config: hasValidConfig ? cardSettings : getDefaultConfig(),
       data: stash[plural],
-      enabled: settings[plural]?.criterion !== CRITERIA.disabled,
+      // Only enable if we have valid config AND criterion is not disabled
+      enabled: hasValidConfig && cardSettings.criterion !== CRITERIA.disabled,
     };
     return acc;
   }, {});
