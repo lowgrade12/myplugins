@@ -273,15 +273,16 @@ function handleHotCards(type, isHome = false) {
 function createAndInsertHotCards(stashData, cardClass, config, isHome) {
   // Defensive check: ensure config is a valid object with expected properties
   if (!config || typeof config !== 'object') {
-    console.warn('hotCards: Invalid config provided to createAndInsertHotCards');
+    console.warn('hotCards: Invalid config provided to createAndInsertHotCards. Expected config to be a valid object with value array property.');
     return;
   }
 
   const { criterion, value, style, card_opts } = config;
 
   // FIX: Add defensive check for undefined value to prevent "Cannot read properties of undefined (reading 'length')"
+  // The value property should be an array of tag IDs or rating thresholds from the plugin settings
   if (!value || !Array.isArray(value)) {
-    console.warn('hotCards: config.value is undefined or not an array, skipping card processing');
+    console.warn('hotCards: config.value is undefined or not an array, skipping card processing. Expected an array like ["tagId1"] or ["4", "5"]. Check your plugin settings.');
     return;
   }
 
@@ -297,6 +298,8 @@ function createAndInsertHotCards(stashData, cardClass, config, isHome) {
   if (activeHotCardTypes.includes(cardClass)) return;
 
   cards.forEach((card) => {
+    // FIX: Some card layouts may not have a thumbnail-section link element,
+    // skip processing for cards without proper structure
     const link = card.querySelector(".thumbnail-section > a");
     if (!link) return;
 
@@ -421,8 +424,9 @@ function setHotCardStyling(card) {
   const { value, style, gradient_opts, hover_opts, card_opts } = card.config;
 
   // FIX: Add defensive check for value array
+  // The value property should be an array from the parsed plugin settings
   if (!value || !Array.isArray(value)) {
-    console.warn('hotCards: card.config.value is undefined or not an array in setHotCardStyling');
+    console.warn('hotCards: card.config.value is undefined or not an array in setHotCardStyling. Check your plugin settings configuration.');
     return;
   }
 

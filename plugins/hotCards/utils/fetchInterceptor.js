@@ -12,8 +12,8 @@
     if (
       typeof resource === "string" &&
       contentType &&
-      (contentType.indexOf('application/json') !== -1 || 
-      contentType.indexOf('application/graphql-response+json') !== -1) &&
+      (contentType.includes('application/json') || 
+      contentType.includes('application/graphql-response+json')) &&
       resource.endsWith("/graphql")
     ) {
       try {
