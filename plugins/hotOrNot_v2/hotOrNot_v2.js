@@ -3863,8 +3863,7 @@ function addFloatingButton() {
       if (!label) continue;
       
       // Check if this is the hotornot_stats field
-      if (label.textContent.toLowerCase().includes('hotornot_stats') || 
-          label.textContent.toLowerCase() === 'hotornot_stats') {
+      if (label.textContent.toLowerCase().includes('hotornot_stats')) {
         
         // Check if already enhanced
         if (item.classList.contains('hon-enhanced-stats')) return;
@@ -3935,9 +3934,12 @@ function addFloatingButton() {
                         currentStreak < 0 ? 'hon-stat-negative' : 'hon-stat-neutral';
     const streakPrefix = currentStreak > 0 ? '+' : '';
     
-    // Best/worst streaks
+    // Best/worst streaks with conditional styling
     const bestStreak = stats.best_streak || 0;
     const worstStreak = stats.worst_streak || 0;
+    const bestStreakClass = bestStreak > 0 ? 'hon-stat-positive' : 'hon-stat-neutral';
+    const bestStreakPrefix = bestStreak > 0 ? '+' : '';
+    const worstStreakClass = worstStreak < 0 ? 'hon-stat-negative' : 'hon-stat-neutral';
     
     container.innerHTML = `
       <div class="hon-stats-grid">
@@ -3967,11 +3969,11 @@ function addFloatingButton() {
         </div>
         <div class="hon-stat-item">
           <span class="hon-stat-label">Best Streak</span>
-          <span class="hon-stat-value hon-stat-positive">+${bestStreak}</span>
+          <span class="hon-stat-value ${bestStreakClass}">${bestStreakPrefix}${bestStreak}</span>
         </div>
         <div class="hon-stat-item">
           <span class="hon-stat-label">Worst Streak</span>
-          <span class="hon-stat-value hon-stat-negative">${worstStreak}</span>
+          <span class="hon-stat-value ${worstStreakClass}">${worstStreak}</span>
         </div>
         <div class="hon-stat-item hon-stat-date">
           <span class="hon-stat-label">Last Match</span>
