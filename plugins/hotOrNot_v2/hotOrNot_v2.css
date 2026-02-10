@@ -1390,3 +1390,110 @@
     font-size: 0.8rem;
   }
 }
+
+/* ============================================
+   PERFORMER PAGE CUSTOM FIELDS ENHANCEMENT
+   ============================================ */
+
+/* Enhanced hotornot_stats display on performer detail pages */
+.hon-enhanced-stats .detail-item-value {
+  width: 100%;
+}
+
+.hon-stats-display {
+  width: 100%;
+}
+
+.hon-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.hon-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 8px 4px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.hon-stat-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.hon-stat-item.hon-stat-main {
+  grid-column: span 2;
+  background: linear-gradient(135deg, rgba(13, 110, 253, 0.15) 0%, rgba(13, 110, 253, 0.05) 100%);
+  border: 1px solid rgba(13, 110, 253, 0.3);
+}
+
+.hon-stat-item.hon-stat-date {
+  grid-column: span 2;
+}
+
+.hon-stat-label {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.hon-stat-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.hon-stat-main .hon-stat-value {
+  font-size: 1.5rem;
+}
+
+.hon-stat-winrate {
+  color: #0d6efd !important;
+}
+
+.hon-stat-positive {
+  color: #28a745 !important;
+}
+
+.hon-stat-negative {
+  color: #dc3545 !important;
+}
+
+.hon-stat-neutral {
+  color: #6c757d !important;
+}
+
+/* Responsive adjustments for the stats grid */
+@media (max-width: 576px) {
+  .hon-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+  
+  .hon-stat-item {
+    padding: 6px 2px;
+  }
+  
+  .hon-stat-label {
+    font-size: 0.7rem;
+  }
+  
+  .hon-stat-value {
+    font-size: 1rem;
+  }
+  
+  .hon-stat-main .hon-stat-value {
+    font-size: 1.25rem;
+  }
+}

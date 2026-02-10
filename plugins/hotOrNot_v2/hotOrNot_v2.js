@@ -3733,10 +3733,17 @@ function addFloatingButton() {
     console.log("[HotOrNot] Initialized");
     
     addFloatingButton();
+    
+    // Enhance custom fields display on performer pages
+    enhancePerformerPageCustomFields();
 
     // Watch for SPA navigation
     const observer = new MutationObserver(() => {
       addFloatingButton();
+      // Also try to enhance custom fields on navigation
+      if (isOnSinglePerformerPage()) {
+        enhancePerformerPageCustomFields();
+      }
     });
 
     observer.observe(document.body, {
@@ -3768,8 +3775,212 @@ function addFloatingButton() {
             }
           }
         }
+        
+        // Enhance custom fields when navigating to a performer page
+        if (path.match(/^\/performers\/\d+/)) {
+          // Small delay to let React render the page
+          setTimeout(() => {
+            enhancePerformerPageCustomFields();
+          }, 500);
+        }
       });
     }
+  }
+  
+  // ============================================
+  // PERFORMER PAGE CUSTOM FIELDS ENHANCEMENT
+  // ============================================
+  
+  /**
+   * Enhance the custom fields display on performer detail pages.
+   * - Auto-expands the custom fields section
+   * - Styles the hotornot_stats field with a nice display
+   */
+  function enhancePerformerPageCustomFields() {
+    if (!isOnSinglePerformerPage()) return;
+    
+    // Wait for the custom fields section to be rendered
+    waitForCustomFieldsSection(() => {
+      autoExpandCustomFields();
+      styleHotOrNotStatsField();
+    });
+  }
+  
+  /**
+   * Wait for the custom fields section to appear in the DOM
+   * @param {Function} callback - Callback to run when custom fields section is found
+   * @param {number} maxAttempts - Maximum number of attempts (default 20)
+   */
+  function waitForCustomFieldsSection(callback, maxAttempts = 20) {
+    let attempts = 0;
+    
+    const check = () => {
+      attempts++;
+      const customFieldsSection = document.querySelector('.custom-fields');
+      
+      if (customFieldsSection) {
+        callback();
+        return;
+      }
+      
+      if (attempts < maxAttempts) {
+        setTimeout(check, 250);
+      }
+    };
+    
+    check();
+  }
+  
+  /**
+   * Auto-expand the custom fields collapsible section on performer detail pages
+   */
+  function autoExpandCustomFields() {
+    const customFieldsSection = document.querySelector('.custom-fields');
+    if (!customFieldsSection) return;
+    
+    // Check if already expanded (the collapse button controls this)
+    const collapseButton = customFieldsSection.querySelector('.collapse-button');
+    if (!collapseButton) return;
+    
+    // Check if the collapse content is currently hidden
+    const collapseContent = customFieldsSection.querySelector('.collapse');
+    if (collapseContent && !collapseContent.classList.contains('show')) {
+      // Click the button to expand
+      collapseButton.click();
+      console.log('[HotOrNot] Auto-expanded custom fields section');
+    }
+  }
+  
+  /**
+   * Style the hotornot_stats custom field with a formatted display
+   */
+  function styleHotOrNotStatsField() {
+    // Find the hotornot_stats field - look for detail item with id containing 'hotornot'
+    const detailItems = document.querySelectorAll('.custom-fields .detail-item');
+    
+    for (const item of detailItems) {
+      const label = item.querySelector('.detail-item-title');
+      if (!label) continue;
+      
+      // Check if this is the hotornot_stats field
+      if (label.textContent.toLowerCase().includes('hotornot_stats') || 
+          label.textContent.toLowerCase() === 'hotornot_stats') {
+        
+        // Check if already enhanced
+        if (item.classList.contains('hon-enhanced-stats')) return;
+        item.classList.add('hon-enhanced-stats');
+        
+        // Get the value element
+        const valueElement = item.querySelector('.detail-item-value');
+        if (!valueElement) continue;
+        
+        // Get the raw JSON text
+        const rawText = valueElement.textContent;
+        
+        try {
+          // Parse the JSON stats
+          const stats = JSON.parse(rawText);
+          
+          // Create a styled display
+          const styledContent = createStyledStatsDisplay(stats);
+          
+          // Replace the content
+          valueElement.innerHTML = '';
+          valueElement.appendChild(styledContent);
+          
+          console.log('[HotOrNot] Enhanced hotornot_stats display');
+        } catch (e) {
+          console.warn('[HotOrNot] Failed to parse hotornot_stats:', e);
+        }
+        
+        break;
+      }
+    }
+  }
+  
+  /**
+   * Create a styled display for the hotornot stats
+   * @param {Object} stats - The parsed stats object
+   * @returns {HTMLElement} The styled stats display element
+   */
+  function createStyledStatsDisplay(stats) {
+    const container = document.createElement('div');
+    container.className = 'hon-stats-display';
+    
+    // Calculate win rate
+    const totalMatches = stats.total_matches || 0;
+    const wins = stats.wins || 0;
+    const losses = stats.losses || 0;
+    const draws = stats.draws || 0;
+    const winRate = totalMatches > 0 ? ((wins / totalMatches) * 100).toFixed(1) : '0.0';
+    
+    // Format last match date
+    let lastMatchDisplay = 'Never';
+    if (stats.last_match) {
+      try {
+        const date = new Date(stats.last_match);
+        lastMatchDisplay = date.toLocaleDateString(undefined, { 
+          year: 'numeric', 
+          month: 'short', 
+          day: 'numeric' 
+        });
+      } catch (e) {
+        lastMatchDisplay = stats.last_match;
+      }
+    }
+    
+    // Current streak with color coding
+    const currentStreak = stats.current_streak || 0;
+    const streakClass = currentStreak > 0 ? 'hon-stat-positive' : 
+                        currentStreak < 0 ? 'hon-stat-negative' : 'hon-stat-neutral';
+    const streakPrefix = currentStreak > 0 ? '+' : '';
+    
+    // Best/worst streaks
+    const bestStreak = stats.best_streak || 0;
+    const worstStreak = stats.worst_streak || 0;
+    
+    container.innerHTML = `
+      <div class="hon-stats-grid">
+        <div class="hon-stat-item hon-stat-main">
+          <span class="hon-stat-label">Win Rate</span>
+          <span class="hon-stat-value hon-stat-winrate">${winRate}%</span>
+        </div>
+        <div class="hon-stat-item">
+          <span class="hon-stat-label">Matches</span>
+          <span class="hon-stat-value">${totalMatches}</span>
+        </div>
+        <div class="hon-stat-item">
+          <span class="hon-stat-label">Wins</span>
+          <span class="hon-stat-value hon-stat-positive">${wins}</span>
+        </div>
+        <div class="hon-stat-item">
+          <span class="hon-stat-label">Losses</span>
+          <span class="hon-stat-value hon-stat-negative">${losses}</span>
+        </div>
+        <div class="hon-stat-item">
+          <span class="hon-stat-label">Draws</span>
+          <span class="hon-stat-value hon-stat-neutral">${draws}</span>
+        </div>
+        <div class="hon-stat-item">
+          <span class="hon-stat-label">Current Streak</span>
+          <span class="hon-stat-value ${streakClass}">${streakPrefix}${currentStreak}</span>
+        </div>
+        <div class="hon-stat-item">
+          <span class="hon-stat-label">Best Streak</span>
+          <span class="hon-stat-value hon-stat-positive">+${bestStreak}</span>
+        </div>
+        <div class="hon-stat-item">
+          <span class="hon-stat-label">Worst Streak</span>
+          <span class="hon-stat-value hon-stat-negative">${worstStreak}</span>
+        </div>
+        <div class="hon-stat-item hon-stat-date">
+          <span class="hon-stat-label">Last Match</span>
+          <span class="hon-stat-value">${lastMatchDisplay}</span>
+        </div>
+      </div>
+    `;
+    
+    return container;
   }
 
   if (document.readyState === "loading") {
