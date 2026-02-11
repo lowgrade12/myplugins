@@ -242,9 +242,12 @@
   position: relative;
   display: block;
   width: 100%;
+  max-width: 350px;
+  max-height: 525px;
   aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
   overflow: hidden;
   background: var(--hon-image-bg, #1a1a1a);
+  margin: 0 auto;
 }
 
 .hon-scene-image {
@@ -276,7 +279,7 @@
   }
   
   .hon-performer-image-container.hon-scene-image-container {
-    max-height: none;
+    max-height: 450px;
   }
 }
 
@@ -826,8 +829,10 @@
 /* Override scene styles for performer images to use uniform sizing */
 .hon-performer-image-container.hon-scene-image-container {
   aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
-  max-height: none;
+  max-width: 350px;
+  max-height: 525px;
   display: block;
+  margin: 0 auto;
 }
 
 .hon-performer-image.hon-scene-image {
