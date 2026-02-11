@@ -1392,108 +1392,111 @@
 }
 
 /* ============================================
-   PERFORMER PAGE CUSTOM FIELDS ENHANCEMENT
+   BATTLE RANK BADGE (Performer Detail Page)
    ============================================ */
 
-/* Enhanced hotornot_stats display on performer detail pages */
-.hon-enhanced-stats .detail-item-value {
-  width: 100%;
-}
-
-.hon-stats-display {
-  width: 100%;
-}
-
-.hon-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 12px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.hon-stat-item {
-  display: flex;
-  flex-direction: column;
+.hon-battle-rank-badge {
+  display: inline-flex;
   align-items: center;
-  text-align: center;
-  padding: 8px 4px;
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 6px;
-  transition: background 0.2s ease;
-}
-
-.hon-stat-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.hon-stat-item.hon-stat-main {
-  grid-column: span 2;
-  background: linear-gradient(135deg, rgba(13, 110, 253, 0.15) 0%, rgba(13, 110, 253, 0.05) 100%);
-  border: 1px solid rgba(13, 110, 253, 0.3);
-}
-
-.hon-stat-item.hon-stat-date {
-  grid-column: span 2;
-}
-
-.hon-stat-label {
-  font-size: 0.75rem;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.hon-stat-value {
-  font-size: 1.1rem;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.9rem;
   font-weight: 600;
+  background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+  border: 1px solid #444;
   color: #fff;
+  margin-left: 10px;
+  vertical-align: middle;
+  cursor: default;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.hon-stat-main .hon-stat-value {
-  font-size: 1.5rem;
+.hon-battle-rank-badge:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-.hon-stat-winrate {
-  color: #0d6efd !important;
+.hon-rank-emoji {
+  font-size: 1.1em;
 }
 
-.hon-stat-positive {
-  color: #28a745 !important;
+.hon-rank-text {
+  font-weight: 700;
 }
 
-.hon-stat-negative {
-  color: #dc3545 !important;
+.hon-rank-total {
+  color: #888;
+  font-size: 0.85em;
 }
 
-.hon-stat-neutral {
-  color: #6c757d !important;
+/* Note: Rank tier color styles removed for better readability.
+   Badge now uses consistent plain styling. Tier is still indicated by emoji. */
+
+/* ============================================
+   MATCH STATS IN BATTLE RANK BADGE
+   ============================================ */
+
+.hon-match-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 0.85em;
 }
 
-/* Responsive adjustments for the stats grid */
-@media (max-width: 576px) {
-  .hon-stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-    padding: 8px;
+.hon-stats-record {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.hon-wins {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.hon-losses {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.hon-draws {
+  color: #a3a3a3;
+  font-weight: 600;
+}
+
+.hon-win-rate {
+  color: #60a5fa;
+  font-weight: 700;
+}
+
+.hon-streak-positive {
+  color: #4ade80;
+  font-weight: 700;
+  padding: 1px 6px;
+  background: rgba(74, 222, 128, 0.2);
+  border-radius: 10px;
+}
+
+.hon-streak-negative {
+  color: #f87171;
+  font-weight: 700;
+  padding: 1px 6px;
+  background: rgba(248, 113, 113, 0.2);
+  border-radius: 10px;
+}
+
+/* Note: Tier-specific match stats adjustments removed as badge now uses plain styling */
+
+/* Responsive adjustments for match stats */
+@media (max-width: 768px) {
+  .hon-match-stats {
+    display: none;
   }
   
-  .hon-stat-item {
-    padding: 6px 2px;
-  }
-  
-  .hon-stat-label {
-    font-size: 0.7rem;
-  }
-  
-  .hon-stat-value {
-    font-size: 1rem;
-  }
-  
-  .hon-stat-main .hon-stat-value {
-    font-size: 1.25rem;
+  .hon-battle-rank-badge {
+    flex-wrap: nowrap;
   }
 }

@@ -11,10 +11,12 @@
   let gauntletDefeated = []; // IDs of items defeated in current run
   let gauntletFalling = false; // True when champion lost and is finding their floor
   let gauntletFallingItem = null; // The item that's falling to find its position
+  let gauntletFallingTested = []; // IDs of items already tested during falling phase (to avoid repeats)
   let totalItemsCount = 0; // Total items for position display
   let disableChoice = false; // Track when inputs should be disabled to prevent multiple events
   let battleType = "performers"; // HotOrNot is performers-only
   let cachedUrlFilter = null; // Cache the URL filter when modal is opened
+  let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
 
   // GraphQL filter modifier constants
   // Array-based modifiers require value_list field for enum-based criterion inputs
@@ -800,6 +802,7 @@
     // Reset state
     gauntletFalling = false;
     gauntletFallingItem = null;
+    gauntletFallingTested = [];
     gauntletChampion = null;
     gauntletWins = 0;
     gauntletDefeated = [];
@@ -1450,6 +1453,49 @@
     return newRating;
   }
 
+  /**
+   * Calculate the rating floor based on defeated opponents in gauntlet mode.
+   * The floor is 1 point above the highest-rated defeated performer.
+   * This prevents a falling performer from dropping below performers they've already beaten.
+   * @param {Array<string>} defeatedIds - Array of IDs of defeated performers
+   * @returns {Promise<number>} The rating floor (minimum 1)
+   */
+  async function calculateDefeatedOpponentsFloor(defeatedIds) {
+    if (!defeatedIds || defeatedIds.length === 0) {
+      return 1;
+    }
+    
+    // Fetch each defeated performer by ID individually
+    // (PerformerFilterType doesn't support filtering by id directly)
+    const defeatedQuery = `
+      query FindPerformer($id: ID!) {
+        findPerformer(id: $id) {
+          id
+          rating100
+        }
+      }
+    `;
+    
+    const performerPromises = defeatedIds.map(async (id) => {
+      try {
+        const result = await graphqlQuery(defeatedQuery, { id });
+        return result.findPerformer;
+      } catch (error) {
+        console.error(`[HotOrNot] Error fetching defeated performer ${id}:`, error);
+        return null;
+      }
+    });
+    
+    const defeatedPerformers = (await Promise.all(performerPromises)).filter(p => p !== null);
+    if (defeatedPerformers.length > 0) {
+      // Floor is 1 point above the highest-rated defeated performer
+      const maxDefeatedRating = Math.max(...defeatedPerformers.map(p => p.rating100 || 50));
+      return maxDefeatedRating + 1;
+    }
+    
+    return 1;
+  }
+
 
   // ============================================
   // PERFORMER FUNCTIONS
@@ -1839,6 +1885,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       const belowOpponents = performers.filter((s, idx) => {
         if (s.id === gauntletFallingItem.id) return false;
         if (gauntletDefeated.includes(s.id)) return false;
+        if (gauntletFallingTested.includes(s.id)) return false; // Skip opponents already tested during falling
         return idx > fallingIndex; // Below in ranking
       });
       
@@ -1884,6 +1931,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       gauntletDefeated = [];
       gauntletFalling = false;
       gauntletFallingItem = null;
+      gauntletFallingTested = [];
       
       // Pick random performer as challenger
       const randomIndex = Math.floor(Math.random() * performers.length);
@@ -2468,6 +2516,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     gauntletDefeated = [];
     gauntletFalling = false;
     gauntletFallingItem = null;
+    gauntletFallingTested = [];
     
     // Hide the selection UI
     const selectionContainer = document.getElementById("hon-performer-selection");
@@ -3020,6 +3069,7 @@ async function fetchPerformerCount(performerFilter = {}) {
               gauntletDefeated = [];
               gauntletFalling = false;
               gauntletFallingItem = null;
+              gauntletFallingTested = [];
               // Show the actions again
               if (actionsEl) actionsEl.style.display = "";
               loadNewPair();
@@ -3264,8 +3314,26 @@ async function fetchPerformerCount(performerFilter = {}) {
           return;
         } else {
           // Falling item lost again - keep falling
-          // Note: We don't add winners to gauntletDefeated during falling phase
-          // gauntletDefeated is only for performers beaten during the climb
+          // Track this opponent to avoid matching against them again during falling
+          gauntletFallingTested.push(winnerId);
+          
+          // Use ELO-based calculation for the rating loss instead of direct assignment
+          // This ensures the performer doesn't drop too dramatically from a single loss
+          const currentFallingRating = gauntletFallingItem.rating100 || 50;
+          // Pass null for performer objects to prevent handleComparison from tracking stats internally
+          // Stats are manually tracked at lines 3346 and 3352 below to properly handle the floor calculation
+          const { newLoserRating, loserChange } = await handleComparison(
+            winnerId, gauntletFallingItem.id, winnerRating, currentFallingRating,
+            null, /* loserRank - not needed for falling phase */
+            null, /* winnerObj - skip stats tracking */
+            null  /* loserObj - skip stats tracking */
+          );
+          
+          // Calculate floor based on defeated opponents - can't drop below the highest-rated defeated performer
+          const ratingFloor = await calculateDefeatedOpponentsFloor(gauntletDefeated);
+          
+          // Apply the floor - can't drop below performers already beaten
+          const newFallingRating = Math.max(ratingFloor, newLoserRating);
           
           // Fetch latest performer data to get current stats before updating (parallel fetch for performance)
           let freshFallingPerformer = gauntletFallingItem;
@@ -3279,11 +3347,6 @@ async function fetchPerformerCount(performerFilter = {}) {
             freshFallingPerformer = fetchedFalling || gauntletFallingItem;
             freshWinnerPerformer = fetchedWinner || winnerItem;
           }
-          
-          // Update falling performer's rating to just below the winner (they lost, so they fall)
-          // Ensure the rating only goes down, never up - a falling performer should only move down in ranking
-          const currentFallingRating = gauntletFallingItem.rating100 || 50;
-          const newFallingRating = Math.max(1, Math.min(currentFallingRating, winnerRating - 1));
           
           // Track stats for both participants
           // Track loss for the falling performer with their new (lower) rating
@@ -3299,9 +3362,14 @@ async function fetchPerformerCount(performerFilter = {}) {
           winnerCard.classList.add("hon-winner");
           if (loserCard) loserCard.classList.add("hon-loser");
           
+          // Show rating animation for the falling performer
+          if (loserCard) {
+            showRatingAnimation(loserCard, currentFallingRating, newFallingRating, loserChange, false);
+          }
+          
           setTimeout(() => {
             loadNewPair();
-          }, 800);
+          }, 1500);
           return;
         }
       }
@@ -3320,8 +3388,24 @@ async function fetchPerformerCount(performerFilter = {}) {
         // Champion LOST - start falling to find their floor
         gauntletFalling = true;
         gauntletFallingItem = loserItem; // The old champion is now falling
-        // Update the falling item's rating to match what handleComparison calculated
-        gauntletFallingItem.rating100 = newLoserRating;
+        gauntletFallingTested = []; // Reset tested list for new falling phase
+        
+        // Calculate floor based on defeated opponents - can't drop below the highest-rated defeated performer
+        const ratingFloor = await calculateDefeatedOpponentsFloor(gauntletDefeated);
+        
+        // Apply the floor - can't drop below performers already beaten
+        const adjustedLoserRating = Math.max(ratingFloor, newLoserRating);
+        
+        // Update the falling item's rating with floor applied
+        gauntletFallingItem.rating100 = adjustedLoserRating;
+        
+        // If floor was applied (adjusted rating differs from ELO-calculated rating),
+        // update the database to reflect the floor-adjusted rating.
+        // Note: handleComparison (called at line 3369) already tracked stats for this loss,
+        // so we pass null for performerObj to only update the rating without touching stats.
+        if (adjustedLoserRating !== newLoserRating && battleType === "performers") {
+          await updateItemRating(loserId, adjustedLoserRating, null, null);
+        }
         // Preserve the list of opponents already defeated during the climb
         // Note: Don't add the winner to gauntletDefeated - they beat us fair and square
         // gauntletDefeated is only for performers we actually defeated
@@ -3344,7 +3428,10 @@ async function fetchPerformerCount(performerFilter = {}) {
       
       showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
       if (loserCard) {
-        showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
+        // Use the falling item's actual new rating (which may have floor applied) for the animation
+        const actualLoserRating = gauntletFallingItem ? gauntletFallingItem.rating100 : newLoserRating;
+        const actualLoserChange = actualLoserRating - loserRating;
+        showRatingAnimation(loserCard, loserRating, actualLoserRating, actualLoserChange, false);
       }
       
       // Load new pair after animation
@@ -3454,6 +3541,246 @@ async function fetchPerformerCount(performerFilter = {}) {
     setTimeout(() => {
       overlay.remove();
     }, 1400);
+  }
+
+  // ============================================
+  // PERFORMER PAGE RANK BADGE
+  // ============================================
+
+  /**
+   * Fetch the battle rank for a performer by comparing their rating to all performers.
+   * @param {string} performerId - The ID of the performer
+   * @returns {Promise<{rank: number, total: number, rating: number}|null>} Rank info or null on error
+   */
+  async function getPerformerBattleRank(performerId) {
+    try {
+      const performersQuery = `
+        query FindPerformersByRating($filter: FindFilterType) {
+          findPerformers(filter: $filter) {
+            count
+            performers {
+              id
+              rating100
+              custom_fields
+            }
+          }
+        }
+      `;
+
+      // Get ALL performers sorted by rating descending (highest first)
+      const result = await graphqlQuery(performersQuery, {
+        filter: {
+          per_page: -1, // Get all
+          sort: "rating",
+          direction: "DESC"
+        }
+      });
+
+      const performers = result.findPerformers.performers || [];
+      const total = performers.length;
+
+      if (total === 0) {
+        return null;
+      }
+
+      // Find the performer's position in the sorted list
+      const index = performers.findIndex(p => p.id === performerId);
+      if (index === -1) {
+        return null;
+      }
+
+      const performer = performers[index];
+      
+      // Parse match stats from custom_fields
+      const stats = parsePerformerEloData(performer);
+      
+      return {
+        rank: index + 1,
+        total: total,
+        rating: performer.rating100 || 0,
+        stats: stats
+      };
+    } catch (error) {
+      console.error("[HotOrNot] Error fetching performer battle rank:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Create the battle rank badge element with match stats
+   * @param {number} rank - The performer's rank
+   * @param {number} total - Total number of performers
+   * @param {number} rating - The performer's rating100
+   * @param {Object} stats - Match statistics (wins, losses, draws, current_streak, etc.)
+   * @returns {HTMLElement} The badge element
+   */
+  function createBattleRankBadge(rank, total, rating, stats = null) {
+    const badge = document.createElement("div");
+    badge.className = "hon-battle-rank-badge";
+    badge.id = "hon-battle-rank-badge";
+    
+    // Determine rank tier for styling
+    const percentile = ((total - rank + 1) / total) * 100;
+    let tierClass = "";
+    let tierEmoji = "";
+    
+    if (percentile >= 95) {
+      tierClass = "hon-rank-legendary";
+      tierEmoji = "👑";
+    } else if (percentile >= 80) {
+      tierClass = "hon-rank-gold";
+      tierEmoji = "🥇";
+    } else if (percentile >= 60) {
+      tierClass = "hon-rank-silver";
+      tierEmoji = "🥈";
+    } else if (percentile >= 40) {
+      tierClass = "hon-rank-bronze";
+      tierEmoji = "🥉";
+    } else {
+      tierClass = "hon-rank-default";
+      tierEmoji = "🔥";
+    }
+    
+    // Note: Tier-based color classes removed for better readability
+    // The tier emoji still indicates ranking percentile
+    
+    // Build match stats HTML if stats are available and performer has played matches
+    let matchStatsHTML = '';
+    let winRate = null;
+    const hasMatchStats = stats && stats.total_matches > 0;
+    
+    if (hasMatchStats) {
+      // Calculate win rate once for both display and tooltip
+      winRate = ((stats.wins / stats.total_matches) * 100).toFixed(1);
+      
+      // Format current streak with color indicator
+      let streakDisplay = '';
+      if (stats.current_streak > 0) {
+        streakDisplay = `<span class="hon-streak-positive">W${stats.current_streak}</span>`;
+      } else if (stats.current_streak < 0) {
+        streakDisplay = `<span class="hon-streak-negative">L${Math.abs(stats.current_streak)}</span>`;
+      }
+      
+      matchStatsHTML = `
+        <span class="hon-match-stats">
+          <span class="hon-stats-record">
+            <span class="hon-wins">${stats.wins}W</span>
+            <span class="hon-losses">${stats.losses}L</span>
+            <span class="hon-draws">${stats.draws}D</span>
+          </span>
+          <span class="hon-win-rate">${winRate}%</span>
+          ${streakDisplay}
+        </span>
+      `;
+    }
+    
+    badge.innerHTML = `
+      <span class="hon-rank-emoji">${tierEmoji}</span>
+      <span class="hon-rank-text">Battle Rank #${rank}</span>
+      <span class="hon-rank-total">of ${total}</span>
+      ${matchStatsHTML}
+    `;
+    
+    // Build comprehensive tooltip
+    let tooltipText = `Battle Rank #${rank} of ${total} performers (Rating: ${rating}/100)`;
+    if (hasMatchStats) {
+      tooltipText += `\n\nMatch Stats:`;
+      tooltipText += `\n• Record: ${stats.wins}W - ${stats.losses}L - ${stats.draws}D`;
+      tooltipText += `\n• Win Rate: ${winRate}%`;
+      tooltipText += `\n• Total Matches: ${stats.total_matches}`;
+      if (stats.current_streak !== 0) {
+        const streakType = stats.current_streak > 0 ? 'Winning' : 'Losing';
+        tooltipText += `\n• Current Streak: ${streakType} ${Math.abs(stats.current_streak)}`;
+      }
+      if (stats.best_streak > 0) {
+        tooltipText += `\n• Best Streak: ${stats.best_streak}`;
+      }
+      if (stats.worst_streak < 0) {
+        tooltipText += `\n• Worst Streak: ${Math.abs(stats.worst_streak)}`;
+      }
+    }
+    badge.title = tooltipText;
+    
+    return badge;
+  }
+
+  /**
+   * Inject the battle rank badge into the performer detail page.
+   * Looks for the rating stars section and adds the badge next to it.
+   */
+  async function injectBattleRankBadge() {
+    // Use compare-and-set pattern with global flag to prevent concurrent injections
+    // This handles both same-plugin races and cross-plugin races
+    // In JavaScript's single-threaded event loop, this synchronous block before any await is atomic
+    if (window._honBadgeInjectionInProgress || badgeInjectionInProgress) {
+      return;
+    }
+    // Set flags immediately after check - atomic in JS single-threaded event loop
+    window._honBadgeInjectionInProgress = true;
+    badgeInjectionInProgress = true;
+    
+    try {
+      const performerId = getPerformerIdFromUrl();
+      if (!performerId) {
+        return;
+      }
+
+      // Check if badge already exists (another plugin or previous call may have added it)
+      const existingBadge = document.getElementById("hon-battle-rank-badge");
+      if (existingBadge) {
+        return;
+      }
+
+      // Fetch the performer's battle rank
+      const rankInfo = await getPerformerBattleRank(performerId);
+      if (!rankInfo) {
+        console.log("[HotOrNot] Could not fetch battle rank for performer");
+        return;
+      }
+
+      // Double-check badge doesn't exist after async fetch (another call may have completed)
+      if (document.getElementById("hon-battle-rank-badge")) {
+        return;
+      }
+
+      // Create the badge with stats
+      const badge = createBattleRankBadge(rankInfo.rank, rankInfo.total, rankInfo.rating, rankInfo.stats);
+
+      // Find the best place to inject the badge
+      // Try to find the rating stars container first (next to star rating)
+      const ratingContainer = document.querySelector(".rating-stars") ||
+                             document.querySelector(".rating-number") ||
+                             document.querySelector("[class*='rating']");
+      
+      if (ratingContainer && ratingContainer.parentElement) {
+        // Insert badge next to the rating
+        ratingContainer.parentElement.appendChild(badge);
+        console.log(`[HotOrNot] Injected battle rank badge: #${rankInfo.rank} of ${rankInfo.total}`);
+        return;
+      }
+
+      // Alternative: Find performer detail header area
+      const detailHeader = document.querySelector(".performer-head") ||
+                          document.querySelector(".detail-header") ||
+                          document.querySelector(".performer-meta") ||
+                          document.querySelector(".detail-container h2")?.parentElement;
+      
+      if (detailHeader) {
+        detailHeader.appendChild(badge);
+        console.log(`[HotOrNot] Injected battle rank badge into header: #${rankInfo.rank} of ${rankInfo.total}`);
+        return;
+      }
+
+      // Last resort: Find performer name and insert after it
+      const performerName = document.querySelector("h2") || document.querySelector("h1");
+      if (performerName && performerName.parentElement) {
+        performerName.parentElement.insertBefore(badge, performerName.nextSibling);
+        console.log(`[HotOrNot] Injected battle rank badge after name: #${rankInfo.rank} of ${rankInfo.total}`);
+      }
+    } finally {
+      window._honBadgeInjectionInProgress = false;
+      badgeInjectionInProgress = false;
+    }
   }
 
   // ============================================
@@ -3595,6 +3922,7 @@ function addFloatingButton() {
           gauntletDefeated = [];
           gauntletFalling = false;
           gauntletFallingItem = null;
+          gauntletFallingTested = [];
           
           // Update button states
           modal.querySelectorAll(".hon-mode-btn").forEach((b) => {
@@ -3633,6 +3961,7 @@ function addFloatingButton() {
           gauntletDefeated = [];
           gauntletFalling = false;
           gauntletFallingItem = null;
+          gauntletFallingTested = [];
         }
         // Apply ELO draw rating changes for skips in Swiss mode
         if (currentMode === "swiss" && currentPair.left && currentPair.right) {
@@ -3709,6 +4038,7 @@ function addFloatingButton() {
             gauntletDefeated = [];
             gauntletFalling = false;
             gauntletFallingItem = null;
+            gauntletFallingTested = [];
           }
           // Apply ELO draw rating changes for skips in Swiss mode
           if (currentMode === "swiss" && currentPair.left && currentPair.right) {
@@ -3734,15 +4064,18 @@ function addFloatingButton() {
     
     addFloatingButton();
     
-    // Enhance custom fields display on performer pages
-    enhancePerformerPageCustomFields();
+    // Inject battle rank badge if on a single performer page
+    if (isOnSinglePerformerPage()) {
+      // Delay slightly to ensure the page has rendered
+      setTimeout(() => injectBattleRankBadge(), 500);
+    }
 
     // Watch for SPA navigation
     const observer = new MutationObserver(() => {
       addFloatingButton();
-      // Also try to enhance custom fields on navigation
-      if (isOnSinglePerformerPage()) {
-        enhancePerformerPageCustomFields();
+      // Also try to inject badge when DOM changes on performer pages
+      if (isOnSinglePerformerPage() && !document.getElementById("hon-battle-rank-badge")) {
+        injectBattleRankBadge();
       }
     });
 
@@ -3776,213 +4109,13 @@ function addFloatingButton() {
           }
         }
         
-        // Enhance custom fields when navigating to a performer page
-        if (path.match(/^\/performers\/\d+/)) {
-          // Small delay to let React render the page
-          setTimeout(() => {
-            enhancePerformerPageCustomFields();
-          }, 500);
+        // Inject battle rank badge when navigating to a single performer page
+        if (isOnSinglePerformerPage()) {
+          // Delay to allow the page to render
+          setTimeout(() => injectBattleRankBadge(), 500);
         }
       });
     }
-  }
-  
-  // ============================================
-  // PERFORMER PAGE CUSTOM FIELDS ENHANCEMENT
-  // ============================================
-  
-  /**
-   * Enhance the custom fields display on performer detail pages.
-   * - Auto-expands the custom fields section
-   * - Styles the hotornot_stats field with a nice display
-   */
-  function enhancePerformerPageCustomFields() {
-    if (!isOnSinglePerformerPage()) return;
-    
-    // Wait for the custom fields section to be rendered
-    waitForCustomFieldsSection(() => {
-      autoExpandCustomFields();
-      styleHotOrNotStatsField();
-    });
-  }
-  
-  /**
-   * Wait for the custom fields section to appear in the DOM
-   * @param {Function} callback - Callback to run when custom fields section is found
-   * @param {number} maxAttempts - Maximum number of attempts (default 20)
-   */
-  function waitForCustomFieldsSection(callback, maxAttempts = 20) {
-    let attempts = 0;
-    
-    const check = () => {
-      attempts++;
-      const customFieldsSection = document.querySelector('.custom-fields');
-      
-      if (customFieldsSection) {
-        callback();
-        return;
-      }
-      
-      if (attempts < maxAttempts) {
-        setTimeout(check, 250);
-      }
-    };
-    
-    check();
-  }
-  
-  /**
-   * Auto-expand the custom fields collapsible section on performer detail pages
-   */
-  function autoExpandCustomFields() {
-    const customFieldsSection = document.querySelector('.custom-fields');
-    if (!customFieldsSection) return;
-    
-    // Check if already expanded (the collapse button controls this)
-    const collapseButton = customFieldsSection.querySelector('.collapse-button');
-    if (!collapseButton) return;
-    
-    // Check if the collapse content is currently hidden
-    const collapseContent = customFieldsSection.querySelector('.collapse');
-    if (collapseContent && !collapseContent.classList.contains('show')) {
-      // Click the button to expand
-      collapseButton.click();
-      console.log('[HotOrNot] Auto-expanded custom fields section');
-    }
-  }
-  
-  /**
-   * Style the hotornot_stats custom field with a formatted display
-   */
-  function styleHotOrNotStatsField() {
-    // Find the hotornot_stats field - look for detail item with id containing 'hotornot'
-    const detailItems = document.querySelectorAll('.custom-fields .detail-item');
-    
-    for (const item of detailItems) {
-      const label = item.querySelector('.detail-item-title');
-      if (!label) continue;
-      
-      // Check if this is the hotornot_stats field
-      if (label.textContent.toLowerCase().includes('hotornot_stats')) {
-        
-        // Check if already enhanced
-        if (item.classList.contains('hon-enhanced-stats')) return;
-        item.classList.add('hon-enhanced-stats');
-        
-        // Get the value element
-        const valueElement = item.querySelector('.detail-item-value');
-        if (!valueElement) continue;
-        
-        // Get the raw JSON text
-        const rawText = valueElement.textContent;
-        
-        try {
-          // Parse the JSON stats
-          const stats = JSON.parse(rawText);
-          
-          // Create a styled display
-          const styledContent = createStyledStatsDisplay(stats);
-          
-          // Replace the content
-          valueElement.innerHTML = '';
-          valueElement.appendChild(styledContent);
-          
-          console.log('[HotOrNot] Enhanced hotornot_stats display');
-        } catch (e) {
-          console.warn('[HotOrNot] Failed to parse hotornot_stats:', e);
-        }
-        
-        break;
-      }
-    }
-  }
-  
-  /**
-   * Create a styled display for the hotornot stats
-   * @param {Object} stats - The parsed stats object
-   * @returns {HTMLElement} The styled stats display element
-   */
-  function createStyledStatsDisplay(stats) {
-    const container = document.createElement('div');
-    container.className = 'hon-stats-display';
-    
-    // Calculate win rate
-    const totalMatches = stats.total_matches || 0;
-    const wins = stats.wins || 0;
-    const losses = stats.losses || 0;
-    const draws = stats.draws || 0;
-    const winRate = totalMatches > 0 ? ((wins / totalMatches) * 100).toFixed(1) : '0.0';
-    
-    // Format last match date
-    let lastMatchDisplay = 'Never';
-    if (stats.last_match) {
-      try {
-        const date = new Date(stats.last_match);
-        lastMatchDisplay = date.toLocaleDateString(undefined, { 
-          year: 'numeric', 
-          month: 'short', 
-          day: 'numeric' 
-        });
-      } catch (e) {
-        lastMatchDisplay = stats.last_match;
-      }
-    }
-    
-    // Current streak with color coding
-    const currentStreak = stats.current_streak || 0;
-    const streakClass = currentStreak > 0 ? 'hon-stat-positive' : 
-                        currentStreak < 0 ? 'hon-stat-negative' : 'hon-stat-neutral';
-    const streakPrefix = currentStreak > 0 ? '+' : '';
-    
-    // Best/worst streaks with conditional styling
-    const bestStreak = stats.best_streak || 0;
-    const worstStreak = stats.worst_streak || 0;
-    const bestStreakClass = bestStreak > 0 ? 'hon-stat-positive' : 'hon-stat-neutral';
-    const bestStreakPrefix = bestStreak > 0 ? '+' : '';
-    const worstStreakClass = worstStreak < 0 ? 'hon-stat-negative' : 'hon-stat-neutral';
-    
-    container.innerHTML = `
-      <div class="hon-stats-grid">
-        <div class="hon-stat-item hon-stat-main">
-          <span class="hon-stat-label">Win Rate</span>
-          <span class="hon-stat-value hon-stat-winrate">${winRate}%</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Matches</span>
-          <span class="hon-stat-value">${totalMatches}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Wins</span>
-          <span class="hon-stat-value hon-stat-positive">${wins}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Losses</span>
-          <span class="hon-stat-value hon-stat-negative">${losses}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Draws</span>
-          <span class="hon-stat-value hon-stat-neutral">${draws}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Current Streak</span>
-          <span class="hon-stat-value ${streakClass}">${streakPrefix}${currentStreak}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Best Streak</span>
-          <span class="hon-stat-value ${bestStreakClass}">${bestStreakPrefix}${bestStreak}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Worst Streak</span>
-          <span class="hon-stat-value ${worstStreakClass}">${worstStreak}</span>
-        </div>
-        <div class="hon-stat-item hon-stat-date">
-          <span class="hon-stat-label">Last Match</span>
-          <span class="hon-stat-value">${lastMatchDisplay}</span>
-        </div>
-      </div>
-    `;
-    
-    return container;
   }
 
   if (document.readyState === "loading") {
