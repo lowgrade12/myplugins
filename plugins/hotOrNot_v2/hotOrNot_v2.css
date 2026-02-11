@@ -2,6 +2,11 @@
    HOTORNOT PLUGIN STYLES
    ============================================ */
 
+/* CSS Custom Properties */
+:root {
+  --hon-performer-aspect-ratio: 2 / 3;
+}
+
 /* Container */
 .hon-container {
   max-width: 1600px;
@@ -232,15 +237,13 @@
   justify-content: center;
 }
 
-/* Performer images - adjust for better fit */
+/* Performer images - fixed aspect ratio container for uniform grid */
 .hon-performer-image-container {
   position: relative;
+  display: block;
   width: 100%;
-  max-height: 60vh;
+  aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: var(--hon-image-bg, #1a1a1a);
 }
 
@@ -256,11 +259,9 @@
 
 .hon-performer-image {
   display: block;
-  max-width: 100%;
-  max-height: 60vh;
-  width: auto;
-  height: auto;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   background: #1a1a1a;
 }
 
@@ -799,8 +800,6 @@
    multiple selectors (e.g. ".hon-scene-card .hon-scene-title") will also apply
    when a performer class is present alongside the scene class. */
 .hon-performer-card.hon-scene-card,
-.hon-performer-image-container.hon-scene-image-container,
-.hon-performer-image.hon-scene-image,
 .hon-performer-duration.hon-scene-duration,
 .hon-performer-body.hon-scene-body,
 .hon-performer-info.hon-scene-info,
@@ -808,6 +807,21 @@
 .hon-performer-title.hon-scene-title,
 .hon-performer-meta.hon-scene-meta,
 .hon-performer-rank.hon-scene-rank {}
+
+/* Override scene styles for performer images to use uniform sizing */
+.hon-performer-image-container.hon-scene-image-container {
+  aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
+  max-height: none;
+  display: block;
+}
+
+.hon-performer-image.hon-scene-image {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+}
 
 /* End shim */
 
