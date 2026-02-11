@@ -2642,13 +2642,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       ? ((performers.reduce((sum, p) => sum + (p.rating100 || 50), 0) / performerCount) / 10).toFixed(1) 
       : '5.0';
 
-    // Calculate rating distribution for bar graph (100 individual rating values: 0.0, 0.1, 0.2, ..., 9.9)
+    // Calculate rating distribution for bar graph (100 individual rating values: 0.1, 0.2, 0.3, ..., 10.0)
     // Create 100 buckets for granular distribution
     const ratingBuckets = Array(100).fill(0);
     performersWithStats.forEach(p => {
       const ratingValue = parseFloat(p.rating); // Rating is 0.0-10.0
       // Map rating to bucket index (0-99)
-      // Rating 10.0 goes into bucket 99 (displayed as 9.9)
+      // Rating 10.0 goes into bucket 99 (displayed as 10.0)
       const bucketIndex = Math.min(99, Math.floor(ratingValue * 10));
       ratingBuckets[bucketIndex]++;
     });
@@ -2665,11 +2665,11 @@ async function fetchPerformerCount(performerFilter = {}) {
     // Use individual bucket max for expanded view scaling
     const maxBucketCount = Math.max(...ratingBuckets, 1);
     
-    // Group buckets into 10 collapsible groups (0.0-1.0, 1.0-2.0, ..., 9.0-10.0)
+    // Group buckets into 10 collapsible groups (0.1-1.0, 1.1-2.0, ..., 9.1-10.0)
     const barGraphGroups = [];
     for (let groupIndex = 0; groupIndex < 10; groupIndex++) {
-      const startRating = groupIndex;
-      const endRating = groupIndex + 1;
+      const startRating = (groupIndex * 10 + 1) / 10; // 0.1, 1.1, 2.1, ..., 9.1
+      const endRating = groupIndex + 1; // 1, 2, 3, ..., 10
       
       // Get buckets for this group (10 buckets per group)
       const groupBuckets = ratingBuckets.slice(groupIndex * 10, (groupIndex + 1) * 10);
@@ -2682,7 +2682,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       const barsInGroup = groupBuckets.map((count, bucketIndexInGroup) => {
         const bucketIndex = groupIndex * 10 + bucketIndexInGroup;
         const percentage = (count / maxBucketCount) * 100;
-        const rangeStart = (bucketIndex / 10).toFixed(1);
+        const rangeStart = ((bucketIndex + 1) / 10).toFixed(1);
         const displayRange = `${rangeStart}`;
         
         return `
@@ -2699,9 +2699,9 @@ async function fetchPerformerCount(performerFilter = {}) {
       
       barGraphGroups.push(`
         <div class="hon-bar-group">
-          <div class="hon-bar-group-header" data-group="bar-${groupIndex}" role="button" aria-expanded="false" aria-controls="bar-group-${groupIndex}" aria-label="Toggle ratings ${startRating}.0 to ${endRating}.0 group">
+          <div class="hon-bar-group-header" data-group="bar-${groupIndex}" role="button" aria-expanded="false" aria-controls="bar-group-${groupIndex}" aria-label="Toggle ratings ${startRating.toFixed(1)} to ${endRating}.0 group">
             <span class="hon-group-toggle">▶</span>
-            <span class="hon-bar-group-label">${startRating}.0-${endRating}.0</span>
+            <span class="hon-bar-group-label">${startRating.toFixed(1)}-${endRating}.0</span>
             <div class="hon-bar-group-bar-wrapper">
               <div class="hon-bar-group-bar" style="width: ${groupPercentage}%">
                 <span class="hon-bar-group-bar-count">${groupTotal}</span>
