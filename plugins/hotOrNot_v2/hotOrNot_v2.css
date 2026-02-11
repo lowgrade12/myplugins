@@ -2,6 +2,11 @@
    HOTORNOT PLUGIN STYLES
    ============================================ */
 
+/* CSS Custom Properties */
+:root {
+  --hon-performer-aspect-ratio: 2 / 3;
+}
+
 /* Container */
 .hon-container {
   max-width: 1600px;
@@ -235,8 +240,9 @@
 /* Performer images - fixed aspect ratio container for uniform grid */
 .hon-performer-image-container {
   position: relative;
+  display: block;
   width: 100%;
-  aspect-ratio: 2 / 3;
+  aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
   overflow: hidden;
   background: var(--hon-image-bg, #1a1a1a);
 }
@@ -804,7 +810,7 @@
 
 /* Override scene styles for performer images to use uniform sizing */
 .hon-performer-image-container.hon-scene-image-container {
-  aspect-ratio: 2 / 3;
+  aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
   max-height: none;
   display: block;
 }
