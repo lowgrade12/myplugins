@@ -5,19 +5,11 @@ A plugin for [Stash](https://stashapp.cc/) that displays and allows inline editi
 ## Features
 
 ### Star Rating Widget
-- **5-star visual display** with filled, half-filled, and empty states
+- **10-star visual display** with filled, half-filled, and empty states
 - **Click-to-rate** - Click any star to set the rating
 - **Hover preview** - See what rating you're about to set before clicking
 - **Real-time updates** - Changes are saved immediately to Stash
-
-### Rating Slider
-- **Precision control** - Slider allows setting exact rating values (0-100)
-- **Live preview** - Stars and value update in real-time while dragging
-- **Saves on release** - Rating is saved when you release the slider
-
-### Rating Value Display
-- Shows numeric rating (0-100)
-- Visual feedback on save (green flash for success, red shake for error)
+- **Empty star shadows** - Subtle shadow on empty stars for better readability
 
 ### Smart Caching
 - **Local cache** for ratings to ensure UI consistency during React re-renders
@@ -40,24 +32,25 @@ A plugin for [Stash](https://stashapp.cc/) that displays and allows inline editi
 
 **Using Stars:**
 1. Hover over the stars to preview the rating
-2. Click a star to set the rating (1 star = 20, 5 stars = 100)
-
-**Using Slider:**
-1. Drag the slider to the desired value
-2. Release to save the rating
+2. Click a star to set the rating (1 star = 10, 10 stars = 100)
 
 ### Rating Scale
 
 | Stars | Rating100 | Description |
 |-------|-----------|-------------|
-| ☆☆☆☆☆ | 0 | Not rated |
-| ★☆☆☆☆ | 20 | 1 star |
-| ★★☆☆☆ | 40 | 2 stars |
-| ★★★☆☆ | 60 | 3 stars |
-| ★★★★☆ | 80 | 4 stars |
-| ★★★★★ | 100 | 5 stars |
+| ☆☆☆☆☆☆☆☆☆☆ | 0 | Not rated |
+| ★☆☆☆☆☆☆☆☆☆ | 10 | 1 star |
+| ★★☆☆☆☆☆☆☆☆ | 20 | 2 stars |
+| ★★★☆☆☆☆☆☆☆ | 30 | 3 stars |
+| ★★★★☆☆☆☆☆☆ | 40 | 4 stars |
+| ★★★★★☆☆☆☆☆ | 50 | 5 stars |
+| ★★★★★★☆☆☆☆ | 60 | 6 stars |
+| ★★★★★★★☆☆☆ | 70 | 7 stars |
+| ★★★★★★★★☆☆ | 80 | 8 stars |
+| ★★★★★★★★★☆ | 90 | 9 stars |
+| ★★★★★★★★★★ | 100 | 10 stars |
 
-Half stars are displayed for intermediate values (e.g., 50 = 2.5 stars).
+Half stars are displayed for intermediate values (e.g., 55 = 5.5 stars).
 
 ## Visual Appearance
 
@@ -65,7 +58,7 @@ The widget is designed to fit seamlessly into the Stash UI:
 - **Dark theme compatible** - Uses semi-transparent dark background
 - **Light theme support** - Automatically adjusts for light color schemes
 - **Responsive design** - Scales appropriately on smaller screens
-- **Hover effects** - Stars and slider thumb grow slightly on hover
+- **Hover effects** - Stars grow slightly on hover
 
 ## Technical Details
 

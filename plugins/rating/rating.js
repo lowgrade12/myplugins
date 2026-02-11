@@ -209,13 +209,13 @@
     // Store the current rating in dataset so it can be updated
     container.dataset.currentRating = currentRating !== null ? currentRating : "";
 
-    // Convert rating100 to 5-star scale (0-100 -> 0-5)
-    const starValue = currentRating !== null ? currentRating / 20 : 0;
+    // Convert rating100 to 10-star scale (0-100 -> 0-10)
+    const starValue = currentRating !== null ? currentRating / 10 : 0;
     const fullStars = Math.floor(starValue);
     const hasHalfStar = starValue - fullStars >= 0.5;
 
-    // Create 5 stars
-    for (let i = 1; i <= 5; i++) {
+    // Create 10 stars
+    for (let i = 1; i <= 10; i++) {
       const star = document.createElement("span");
       star.className = "pr-star";
       star.dataset.value = i;
@@ -237,7 +237,7 @@
         e.stopPropagation();
         
         const newStarValue = parseInt(star.dataset.value);
-        const newRating100 = newStarValue * 20; // Convert back to rating100
+        const newRating100 = newStarValue * 10; // Convert back to rating100
         
         try {
           await updatePerformerRating(performerId, newRating100);
@@ -269,63 +269,6 @@
       updateStarDisplay(container, ratingValue);
     });
 
-    // Add rating slider (range input)
-    const ratingSlider = document.createElement("input");
-    ratingSlider.type = "range";
-    ratingSlider.className = "pr-rating-slider";
-    ratingSlider.min = "0";
-    ratingSlider.max = "100";
-    ratingSlider.step = "1";
-    ratingSlider.value = currentRating !== null ? currentRating : "0";
-
-    // Add rating value display
-    const ratingValue = document.createElement("span");
-    ratingValue.className = "pr-rating-value";
-    ratingValue.textContent = currentRating !== null ? currentRating : "--";
-
-    // Handle slider input (real-time updates while dragging)
-    ratingSlider.addEventListener("input", () => {
-      const newRating = parseInt(ratingSlider.value, 10);
-      // Update stars and value display in real-time while dragging
-      updateStarDisplay(container, newRating);
-      ratingValue.textContent = newRating;
-    });
-
-    // Handle slider change (when user releases the slider - save to server)
-    ratingSlider.addEventListener("change", async () => {
-      const newRating = parseInt(ratingSlider.value, 10);
-      
-      try {
-        await updatePerformerRating(performerId, newRating);
-        // Update the stored rating in dataset
-        container.dataset.currentRating = newRating;
-        showRatingFeedback(container, newRating);
-        // Update any native Stash rating displays on the card
-        const parentCard = findParentCard(container);
-        updateNativeRatingDisplay(parentCard, newRating);
-      } catch (err) {
-        console.error("[PerformerRating] Failed to update rating:", err);
-        showRatingError(container);
-        // Restore the previous rating on error
-        const storedRating = container.dataset.currentRating;
-        const currentValue = storedRating !== "" ? parseInt(storedRating, 10) : 0;
-        ratingSlider.value = currentValue;
-        ratingValue.textContent = currentValue !== 0 ? currentValue : "--";
-        updateStarDisplay(container, currentValue !== 0 ? currentValue : null);
-      }
-    });
-
-    // Prevent card click when interacting with slider
-    ratingSlider.addEventListener("click", (e) => {
-      e.stopPropagation();
-    });
-    ratingSlider.addEventListener("mousedown", (e) => {
-      e.stopPropagation();
-    });
-
-    container.appendChild(ratingSlider);
-    container.appendChild(ratingValue);
-
     // Prevent card click when interacting with rating
     container.addEventListener("click", (e) => {
       e.preventDefault();
@@ -345,7 +288,7 @@
    */
   function updateStarDisplay(container, rating100) {
     const stars = container.querySelectorAll(".pr-star");
-    const starValue = rating100 !== null ? rating100 / 20 : 0;
+    const starValue = rating100 !== null ? rating100 / 10 : 0;
     const fullStars = Math.floor(starValue);
     const hasHalfStar = starValue - fullStars >= 0.5;
 
@@ -364,23 +307,12 @@
         star.innerHTML = "☆";
       }
     });
-
-    // Update rating slider and value display
-    const ratingSlider = container.querySelector(".pr-rating-slider");
-    if (ratingSlider) {
-      ratingSlider.value = rating100 !== null ? rating100 : 0;
-    }
-    
-    const ratingValue = container.querySelector(".pr-rating-value");
-    if (ratingValue) {
-      ratingValue.textContent = rating100 !== null ? rating100 : "--";
-    }
   }
 
   /**
    * Preview star hover state
    * @param {HTMLElement} container - Star rating container
-   * @param {number} hoverValue - Star value being hovered (1-5)
+   * @param {number} hoverValue - Star value being hovered (1-10)
    */
   function previewStarHover(container, hoverValue) {
     const stars = container.querySelectorAll(".pr-star");
@@ -403,13 +335,11 @@
    * @param {number} rating100 - New rating value
    */
   function showRatingFeedback(container, rating100) {
-    const ratingValue = container.querySelector(".pr-rating-value");
-    if (ratingValue) {
-      ratingValue.classList.add("pr-feedback-success");
-      setTimeout(() => {
-        ratingValue.classList.remove("pr-feedback-success");
-      }, 500);
-    }
+    // Add visual feedback to the container
+    container.classList.add("pr-feedback-success");
+    setTimeout(() => {
+      container.classList.remove("pr-feedback-success");
+    }, 500);
   }
 
   /**
@@ -417,13 +347,11 @@
    * @param {HTMLElement} container - Star rating container
    */
   function showRatingError(container) {
-    const ratingValue = container.querySelector(".pr-rating-value");
-    if (ratingValue) {
-      ratingValue.classList.add("pr-feedback-error");
-      setTimeout(() => {
-        ratingValue.classList.remove("pr-feedback-error");
-      }, 1000);
-    }
+    // Add visual feedback to the container
+    container.classList.add("pr-feedback-error");
+    setTimeout(() => {
+      container.classList.remove("pr-feedback-error");
+    }, 1000);
   }
 
   // ============================================
