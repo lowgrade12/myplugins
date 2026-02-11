@@ -1,7 +1,7 @@
-name: HotOrNot_v2
+name: HotOrNotV2
 description: Adds an ELO based ranking system for performers and images
-version: 1.0.0
-url: https://github.com/lowgrade12/stash-battle-performer.git
+version: 2.0.0
+url: https://github.com/lowgrade12/hot-or-not
 ui:
   javascript:
     - hotOrNot_v2.js

@@ -11,10 +11,12 @@
   let gauntletDefeated = []; // IDs of items defeated in current run
   let gauntletFalling = false; // True when champion lost and is finding their floor
   let gauntletFallingItem = null; // The item that's falling to find its position
+  let gauntletFallingTested = []; // IDs of items already tested during falling phase (to avoid repeats)
   let totalItemsCount = 0; // Total items for position display
   let disableChoice = false; // Track when inputs should be disabled to prevent multiple events
   let battleType = "performers"; // HotOrNot is performers-only
   let cachedUrlFilter = null; // Cache the URL filter when modal is opened
+  let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
 
   // GraphQL filter modifier constants
   // Array-based modifiers require value_list field for enum-based criterion inputs
@@ -800,6 +802,7 @@
     // Reset state
     gauntletFalling = false;
     gauntletFallingItem = null;
+    gauntletFallingTested = [];
     gauntletChampion = null;
     gauntletWins = 0;
     gauntletDefeated = [];
@@ -1450,6 +1453,49 @@
     return newRating;
   }
 
+  /**
+   * Calculate the rating floor based on defeated opponents in gauntlet mode.
+   * The floor is 1 point above the highest-rated defeated performer.
+   * This prevents a falling performer from dropping below performers they've already beaten.
+   * @param {Array<string>} defeatedIds - Array of IDs of defeated performers
+   * @returns {Promise<number>} The rating floor (minimum 1)
+   */
+  async function calculateDefeatedOpponentsFloor(defeatedIds) {
+    if (!defeatedIds || defeatedIds.length === 0) {
+      return 1;
+    }
+    
+    // Fetch each defeated performer by ID individually
+    // (PerformerFilterType doesn't support filtering by id directly)
+    const defeatedQuery = `
+      query FindPerformer($id: ID!) {
+        findPerformer(id: $id) {
+          id
+          rating100
+        }
+      }
+    `;
+    
+    const performerPromises = defeatedIds.map(async (id) => {
+      try {
+        const result = await graphqlQuery(defeatedQuery, { id });
+        return result.findPerformer;
+      } catch (error) {
+        console.error(`[HotOrNot] Error fetching defeated performer ${id}:`, error);
+        return null;
+      }
+    });
+    
+    const defeatedPerformers = (await Promise.all(performerPromises)).filter(p => p !== null);
+    if (defeatedPerformers.length > 0) {
+      // Floor is 1 point above the highest-rated defeated performer
+      const maxDefeatedRating = Math.max(...defeatedPerformers.map(p => p.rating100 || 50));
+      return maxDefeatedRating + 1;
+    }
+    
+    return 1;
+  }
+
 
   // ============================================
   // PERFORMER FUNCTIONS
@@ -1839,6 +1885,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       const belowOpponents = performers.filter((s, idx) => {
         if (s.id === gauntletFallingItem.id) return false;
         if (gauntletDefeated.includes(s.id)) return false;
+        if (gauntletFallingTested.includes(s.id)) return false; // Skip opponents already tested during falling
         return idx > fallingIndex; // Below in ranking
       });
       
@@ -1884,6 +1931,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       gauntletDefeated = [];
       gauntletFalling = false;
       gauntletFallingItem = null;
+      gauntletFallingTested = [];
       
       // Pick random performer as challenger
       const randomIndex = Math.floor(Math.random() * performers.length);
@@ -2468,6 +2516,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     gauntletDefeated = [];
     gauntletFalling = false;
     gauntletFallingItem = null;
+    gauntletFallingTested = [];
     
     // Hide the selection UI
     const selectionContainer = document.getElementById("hon-performer-selection");
@@ -3020,6 +3069,7 @@ async function fetchPerformerCount(performerFilter = {}) {
               gauntletDefeated = [];
               gauntletFalling = false;
               gauntletFallingItem = null;
+              gauntletFallingTested = [];
               // Show the actions again
               if (actionsEl) actionsEl.style.display = "";
               loadNewPair();
@@ -3264,8 +3314,26 @@ async function fetchPerformerCount(performerFilter = {}) {
           return;
         } else {
           // Falling item lost again - keep falling
-          // Note: We don't add winners to gauntletDefeated during falling phase
-          // gauntletDefeated is only for performers beaten during the climb
+          // Track this opponent to avoid matching against them again during falling
+          gauntletFallingTested.push(winnerId);
+          
+          // Use ELO-based calculation for the rating loss instead of direct assignment
+          // This ensures the performer doesn't drop too dramatically from a single loss
+          const currentFallingRating = gauntletFallingItem.rating100 || 50;
+          // Pass null for performer objects to prevent handleComparison from tracking stats internally
+          // Stats are manually tracked below via updateItemRating calls to properly handle the floor calculation
+          const { newLoserRating, loserChange } = await handleComparison(
+            winnerId, gauntletFallingItem.id, winnerRating, currentFallingRating,
+            null, /* loserRank - not needed for falling phase */
+            null, /* winnerObj - skip stats tracking */
+            null  /* loserObj - skip stats tracking */
+          );
+          
+          // Calculate floor based on defeated opponents - can't drop below the highest-rated defeated performer
+          const ratingFloor = await calculateDefeatedOpponentsFloor(gauntletDefeated);
+          
+          // Apply the floor - can't drop below performers already beaten
+          const newFallingRating = Math.max(ratingFloor, newLoserRating);
           
           // Fetch latest performer data to get current stats before updating (parallel fetch for performance)
           let freshFallingPerformer = gauntletFallingItem;
@@ -3279,11 +3347,6 @@ async function fetchPerformerCount(performerFilter = {}) {
             freshFallingPerformer = fetchedFalling || gauntletFallingItem;
             freshWinnerPerformer = fetchedWinner || winnerItem;
           }
-          
-          // Update falling performer's rating to just below the winner (they lost, so they fall)
-          // Ensure the rating only goes down, never up - a falling performer should only move down in ranking
-          const currentFallingRating = gauntletFallingItem.rating100 || 50;
-          const newFallingRating = Math.max(1, Math.min(currentFallingRating, winnerRating - 1));
           
           // Track stats for both participants
           // Track loss for the falling performer with their new (lower) rating
@@ -3299,9 +3362,14 @@ async function fetchPerformerCount(performerFilter = {}) {
           winnerCard.classList.add("hon-winner");
           if (loserCard) loserCard.classList.add("hon-loser");
           
+          // Show rating animation for the falling performer
+          if (loserCard) {
+            showRatingAnimation(loserCard, currentFallingRating, newFallingRating, loserChange, false);
+          }
+          
           setTimeout(() => {
             loadNewPair();
-          }, 800);
+          }, 1500);
           return;
         }
       }
@@ -3320,8 +3388,24 @@ async function fetchPerformerCount(performerFilter = {}) {
         // Champion LOST - start falling to find their floor
         gauntletFalling = true;
         gauntletFallingItem = loserItem; // The old champion is now falling
-        // Update the falling item's rating to match what handleComparison calculated
-        gauntletFallingItem.rating100 = newLoserRating;
+        gauntletFallingTested = []; // Reset tested list for new falling phase
+        
+        // Calculate floor based on defeated opponents - can't drop below the highest-rated defeated performer
+        const ratingFloor = await calculateDefeatedOpponentsFloor(gauntletDefeated);
+        
+        // Apply the floor - can't drop below performers already beaten
+        const adjustedLoserRating = Math.max(ratingFloor, newLoserRating);
+        
+        // Update the falling item's rating with floor applied
+        gauntletFallingItem.rating100 = adjustedLoserRating;
+        
+        // If floor was applied (adjusted rating differs from ELO-calculated rating),
+        // update the database to reflect the floor-adjusted rating.
+        // Note: handleComparison already tracked stats for this loss,
+        // so we pass null for performerObj to only update the rating without touching stats.
+        if (adjustedLoserRating !== newLoserRating && battleType === "performers") {
+          await updateItemRating(loserId, adjustedLoserRating, null, null);
+        }
         // Preserve the list of opponents already defeated during the climb
         // Note: Don't add the winner to gauntletDefeated - they beat us fair and square
         // gauntletDefeated is only for performers we actually defeated
@@ -3344,7 +3428,10 @@ async function fetchPerformerCount(performerFilter = {}) {
       
       showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
       if (loserCard) {
-        showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
+        // Use the falling item's actual new rating (which may have floor applied) for the animation
+        const actualLoserRating = gauntletFallingItem ? gauntletFallingItem.rating100 : newLoserRating;
+        const actualLoserChange = actualLoserRating - loserRating;
+        showRatingAnimation(loserCard, loserRating, actualLoserRating, actualLoserChange, false);
       }
       
       // Load new pair after animation
@@ -3454,6 +3541,246 @@ async function fetchPerformerCount(performerFilter = {}) {
     setTimeout(() => {
       overlay.remove();
     }, 1400);
+  }
+
+  // ============================================
+  // PERFORMER PAGE RANK BADGE
+  // ============================================
+
+  /**
+   * Fetch the battle rank for a performer by comparing their rating to all performers.
+   * @param {string} performerId - The ID of the performer
+   * @returns {Promise<{rank: number, total: number, rating: number}|null>} Rank info or null on error
+   */
+  async function getPerformerBattleRank(performerId) {
+    try {
+      const performersQuery = `
+        query FindPerformersByRating($filter: FindFilterType) {
+          findPerformers(filter: $filter) {
+            count
+            performers {
+              id
+              rating100
+              custom_fields
+            }
+          }
+        }
+      `;
+
+      // Get ALL performers sorted by rating descending (highest first)
+      const result = await graphqlQuery(performersQuery, {
+        filter: {
+          per_page: -1, // Get all
+          sort: "rating",
+          direction: "DESC"
+        }
+      });
+
+      const performers = result.findPerformers.performers || [];
+      const total = performers.length;
+
+      if (total === 0) {
+        return null;
+      }
+
+      // Find the performer's position in the sorted list
+      const index = performers.findIndex(p => p.id === performerId);
+      if (index === -1) {
+        return null;
+      }
+
+      const performer = performers[index];
+      
+      // Parse match stats from custom_fields
+      const stats = parsePerformerEloData(performer);
+      
+      return {
+        rank: index + 1,
+        total: total,
+        rating: performer.rating100 || 0,
+        stats: stats
+      };
+    } catch (error) {
+      console.error("[HotOrNot] Error fetching performer battle rank:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Create the battle rank badge element with match stats
+   * @param {number} rank - The performer's rank
+   * @param {number} total - Total number of performers
+   * @param {number} rating - The performer's rating100
+   * @param {Object} stats - Match statistics (wins, losses, draws, current_streak, etc.)
+   * @returns {HTMLElement} The badge element
+   */
+  function createBattleRankBadge(rank, total, rating, stats = null) {
+    const badge = document.createElement("div");
+    badge.className = "hon-battle-rank-badge";
+    badge.id = "hon-battle-rank-badge";
+    
+    // Determine rank tier for styling
+    const percentile = ((total - rank + 1) / total) * 100;
+    let tierClass = "";
+    let tierEmoji = "";
+    
+    if (percentile >= 95) {
+      tierClass = "hon-rank-legendary";
+      tierEmoji = "👑";
+    } else if (percentile >= 80) {
+      tierClass = "hon-rank-gold";
+      tierEmoji = "🥇";
+    } else if (percentile >= 60) {
+      tierClass = "hon-rank-silver";
+      tierEmoji = "🥈";
+    } else if (percentile >= 40) {
+      tierClass = "hon-rank-bronze";
+      tierEmoji = "🥉";
+    } else {
+      tierClass = "hon-rank-default";
+      tierEmoji = "🔥";
+    }
+    
+    // Note: Tier-based color classes removed for better readability
+    // The tier emoji still indicates ranking percentile
+    
+    // Build match stats HTML if stats are available and performer has played matches
+    let matchStatsHTML = '';
+    let winRate = null;
+    const hasMatchStats = stats && stats.total_matches > 0;
+    
+    if (hasMatchStats) {
+      // Calculate win rate once for both display and tooltip
+      winRate = ((stats.wins / stats.total_matches) * 100).toFixed(1);
+      
+      // Format current streak with color indicator
+      let streakDisplay = '';
+      if (stats.current_streak > 0) {
+        streakDisplay = `<span class="hon-streak-positive">W${stats.current_streak}</span>`;
+      } else if (stats.current_streak < 0) {
+        streakDisplay = `<span class="hon-streak-negative">L${Math.abs(stats.current_streak)}</span>`;
+      }
+      
+      matchStatsHTML = `
+        <span class="hon-match-stats">
+          <span class="hon-stats-record">
+            <span class="hon-wins">${stats.wins}W</span>
+            <span class="hon-losses">${stats.losses}L</span>
+            <span class="hon-draws">${stats.draws}D</span>
+          </span>
+          <span class="hon-win-rate">${winRate}%</span>
+          ${streakDisplay}
+        </span>
+      `;
+    }
+    
+    badge.innerHTML = `
+      <span class="hon-rank-emoji">${tierEmoji}</span>
+      <span class="hon-rank-text">Battle Rank #${rank}</span>
+      <span class="hon-rank-total">of ${total}</span>
+      ${matchStatsHTML}
+    `;
+    
+    // Build comprehensive tooltip
+    let tooltipText = `Battle Rank #${rank} of ${total} performers (Rating: ${rating}/100)`;
+    if (hasMatchStats) {
+      tooltipText += `\n\nMatch Stats:`;
+      tooltipText += `\n• Record: ${stats.wins}W - ${stats.losses}L - ${stats.draws}D`;
+      tooltipText += `\n• Win Rate: ${winRate}%`;
+      tooltipText += `\n• Total Matches: ${stats.total_matches}`;
+      if (stats.current_streak !== 0) {
+        const streakType = stats.current_streak > 0 ? 'Winning' : 'Losing';
+        tooltipText += `\n• Current Streak: ${streakType} ${Math.abs(stats.current_streak)}`;
+      }
+      if (stats.best_streak > 0) {
+        tooltipText += `\n• Best Streak: ${stats.best_streak}`;
+      }
+      if (stats.worst_streak < 0) {
+        tooltipText += `\n• Worst Streak: ${Math.abs(stats.worst_streak)}`;
+      }
+    }
+    badge.title = tooltipText;
+    
+    return badge;
+  }
+
+  /**
+   * Inject the battle rank badge into the performer detail page.
+   * Looks for the rating stars section and adds the badge next to it.
+   */
+  async function injectBattleRankBadge() {
+    // Use compare-and-set pattern with global flag to prevent concurrent injections
+    // This handles both same-plugin races and cross-plugin races
+    // In JavaScript's single-threaded event loop, this synchronous block before any await is atomic
+    if (window._honBadgeInjectionInProgress || badgeInjectionInProgress) {
+      return;
+    }
+    // Set flags immediately after check - atomic in JS single-threaded event loop
+    window._honBadgeInjectionInProgress = true;
+    badgeInjectionInProgress = true;
+    
+    try {
+      const performerId = getPerformerIdFromUrl();
+      if (!performerId) {
+        return;
+      }
+
+      // Check if badge already exists (another plugin or previous call may have added it)
+      const existingBadge = document.getElementById("hon-battle-rank-badge");
+      if (existingBadge) {
+        return;
+      }
+
+      // Fetch the performer's battle rank
+      const rankInfo = await getPerformerBattleRank(performerId);
+      if (!rankInfo) {
+        console.log("[HotOrNot] Could not fetch battle rank for performer");
+        return;
+      }
+
+      // Double-check badge doesn't exist after async fetch (another call may have completed)
+      if (document.getElementById("hon-battle-rank-badge")) {
+        return;
+      }
+
+      // Create the badge with stats
+      const badge = createBattleRankBadge(rankInfo.rank, rankInfo.total, rankInfo.rating, rankInfo.stats);
+
+      // Find the best place to inject the badge
+      // Try to find the rating stars container first (next to star rating)
+      const ratingContainer = document.querySelector(".rating-stars") ||
+                             document.querySelector(".rating-number") ||
+                             document.querySelector("[class*='rating']");
+      
+      if (ratingContainer && ratingContainer.parentElement) {
+        // Insert badge next to the rating
+        ratingContainer.parentElement.appendChild(badge);
+        console.log(`[HotOrNot] Injected battle rank badge: #${rankInfo.rank} of ${rankInfo.total}`);
+        return;
+      }
+
+      // Alternative: Find performer detail header area
+      const detailHeader = document.querySelector(".performer-head") ||
+                          document.querySelector(".detail-header") ||
+                          document.querySelector(".performer-meta") ||
+                          document.querySelector(".detail-container h2")?.parentElement;
+      
+      if (detailHeader) {
+        detailHeader.appendChild(badge);
+        console.log(`[HotOrNot] Injected battle rank badge into header: #${rankInfo.rank} of ${rankInfo.total}`);
+        return;
+      }
+
+      // Last resort: Find performer name and insert after it
+      const performerName = document.querySelector("h2") || document.querySelector("h1");
+      if (performerName && performerName.parentElement) {
+        performerName.parentElement.insertBefore(badge, performerName.nextSibling);
+        console.log(`[HotOrNot] Injected battle rank badge after name: #${rankInfo.rank} of ${rankInfo.total}`);
+      }
+    } finally {
+      window._honBadgeInjectionInProgress = false;
+      badgeInjectionInProgress = false;
+    }
   }
 
   // ============================================
@@ -3595,6 +3922,7 @@ function addFloatingButton() {
           gauntletDefeated = [];
           gauntletFalling = false;
           gauntletFallingItem = null;
+          gauntletFallingTested = [];
           
           // Update button states
           modal.querySelectorAll(".hon-mode-btn").forEach((b) => {
@@ -3633,6 +3961,7 @@ function addFloatingButton() {
           gauntletDefeated = [];
           gauntletFalling = false;
           gauntletFallingItem = null;
+          gauntletFallingTested = [];
         }
         // Apply ELO draw rating changes for skips in Swiss mode
         if (currentMode === "swiss" && currentPair.left && currentPair.right) {
@@ -3709,6 +4038,7 @@ function addFloatingButton() {
             gauntletDefeated = [];
             gauntletFalling = false;
             gauntletFallingItem = null;
+            gauntletFallingTested = [];
           }
           // Apply ELO draw rating changes for skips in Swiss mode
           if (currentMode === "swiss" && currentPair.left && currentPair.right) {
@@ -3734,15 +4064,18 @@ function addFloatingButton() {
     
     addFloatingButton();
     
-    // Enhance custom fields display on performer pages
-    enhancePerformerPageCustomFields();
+    // Inject battle rank badge if on a single performer page
+    if (isOnSinglePerformerPage()) {
+      // Delay slightly to ensure the page has rendered
+      setTimeout(() => injectBattleRankBadge(), 500);
+    }
 
     // Watch for SPA navigation
     const observer = new MutationObserver(() => {
       addFloatingButton();
-      // Also try to enhance custom fields on navigation
-      if (isOnSinglePerformerPage()) {
-        enhancePerformerPageCustomFields();
+      // Also try to inject badge when DOM changes on performer pages
+      if (isOnSinglePerformerPage() && !document.getElementById("hon-battle-rank-badge")) {
+        injectBattleRankBadge();
       }
     });
 
@@ -3776,218 +4109,651 @@ function addFloatingButton() {
           }
         }
         
-        // Enhance custom fields when navigating to a performer page
-        if (path.match(/^\/performers\/\d+/)) {
-          // Small delay to let React render the page
+        // Inject battle rank badge when navigating to a single performer page
+        if (isOnSinglePerformerPage()) {
+          // Delay to allow the page to render
+          setTimeout(() => injectBattleRankBadge(), 500);
+        }
+      });
+    }
+  }
+
+  // ============================================
+  // PERFORMER CARD STAR RATING WIDGET
+  // (Integrated from rating plugin)
+  // ============================================
+  
+  // Local cache for ratings to ensure UI stays in sync across React re-renders
+  // Map<performerId, { rating100: number|null, timestamp: number }>
+  const ratingsCache = new Map();
+  
+  // Cache TTL in milliseconds (5 minutes) - after this, we'll re-fetch from server
+  const RATINGS_CACHE_TTL = 5 * 60 * 1000;
+  
+  /**
+   * Get a rating from the local cache
+   * @param {string} performerId - Performer ID
+   * @returns {number|null|undefined} Cached rating, or undefined if not cached or expired
+   */
+  function getCachedRatingForWidget(performerId) {
+    const cached = ratingsCache.get(performerId);
+    if (!cached) return undefined;
+    
+    // Check if cache entry is still valid
+    if (Date.now() - cached.timestamp > RATINGS_CACHE_TTL) {
+      ratingsCache.delete(performerId);
+      return undefined;
+    }
+    
+    return cached.rating100;
+  }
+  
+  /**
+   * Set a rating in the local cache
+   * @param {string} performerId - Performer ID
+   * @param {number|null} rating100 - Rating value
+   */
+  function setCachedRatingForWidget(performerId, rating100) {
+    ratingsCache.set(performerId, {
+      rating100,
+      timestamp: Date.now()
+    });
+  }
+  
+  /**
+   * Update performer rating via GraphQL (simple version for star widget)
+   * @param {string} performerId - The performer's ID
+   * @param {number} rating100 - Rating value (0-100)
+   * @returns {Promise<Object>} Updated performer data
+   */
+  async function updatePerformerRatingSimple(performerId, rating100) {
+    const mutation = `
+      mutation UpdatePerformerRating($id: ID!, $rating: Int!) {
+        performerUpdate(input: {
+          id: $id,
+          rating100: $rating
+        }) {
+          id
+          rating100
+        }
+      }
+    `;
+
+    const result = await graphqlQuery(mutation, {
+      id: performerId,
+      rating: Math.max(0, Math.min(100, Math.round(rating100)))
+    });
+
+    const updatedRating = result.performerUpdate.rating100;
+    
+    // Update the local cache so React re-renders use the correct value
+    setCachedRatingForWidget(performerId, updatedRating);
+    
+    console.log(`[HotOrNot] Updated performer ${performerId} rating to ${updatedRating}`);
+    
+    // Dispatch custom event so all rating widgets for this performer can update
+    document.dispatchEvent(new CustomEvent("performer:rating:updated", {
+      detail: { performerId, rating100: updatedRating }
+    }));
+    
+    return result.performerUpdate;
+  }
+  
+  /**
+   * Get performer rating by ID
+   * Uses local cache for recently updated ratings to ensure UI consistency
+   * @param {string} performerId - The performer's ID
+   * @returns {Promise<number|null>} Rating value or null if not rated
+   */
+  async function getPerformerRatingForWidget(performerId) {
+    // Check the cache first
+    const cachedRating = getCachedRatingForWidget(performerId);
+    if (cachedRating !== undefined) {
+      return cachedRating;
+    }
+    
+    const query = `
+      query GetPerformerRating($id: ID!) {
+        findPerformer(id: $id) {
+          id
+          rating100
+        }
+      }
+    `;
+
+    const result = await graphqlQuery(query, { id: performerId });
+    const rating = result.findPerformer ? result.findPerformer.rating100 : null;
+    
+    // Cache the fetched rating
+    setCachedRatingForWidget(performerId, rating);
+    
+    return rating;
+  }
+  
+  /**
+   * Get multiple performer ratings in a single request
+   * Uses local cache for recently updated ratings to ensure UI consistency
+   * @param {string[]} performerIds - Array of performer IDs
+   * @returns {Promise<Map<string, number|null>>} Map of performer ID to rating
+   */
+  async function getMultiplePerformerRatingsForWidget(performerIds) {
+    if (performerIds.length === 0) {
+      return new Map();
+    }
+
+    const ratings = new Map();
+    const uncachedIds = [];
+    
+    // First, check the cache for each performer
+    for (const id of performerIds) {
+      const cachedRating = getCachedRatingForWidget(id);
+      if (cachedRating !== undefined) {
+        ratings.set(id, cachedRating);
+      } else {
+        uncachedIds.push(id);
+      }
+    }
+    
+    // If all ratings were cached, return immediately
+    if (uncachedIds.length === 0) {
+      return ratings;
+    }
+
+    // Build a query that fetches only uncached performers
+    // GraphQL aliases allow us to query the same field multiple times with different arguments
+    const aliasedQueries = uncachedIds.map((id, index) => 
+      `p${index}: findPerformer(id: "${id}") { id rating100 }`
+    ).join("\n");
+
+    const query = `query GetMultiplePerformerRatings { ${aliasedQueries} }`;
+
+    try {
+      const result = await graphqlQuery(query, {});
+      
+      uncachedIds.forEach((id, index) => {
+        const performer = result[`p${index}`];
+        const rating = performer ? performer.rating100 : null;
+        ratings.set(id, rating);
+        // Cache the fetched rating
+        setCachedRatingForWidget(id, rating);
+      });
+      
+      return ratings;
+    } catch (err) {
+      console.error("[HotOrNot] Error fetching multiple ratings:", err);
+      // Log which performers couldn't be fetched
+      if (uncachedIds.length > 0) {
+        console.warn(`[HotOrNot] Failed to fetch ratings for performers: ${uncachedIds.join(", ")}`);
+      }
+      // Return what we have from cache (may be partial)
+      return ratings;
+    }
+  }
+
+  /**
+   * Create a star rating widget
+   * @param {number|null} currentRating - Current rating100 value (0-100) or null
+   * @param {string} performerId - Performer ID for updates
+   * @returns {HTMLElement} Star rating container element
+   */
+  function createStarRatingWidget(currentRating, performerId) {
+    const container = document.createElement("div");
+    container.className = "hon-star-rating";
+    container.dataset.performerId = performerId;
+    // Store the current rating in dataset so it can be updated
+    container.dataset.currentRating = currentRating !== null ? currentRating : "";
+
+    // Convert rating100 to 10-star scale (0-100 -> 0-10)
+    const starValue = currentRating !== null ? currentRating / 10 : 0;
+    const fullStars = Math.floor(starValue);
+    const hasHalfStar = starValue - fullStars >= 0.5;
+
+    // Create 10 stars
+    for (let i = 1; i <= 10; i++) {
+      const star = document.createElement("span");
+      star.className = "hon-star";
+      star.dataset.value = i;
+
+      if (i <= fullStars) {
+        star.classList.add("hon-star-filled");
+        star.innerHTML = "★";
+      } else if (i === fullStars + 1 && hasHalfStar) {
+        star.classList.add("hon-star-half");
+        star.innerHTML = "★";
+      } else {
+        star.classList.add("hon-star-empty");
+        star.innerHTML = "☆";
+      }
+
+      // Click handler for rating
+      star.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const newStarValue = parseInt(star.dataset.value);
+        const newRating100 = newStarValue * 10; // Convert back to rating100
+        
+        try {
+          await updatePerformerRatingSimple(performerId, newRating100);
+          // Update the stored rating in dataset
+          container.dataset.currentRating = newRating100;
+          updateStarWidgetDisplay(container, newRating100);
+          showStarRatingFeedback(container);
+          // Update any native Stash rating displays on the card
+          const parentCard = findParentCardForWidget(container);
+          updateNativeRatingDisplayOnCard(parentCard, newRating100);
+        } catch (err) {
+          console.error("[HotOrNot] Failed to update rating:", err);
+          showStarRatingError(container);
+        }
+      });
+
+      // Hover effects
+      star.addEventListener("mouseenter", () => {
+        previewStarWidgetHover(container, parseInt(star.dataset.value));
+      });
+
+      container.appendChild(star);
+    }
+
+    // Reset hover preview when mouse leaves - use stored rating from dataset
+    container.addEventListener("mouseleave", () => {
+      const storedRating = container.dataset.currentRating;
+      const ratingValue = storedRating !== "" ? parseInt(storedRating) : null;
+      updateStarWidgetDisplay(container, ratingValue);
+    });
+
+    // Prevent card click when interacting with rating
+    container.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    return container;
+  }
+
+  /**
+   * Update star display based on rating
+   * @param {HTMLElement} container - Star rating container
+   * @param {number|null} rating100 - Rating value (0-100) or null
+   */
+  function updateStarWidgetDisplay(container, rating100) {
+    const stars = container.querySelectorAll(".hon-star");
+    const starValue = rating100 !== null ? rating100 / 10 : 0;
+    const fullStars = Math.floor(starValue);
+    const hasHalfStar = starValue - fullStars >= 0.5;
+
+    stars.forEach((star, index) => {
+      const value = index + 1;
+      star.classList.remove("hon-star-filled", "hon-star-half", "hon-star-empty", "hon-star-preview");
+
+      if (value <= fullStars) {
+        star.classList.add("hon-star-filled");
+        star.innerHTML = "★";
+      } else if (value === fullStars + 1 && hasHalfStar) {
+        star.classList.add("hon-star-half");
+        star.innerHTML = "★";
+      } else {
+        star.classList.add("hon-star-empty");
+        star.innerHTML = "☆";
+      }
+    });
+  }
+
+  /**
+   * Preview star hover state
+   * @param {HTMLElement} container - Star rating container
+   * @param {number} hoverValue - Star value being hovered (1-10)
+   */
+  function previewStarWidgetHover(container, hoverValue) {
+    const stars = container.querySelectorAll(".hon-star");
+    stars.forEach((star, index) => {
+      const value = index + 1;
+      star.classList.remove("hon-star-preview");
+      if (value <= hoverValue) {
+        star.classList.add("hon-star-preview");
+        star.innerHTML = "★";
+      } else {
+        // Reset non-hovered stars to empty state
+        star.innerHTML = "☆";
+      }
+    });
+  }
+
+  /**
+   * Show brief feedback after rating update
+   * @param {HTMLElement} container - Star rating container
+   */
+  function showStarRatingFeedback(container) {
+    // Add visual feedback to the container
+    container.classList.add("hon-feedback-success");
+    setTimeout(() => {
+      container.classList.remove("hon-feedback-success");
+    }, 500);
+  }
+
+  /**
+   * Show error feedback after failed rating update
+   * @param {HTMLElement} container - Star rating container
+   */
+  function showStarRatingError(container) {
+    // Add visual feedback to the container
+    container.classList.add("hon-feedback-error");
+    setTimeout(() => {
+      container.classList.remove("hon-feedback-error");
+    }, 1000);
+  }
+
+  /**
+   * Extract performer ID from a performer card element
+   * @param {HTMLElement} card - Performer card element
+   * @returns {string|null} Performer ID or null
+   */
+  function getPerformerIdFromCard(card) {
+    // Try getting from card's link href (e.g., /performers/123)
+    const link = card.querySelector("a[href*='/performers/']");
+    if (link) {
+      const href = link.getAttribute("href");
+      const match = href.match(/\/performers\/(\d+)/);
+      if (match) {
+        return match[1];
+      }
+    }
+
+    // Try data attributes
+    if (card.dataset.performerId) {
+      return card.dataset.performerId;
+    }
+
+    return null;
+  }
+
+  /**
+   * Update Stash's native rating display elements on the card
+   * This ensures all rating displays are synchronized after a rating change
+   * @param {HTMLElement} card - Performer card element
+   * @param {number} rating100 - New rating value (0-100)
+   */
+  function updateNativeRatingDisplayOnCard(card, rating100) {
+    if (!card) return;
+    
+    // Find and update any native Stash rating elements on the card
+    // Look for common Stash rating element patterns
+    const ratingSelectors = [
+      ".rating-number",
+      ".rating-value",
+      ".rating-display",
+      "[class*='rating'][class*='number']",
+      "[class*='rating'][class*='value']"
+    ];
+    
+    // Try specific selectors first for better performance
+    let ratingElements = [];
+    for (const selector of ratingSelectors) {
+      const found = card.querySelectorAll(selector);
+      if (found.length > 0) {
+        ratingElements = Array.from(found);
+        break;
+      }
+    }
+    
+    // Fallback to broader selector if no specific elements found
+    if (ratingElements.length === 0) {
+      ratingElements = Array.from(card.querySelectorAll("[class*='rating']"));
+    }
+    
+    ratingElements.forEach(el => {
+      // Skip our plugin's rating widget
+      if (el.classList.contains("hon-star-rating") || 
+          el.closest(".hon-star-rating")) {
+        return;
+      }
+      
+      // Update the text content if it contains a valid rating number (0-100)
+      const text = el.textContent.trim();
+      // Match numbers that could be ratings (1-3 digits, standalone or at start/end)
+      const match = text.match(/^(\d{1,3})$|^(\d{1,3})\/|\/(\d{1,3})$/);
+      if (match) {
+        // Get the matched number (from any of the capture groups)
+        const matchedNumber = match[1] || match[2] || match[3];
+        const numericValue = parseInt(matchedNumber, 10);
+        // Only update if the number is in valid rating range
+        if (numericValue >= 0 && numericValue <= 100) {
+          el.textContent = text.replace(matchedNumber, rating100.toString());
+        }
+      }
+    });
+  }
+
+  /**
+   * Find the parent card element containing the rating widget
+   * @param {HTMLElement} container - The rating widget container
+   * @returns {HTMLElement|null} The parent card element or null
+   */
+  function findParentCardForWidget(container) {
+    // Walk up the DOM tree to find the performer card
+    let element = container.parentElement;
+    while (element) {
+      // Check for common card class names first (fast)
+      if (element.classList.contains("performer-card") ||
+          element.classList.contains("card")) {
+        return element;
+      }
+      // Check for direct link as child (faster than querySelector)
+      const children = element.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (child.tagName === "A" && 
+            child.href && 
+            child.href.includes("/performers/")) {
+          return element;
+        }
+      }
+      element = element.parentElement;
+    }
+    return null;
+  }
+
+  /**
+   * Check if rating widget already exists on card
+   * @param {HTMLElement} card - Performer card element
+   * @returns {boolean} True if widget exists
+   */
+  function hasStarRatingWidget(card) {
+    return card.querySelector(".hon-star-rating") !== null;
+  }
+
+  /**
+   * Inject rating widget into performer card
+   * @param {HTMLElement} card - Performer card element
+   * @param {number|null} rating - Pre-fetched rating value (optional)
+   */
+  async function injectStarRatingWidget(card, rating = undefined) {
+    if (hasStarRatingWidget(card)) {
+      return;
+    }
+
+    const performerId = getPerformerIdFromCard(card);
+    if (!performerId) {
+      console.warn("[HotOrNot] Could not get performer ID from card");
+      return;
+    }
+
+    try {
+      // Fetch current rating from API if not provided
+      if (rating === undefined) {
+        rating = await getPerformerRatingForWidget(performerId);
+      }
+      
+      // Create and inject the widget
+      const ratingWidget = createStarRatingWidget(rating, performerId);
+      
+      // Find the best place to inject (after the image, before other content)
+      const cardContent = card.querySelector(".performer-card-content") || 
+                         card.querySelector(".card-section") ||
+                         card.querySelector(".card-body") ||
+                         card;
+      
+      // Try to insert at the beginning of the card content
+      if (cardContent.firstChild) {
+        cardContent.insertBefore(ratingWidget, cardContent.firstChild);
+      } else {
+        cardContent.appendChild(ratingWidget);
+      }
+
+      // Mark card as processed
+      card.dataset.honRatingProcessed = "true";
+    } catch (err) {
+      console.error("[HotOrNot] Error injecting rating widget:", err);
+    }
+  }
+
+  /**
+   * Process all performer cards on the page for star rating widgets
+   */
+  async function processPerformerCardsForRating() {
+    // Various selectors for performer cards in Stash UI
+    const cardSelectors = [
+      ".performer-card",
+      "[class*='PerformerCard']",
+      ".card.performer",
+      ".grid-item.performer"
+    ];
+
+    let cards = [];
+    for (const selector of cardSelectors) {
+      const found = document.querySelectorAll(selector);
+      if (found.length > 0) {
+        cards = Array.from(found);
+        break;
+      }
+    }
+
+    // Alternative: look for cards that have performer links
+    if (cards.length === 0) {
+      const allCards = document.querySelectorAll(".card");
+      cards = Array.from(allCards).filter(card => {
+        const link = card.querySelector("a[href*='/performers/']");
+        return link !== null;
+      });
+    }
+
+    // Filter to only unprocessed cards
+    const unprocessedCards = cards.filter(card => !card.dataset.honRatingProcessed);
+    if (unprocessedCards.length === 0) {
+      return;
+    }
+
+    // Collect performer IDs for batch query
+    const cardIdMap = new Map(); // performerId -> card
+    for (const card of unprocessedCards) {
+      const performerId = getPerformerIdFromCard(card);
+      if (performerId) {
+        cardIdMap.set(performerId, card);
+      }
+    }
+
+    const performerIds = Array.from(cardIdMap.keys());
+    if (performerIds.length === 0) {
+      return;
+    }
+
+    try {
+      // Fetch all ratings in a single batch query
+      const ratings = await getMultiplePerformerRatingsForWidget(performerIds);
+      
+      // Inject widgets for each card in parallel
+      const widgetPromises = Array.from(cardIdMap.entries()).map(([performerId, card]) => {
+        const rating = ratings.get(performerId);
+        return injectStarRatingWidget(card, rating);
+      });
+      await Promise.all(widgetPromises);
+    } catch (err) {
+      console.error("[HotOrNot] Error processing cards in batch:", err);
+      // Fallback to individual processing (also parallelized)
+      await Promise.all(unprocessedCards.map(card => injectStarRatingWidget(card)));
+    }
+  }
+
+  /**
+   * Check if we're on the performers list page
+   * @returns {boolean} True if on performers list page
+   */
+  function isPerformersListPage() {
+    const path = window.location.pathname;
+    return path === "/performers" || path === "/performers/" || path.startsWith("/performers?");
+  }
+
+  // Debounce timeout for star rating processing
+  let starRatingProcessingTimeout = null;
+
+  /**
+   * Initialize star rating widgets
+   */
+  function initStarRatingWidgets() {
+    console.log("[HotOrNot] Star rating widgets initialized");
+
+    // Global event listener for rating updates (event delegation pattern)
+    // This avoids memory leaks from per-widget listeners
+    document.addEventListener("performer:rating:updated", (e) => {
+      const { performerId, rating100 } = e.detail;
+      // Find all rating widgets for this performer
+      const widgets = document.querySelectorAll(`.hon-star-rating[data-performer-id="${performerId}"]`);
+      widgets.forEach((container) => {
+        container.dataset.currentRating = rating100 !== null ? rating100 : "";
+        updateStarWidgetDisplay(container, rating100);
+        // Update native Stash rating displays on the associated card
+        const parentCard = findParentCardForWidget(container);
+        updateNativeRatingDisplayOnCard(parentCard, rating100);
+      });
+    });
+
+    // Initial processing if on performers list page
+    if (isPerformersListPage()) {
+      // Delay to allow Stash UI to render
+      setTimeout(() => {
+        processPerformerCardsForRating();
+      }, 1000);
+    }
+
+    // Watch for DOM changes (SPA navigation, lazy loading, etc.)
+    const ratingObserver = new MutationObserver(() => {
+      if (!isPerformersListPage()) {
+        return;
+      }
+
+      // Debounce processing
+      clearTimeout(starRatingProcessingTimeout);
+      starRatingProcessingTimeout = setTimeout(() => {
+        processPerformerCardsForRating();
+      }, 500);
+    });
+
+    ratingObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Listen for Stash navigation events if PluginApi is available
+    if (typeof PluginApi !== "undefined" && PluginApi.Event && PluginApi.Event.addEventListener) {
+      PluginApi.Event.addEventListener("stash:location", () => {
+        if (isPerformersListPage()) {
+          // Delay to allow UI to render
           setTimeout(() => {
-            enhancePerformerPageCustomFields();
+            processPerformerCardsForRating();
           }, 500);
         }
       });
     }
   }
-  
-  // ============================================
-  // PERFORMER PAGE CUSTOM FIELDS ENHANCEMENT
-  // ============================================
-  
-  /**
-   * Enhance the custom fields display on performer detail pages.
-   * - Auto-expands the custom fields section
-   * - Styles the hotornot_stats field with a nice display
-   */
-  function enhancePerformerPageCustomFields() {
-    if (!isOnSinglePerformerPage()) return;
-    
-    // Wait for the custom fields section to be rendered
-    waitForCustomFieldsSection(() => {
-      autoExpandCustomFields();
-      styleHotOrNotStatsField();
-    });
-  }
-  
-  /**
-   * Wait for the custom fields section to appear in the DOM
-   * @param {Function} callback - Callback to run when custom fields section is found
-   * @param {number} maxAttempts - Maximum number of attempts (default 20)
-   */
-  function waitForCustomFieldsSection(callback, maxAttempts = 20) {
-    let attempts = 0;
-    
-    const check = () => {
-      attempts++;
-      const customFieldsSection = document.querySelector('.custom-fields');
-      
-      if (customFieldsSection) {
-        callback();
-        return;
-      }
-      
-      if (attempts < maxAttempts) {
-        setTimeout(check, 250);
-      }
-    };
-    
-    check();
-  }
-  
-  /**
-   * Auto-expand the custom fields collapsible section on performer detail pages
-   */
-  function autoExpandCustomFields() {
-    const customFieldsSection = document.querySelector('.custom-fields');
-    if (!customFieldsSection) return;
-    
-    // Check if already expanded (the collapse button controls this)
-    const collapseButton = customFieldsSection.querySelector('.collapse-button');
-    if (!collapseButton) return;
-    
-    // Check if the collapse content is currently hidden
-    const collapseContent = customFieldsSection.querySelector('.collapse');
-    if (collapseContent && !collapseContent.classList.contains('show')) {
-      // Click the button to expand
-      collapseButton.click();
-      console.log('[HotOrNot] Auto-expanded custom fields section');
-    }
-  }
-  
-  /**
-   * Style the hotornot_stats custom field with a formatted display
-   */
-  function styleHotOrNotStatsField() {
-    // Find the hotornot_stats field - look for detail item with id containing 'hotornot'
-    const detailItems = document.querySelectorAll('.custom-fields .detail-item');
-    
-    for (const item of detailItems) {
-      const label = item.querySelector('.detail-item-title');
-      if (!label) continue;
-      
-      // Check if this is the hotornot_stats field
-      if (label.textContent.toLowerCase().includes('hotornot_stats')) {
-        
-        // Check if already enhanced
-        if (item.classList.contains('hon-enhanced-stats')) return;
-        item.classList.add('hon-enhanced-stats');
-        
-        // Get the value element
-        const valueElement = item.querySelector('.detail-item-value');
-        if (!valueElement) continue;
-        
-        // Get the raw JSON text
-        const rawText = valueElement.textContent;
-        
-        try {
-          // Parse the JSON stats
-          const stats = JSON.parse(rawText);
-          
-          // Create a styled display
-          const styledContent = createStyledStatsDisplay(stats);
-          
-          // Replace the content
-          valueElement.innerHTML = '';
-          valueElement.appendChild(styledContent);
-          
-          console.log('[HotOrNot] Enhanced hotornot_stats display');
-        } catch (e) {
-          console.warn('[HotOrNot] Failed to parse hotornot_stats:', e);
-        }
-        
-        break;
-      }
-    }
-  }
-  
-  /**
-   * Create a styled display for the hotornot stats
-   * @param {Object} stats - The parsed stats object
-   * @returns {HTMLElement} The styled stats display element
-   */
-  function createStyledStatsDisplay(stats) {
-    const container = document.createElement('div');
-    container.className = 'hon-stats-display';
-    
-    // Calculate win rate
-    const totalMatches = stats.total_matches || 0;
-    const wins = stats.wins || 0;
-    const losses = stats.losses || 0;
-    const draws = stats.draws || 0;
-    const winRate = totalMatches > 0 ? ((wins / totalMatches) * 100).toFixed(1) : '0.0';
-    
-    // Format last match date
-    let lastMatchDisplay = 'Never';
-    if (stats.last_match) {
-      try {
-        const date = new Date(stats.last_match);
-        lastMatchDisplay = date.toLocaleDateString(undefined, { 
-          year: 'numeric', 
-          month: 'short', 
-          day: 'numeric' 
-        });
-      } catch (e) {
-        lastMatchDisplay = stats.last_match;
-      }
-    }
-    
-    // Current streak with color coding
-    const currentStreak = stats.current_streak || 0;
-    const streakClass = currentStreak > 0 ? 'hon-stat-positive' : 
-                        currentStreak < 0 ? 'hon-stat-negative' : 'hon-stat-neutral';
-    const streakPrefix = currentStreak > 0 ? '+' : '';
-    
-    // Best/worst streaks with conditional styling
-    const bestStreak = stats.best_streak || 0;
-    const worstStreak = stats.worst_streak || 0;
-    const bestStreakClass = bestStreak > 0 ? 'hon-stat-positive' : 'hon-stat-neutral';
-    const bestStreakPrefix = bestStreak > 0 ? '+' : '';
-    const worstStreakClass = worstStreak < 0 ? 'hon-stat-negative' : 'hon-stat-neutral';
-    
-    container.innerHTML = `
-      <div class="hon-stats-grid">
-        <div class="hon-stat-item hon-stat-main">
-          <span class="hon-stat-label">Win Rate</span>
-          <span class="hon-stat-value hon-stat-winrate">${winRate}%</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Matches</span>
-          <span class="hon-stat-value">${totalMatches}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Wins</span>
-          <span class="hon-stat-value hon-stat-positive">${wins}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Losses</span>
-          <span class="hon-stat-value hon-stat-negative">${losses}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Draws</span>
-          <span class="hon-stat-value hon-stat-neutral">${draws}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Current Streak</span>
-          <span class="hon-stat-value ${streakClass}">${streakPrefix}${currentStreak}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Best Streak</span>
-          <span class="hon-stat-value ${bestStreakClass}">${bestStreakPrefix}${bestStreak}</span>
-        </div>
-        <div class="hon-stat-item">
-          <span class="hon-stat-label">Worst Streak</span>
-          <span class="hon-stat-value ${worstStreakClass}">${worstStreak}</span>
-        </div>
-        <div class="hon-stat-item hon-stat-date">
-          <span class="hon-stat-label">Last Match</span>
-          <span class="hon-stat-value">${lastMatchDisplay}</span>
-        </div>
-      </div>
-    `;
-    
-    return container;
-  }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", () => {
+      init();
+      initStarRatingWidgets();
+    });
   } else {
     init();
+    initStarRatingWidgets();
   }
 })();

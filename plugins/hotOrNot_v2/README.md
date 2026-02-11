@@ -1,4 +1,4 @@
-# HotOrNot Plugin
+# HotOrNotV2 Plugin
 
 An ELO-based ranking system for performers in [Stash](https://stashapp.cc/). Compare performers head-to-head in an interactive battle interface to build personalized rankings based on your preferences.
 
@@ -65,17 +65,35 @@ Respects the current page's filter criteria when launched from a filtered perfor
 ### User Interface
 
 - **Floating action button** on performer pages to launch the comparison modal
+- **Battle rank badge** on individual performer pages showing their rank position (e.g., "#5 of 100")
+- **Star rating widget** on performer cards in the grid view for quick inline rating
 - **Side-by-side comparison** with performer images and metadata
 - **Visual feedback** showing rating changes after each choice
 - **Keyboard shortcuts**: Left Arrow (choose left), Right Arrow (choose right), Escape (close)
 - **Responsive design** that works on desktop and mobile
 - **Video preview on hover** for performers with preview clips
 
+### Star Rating Widget
+
+On the performers list page, each performer card displays a 10-star rating widget:
+- **Click-to-rate** - Click any star to set the rating (1 star = 10, 10 stars = 100)
+- **Hover preview** - See what rating you're about to set before clicking
+- **Real-time updates** - Changes are saved immediately to Stash
+- **Smart caching** - Batch fetches ratings for performance with 5-minute TTL
+- **Native sync** - Updates Stash's native rating displays when you change a rating
+
+### Battle Rank Badge
+
+When viewing a single performer's page, a badge displays their battle rank:
+- Shows rank position and total performers (e.g., "Battle Rank #5 of 100")
+- Tier-based styling: 👑 Legendary (top 5%), 🥇 Gold (top 20%), 🥈 Silver (top 40%), 🥉 Bronze (top 60%), 🔥 Default
+- Hover for tooltip showing exact rating
+
 ## Installation
 
-1. Download the `/plugins/hotornot/` folder to your Stash plugins directory
+1. Download the `/plugins/hotOrNot_v2/` folder to your Stash plugins directory
 2. Reload plugins in Stash (Settings → Plugins → Reload)
-3. Navigate to the Performers page to see the floating HotOrNot button
+3. Navigate to the Performers page to see the floating HotOrNot button and star rating widgets on performer cards
 
 ## Usage
 
