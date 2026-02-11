@@ -5,7 +5,7 @@
   let currentPair = { left: null, right: null };
   let currentRanks = { left: null, right: null };
   let currentMode = "swiss"; // "swiss", "gauntlet", or "champion"
-  let gauntletChampion = null; // The item currently on a winning streak
+  let gauntletChampion = null; // The item currently on a winning streak (scene or performer)
   let gauntletWins = 0; // Current win streak
   let gauntletChampionRank = 0; // Current rank position (1 = top)
   let gauntletDefeated = []; // IDs of items defeated in current run
@@ -15,6 +15,7 @@
   let disableChoice = false; // Track when inputs should be disabled to prevent multiple events
   let battleType = "performers"; // HotOrNot is performers-only
   let cachedUrlFilter = null; // Cache the URL filter when modal is opened
+  let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
 
   // GraphQL filter modifier constants
   // Array-based modifiers require value_list field for enum-based criterion inputs
@@ -42,6 +43,30 @@
     return result.data;
   }
 
+  const SCENE_FRAGMENT = `
+    id
+    title
+    date
+    rating100
+    paths {
+      screenshot
+      preview
+    }
+    files {
+      duration
+      path
+    }
+    studio {
+      name
+    }
+    performers {
+      name
+    }
+    tags {
+      name
+    }
+  `;
+
   const PERFORMER_FRAGMENT = `
     id
     name
@@ -53,7 +78,6 @@
     ethnicity
     country
     gender
-    scene_count
   `;
 
   const IMAGE_FRAGMENT = `
@@ -722,21 +746,368 @@
     return filter;
   }
 
+async function fetchSceneCount() {
+    const countQuery = `
+      query FindScenesCount {
+        findScenes(filter: { per_page: 0 }) {
+          count
+        }
+      }
+    `;
+    const countResult = await graphqlQuery(countQuery);
+    return countResult.findScenes.count;
+  }
+
+  async function fetchRandomScenes(count = 2) {
+    const totalScenes = await fetchSceneCount();
+    
+    if (totalScenes < 2) {
+      throw new Error("Not enough scenes for comparison. You need at least 2 scenes.");
+    }
+
+    const scenesQuery = `
+      query FindRandomScenes($filter: FindFilterType) {
+        findScenes(filter: $filter) {
+          scenes {
+            ${SCENE_FRAGMENT}
+          }
+        }
+      }
+    `;
+
+    const result = await graphqlQuery(scenesQuery, {
+      filter: {
+        per_page: Math.min(100, totalScenes),
+        sort: "random"
+      }
+    });
+
+    const allScenes = result.findScenes.scenes || [];
+    
+    if (allScenes.length < 2) {
+      throw new Error("Not enough scenes returned from query.");
+    }
+
+    const shuffled = allScenes.sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, 2);
+  }
+
+  // Swiss mode: fetch two scenes with similar ratings
+  async function fetchSwissPairScenes() {
+    const scenesQuery = `
+      query FindScenesByRating($filter: FindFilterType) {
+        findScenes(filter: $filter) {
+          scenes {
+            ${SCENE_FRAGMENT}
+          }
+        }
+      }
+    `;
+
+    // Get scenes sorted by rating
+    const result = await graphqlQuery(scenesQuery, {
+      filter: {
+        per_page: -1, // Get all for accurate ranking
+        sort: "rating",
+        direction: "DESC"
+      }
+    });
+
+    const scenes = result.findScenes.scenes || [];
+    
+    if (scenes.length < 2) {
+      // Fallback to random if not enough rated scenes
+      return { scenes: await fetchRandomScenes(2), ranks: [null, null] };
+    }
+
+    // Pick a random scene, then find one with similar rating
+    const randomIndex = Math.floor(Math.random() * scenes.length);
+    const scene1 = scenes[randomIndex];
+    const rating1 = scene1.rating100 || 50;
+
+    // Find scenes within adaptive rating window (tighter for larger pools)
+    const matchWindow = scenes.length > 50 ? 10 : scenes.length > 20 ? 15 : 25;
+    const similarScenes = scenes.filter(s => {
+      if (s.id === scene1.id) return false;
+      const rating = s.rating100 || 50;
+      return Math.abs(rating - rating1) <= matchWindow;
+    });
+
+    let scene2;
+    let scene2Index;
+    if (similarScenes.length > 0) {
+      // Pick random from similar-rated scenes
+      scene2 = similarScenes[Math.floor(Math.random() * similarScenes.length)];
+      scene2Index = scenes.findIndex(s => s.id === scene2.id);
+    } else {
+      // No similar scenes, pick closest
+      const otherScenes = scenes.filter(s => s.id !== scene1.id);
+      otherScenes.sort((a, b) => {
+        const diffA = Math.abs((a.rating100 || 50) - rating1);
+        const diffB = Math.abs((b.rating100 || 50) - rating1);
+        return diffA - diffB;
+      });
+      scene2 = otherScenes[0];
+      scene2Index = scenes.findIndex(s => s.id === scene2.id);
+    }
+
+    return { 
+      scenes: [scene1, scene2], 
+      ranks: [randomIndex + 1, scene2Index + 1] 
+    };
+  }
+
+  // Gauntlet mode: champion vs next challenger
+  async function fetchGauntletPairScenes() {
+    const scenesQuery = `
+      query FindScenesByRating($filter: FindFilterType) {
+        findScenes(filter: $filter) {
+          count
+          scenes {
+            ${SCENE_FRAGMENT}
+          }
+        }
+      }
+    `;
+
+    // Get ALL scenes sorted by rating descending (highest first)
+    const result = await graphqlQuery(scenesQuery, {
+      filter: {
+        per_page: -1, // Get all
+        sort: "rating",
+        direction: "DESC"
+      }
+    });
+
+    const scenes = result.findScenes.scenes || [];
+    totalItemsCount = result.findScenes.count || scenes.length;
+    
+    if (scenes.length < 2) {
+      return { scenes: await fetchRandomScenes(2), ranks: [null, null], isVictory: false, isFalling: false };
+    }
+
+    // Handle falling mode - find next opponent BELOW to test against
+    if (gauntletFalling && gauntletFallingItem) {
+      const fallingIndex = scenes.findIndex(s => s.id === gauntletFallingItem.id);
+      
+      // Find opponents below (higher index) that haven't been tested
+      const belowOpponents = scenes.filter((s, idx) => {
+        if (s.id === gauntletFallingItem.id) return false;
+        if (gauntletDefeated.includes(s.id)) return false;
+        return idx > fallingIndex; // Below in ranking
+      });
+      
+      if (belowOpponents.length === 0) {
+        // Hit the bottom - they're the lowest, place them here
+        const finalRank = scenes.length;
+        const finalRating = 1; // Lowest rating
+        updateItemRating(gauntletFallingItem.id, finalRating);
+        
+        return {
+          scenes: [gauntletFallingItem],
+          ranks: [finalRank],
+          isVictory: false,
+          isFalling: true,
+          isPlacement: true,
+          placementRank: finalRank,
+          placementRating: finalRating
+        };
+      } else {
+        // Get next opponent below (first one, closest to falling scene)
+        const nextBelow = belowOpponents[0];
+        const nextBelowIndex = scenes.findIndex(s => s.id === nextBelow.id);
+        
+        // Update the falling scene's rank for display
+        gauntletChampionRank = fallingIndex + 1;
+        
+        return {
+          scenes: [gauntletFallingItem, nextBelow],
+          ranks: [fallingIndex + 1, nextBelowIndex + 1],
+          isVictory: false,
+          isFalling: true
+        };
+      }
+    }
+
+    // If no champion yet, start with a random challenger vs the lowest rated scene
+    if (!gauntletChampion) {
+      // Reset state
+      gauntletDefeated = [];
+      gauntletFalling = false;
+      gauntletFallingItem = null;
+      
+      // Pick random scene as challenger
+      const randomIndex = Math.floor(Math.random() * scenes.length);
+      const challenger = scenes[randomIndex];
+      
+      // Start at the bottom - find lowest rated scene that isn't the challenger
+      const lowestRated = scenes
+        .filter(s => s.id !== challenger.id)
+        .sort((a, b) => (a.rating100 || 0) - (b.rating100 || 0))[0];
+      
+      const lowestIndex = scenes.findIndex(s => s.id === lowestRated.id);
+      
+      // Challenger's current rank
+      gauntletChampionRank = randomIndex + 1;
+      
+      return { 
+        scenes: [challenger, lowestRated], 
+        ranks: [randomIndex + 1, lowestIndex + 1],
+        isVictory: false,
+        isFalling: false
+      };
+    }
+
+    // Champion exists - find next opponent they haven't defeated yet
+    const championIndex = scenes.findIndex(s => s.id === gauntletChampion.id);
+    
+    // Update champion rank (1-indexed, so +1)
+    gauntletChampionRank = championIndex + 1;
+    
+    // Find opponents above champion that haven't been defeated
+    const remainingOpponents = scenes.filter((s, idx) => {
+      if (s.id === gauntletChampion.id) return false;
+      if (gauntletDefeated.includes(s.id)) return false;
+      // Only scenes ranked higher (lower index) or same rating
+      return idx < championIndex || (s.rating100 || 0) >= (gauntletChampion.rating100 || 0);
+    });
+    
+    // If no opponents left, champion has truly won
+    if (remainingOpponents.length === 0) {
+      gauntletChampionRank = 1;
+      return { 
+        scenes: [gauntletChampion], 
+        ranks: [1],
+        isVictory: true,
+        isFalling: false
+      };
+    }
+    
+    // Pick the next highest-ranked remaining opponent with randomization
+    const nextOpponent = selectRandomOpponent(remainingOpponents);
+    const nextOpponentIndex = scenes.findIndex(s => s.id === nextOpponent.id);
+    
+    return { 
+      scenes: [gauntletChampion, nextOpponent], 
+      ranks: [championIndex + 1, nextOpponentIndex + 1],
+      isVictory: false,
+      isFalling: false
+    };
+  }
+
+  // Champion mode: like gauntlet but winner stays on (no falling)
+  async function fetchChampionPairScenes() {
+    const scenesQuery = `
+      query FindScenesByRating($filter: FindFilterType) {
+        findScenes(filter: $filter) {
+          count
+          scenes {
+            ${SCENE_FRAGMENT}
+          }
+        }
+      }
+    `;
+
+    // Get ALL scenes sorted by rating descending (highest first)
+    const result = await graphqlQuery(scenesQuery, {
+      filter: {
+        per_page: -1,
+        sort: "rating",
+        direction: "DESC"
+      }
+    });
+
+    const scenes = result.findScenes.scenes || [];
+    totalItemsCount = result.findScenes.count || scenes.length;
+    
+    if (scenes.length < 2) {
+      return { scenes: await fetchRandomScenes(2), ranks: [null, null], isVictory: false };
+    }
+
+    // If no champion yet, start with a random challenger vs the lowest rated scene
+    if (!gauntletChampion) {
+      gauntletDefeated = [];
+      
+      // Pick random scene as challenger
+      const randomIndex = Math.floor(Math.random() * scenes.length);
+      const challenger = scenes[randomIndex];
+      
+      // Start at the bottom - find lowest rated scene that isn't the challenger
+      const lowestRated = scenes
+        .filter(s => s.id !== challenger.id)
+        .sort((a, b) => (a.rating100 || 0) - (b.rating100 || 0))[0];
+      
+      const lowestIndex = scenes.findIndex(s => s.id === lowestRated.id);
+      
+      gauntletChampionRank = randomIndex + 1;
+      
+      return { 
+        scenes: [challenger, lowestRated], 
+        ranks: [randomIndex + 1, lowestIndex + 1],
+        isVictory: false
+      };
+    }
+
+    // Champion exists - find next opponent they haven't defeated yet
+    const championIndex = scenes.findIndex(s => s.id === gauntletChampion.id);
+    
+    gauntletChampionRank = championIndex + 1;
+    
+    // Find opponents above champion that haven't been defeated
+    const remainingOpponents = scenes.filter((s, idx) => {
+      if (s.id === gauntletChampion.id) return false;
+      if (gauntletDefeated.includes(s.id)) return false;
+      return idx < championIndex || (s.rating100 || 0) >= (gauntletChampion.rating100 || 0);
+    });
+    
+    // If no opponents left, champion has won!
+    if (remainingOpponents.length === 0) {
+      gauntletChampionRank = 1;
+      return { 
+        scenes: [gauntletChampion], 
+        ranks: [1],
+        isVictory: true
+      };
+    }
+    
+    // Pick the next highest-ranked remaining opponent with randomization
+    const nextOpponent = selectRandomOpponent(remainingOpponents);
+    const nextOpponentIndex = scenes.findIndex(s => s.id === nextOpponent.id);
+    
+    return { 
+      scenes: [gauntletChampion, nextOpponent], 
+      ranks: [championIndex + 1, nextOpponentIndex + 1],
+      isVictory: false
+    };
+  }
+  
   function createVictoryScreen(champion) {
-    // Handle performers and images
+    // Handle scenes, performers, and images
     let title, imagePath;
     
     if (battleType === "performers") {
       // Performer
       title = champion.name || `Performer #${champion.id}`;
       imagePath = champion.image_path;
-    } else {
+    } else if (battleType === "images") {
       // Image
       title = `Image #${champion.id}`;
       imagePath = champion.paths && champion.paths.thumbnail ? champion.paths.thumbnail : null;
+    } else {
+      // Scene
+      const file = champion.files && champion.files[0] ? champion.files[0] : {};
+      title = champion.title;
+      if (!title && file.path) {
+        const pathParts = file.path.split(/[/\\]/);
+        title = pathParts[pathParts.length - 1].replace(/\.[^/.]+$/, "");
+      }
+      if (!title) {
+        title = `Scene #${champion.id}`;
+      }
+      imagePath = champion.paths ? champion.paths.screenshot : null;
     }
     
-    const itemType = battleType === "performers" ? "performers" : "images";
+    const itemType = battleType === "performers" ? "performers" : (battleType === "images" ? "images" : "scenes");
     
     return `
       <div class="hon-victory-screen">
@@ -759,17 +1130,29 @@
     const comparisonArea = document.getElementById("hon-comparison-area");
     if (!comparisonArea) return;
     
-    // Handle performers and images
+    // Handle scenes, performers, and images
     let title, imagePath;
     
     if (battleType === "performers") {
       // Performer
       title = item.name || `Performer #${item.id}`;
       imagePath = item.image_path;
-    } else {
+    } else if (battleType === "images") {
       // Image
       title = `Image #${item.id}`;
       imagePath = item.paths && item.paths.thumbnail ? item.paths.thumbnail : null;
+    } else {
+      // Scene
+      const file = item.files && item.files[0] ? item.files[0] : {};
+      title = item.title;
+      if (!title && file.path) {
+        const pathParts = file.path.split(/[/\\]/);
+        title = pathParts[pathParts.length - 1].replace(/\.[^/.]+$/, "");
+      }
+      if (!title) {
+        title = `Scene #${item.id}`;
+      }
+      imagePath = item.paths ? item.paths.screenshot : null;
     }
     
     comparisonArea.innerHTML = `
@@ -811,6 +1194,30 @@
         if (actionsEl) actionsEl.style.display = "";
         loadNewPair();
       });
+    }
+  }
+  
+  // Update scene rating in Stash database
+  async function updateSceneRating(sceneId, rating100) {
+    const mutation = `
+      mutation SceneUpdate($input: SceneUpdateInput!) {
+        sceneUpdate(input: $input) {
+          id
+          rating100
+        }
+      }
+    `;
+    
+    try {
+      await graphqlQuery(mutation, {
+        input: {
+          id: sceneId,
+          rating100: Math.max(1, Math.min(100, rating100))
+        }
+      });
+      console.log(`[HotOrNot] Updated scene ${sceneId} rating to ${rating100}`);
+    } catch (e) {
+      console.error(`[HotOrNot] Failed to update scene ${sceneId} rating:`, e);
     }
   }
 
@@ -944,7 +1351,7 @@
   /**
    * Update performer stats after a match
    * @param {Object} currentStats - Current stats object from parsePerformerEloData
-   * @param {boolean|null|string} won - True if performer won, false if lost, null for participation-only (no win/loss tracking), "draw" for skipped/drawn matches
+   * @param {boolean|null} won - True if performer won, false if lost, null for participation-only (no win/loss tracking, gauntlet mode defenders only)
    * @returns {Object} Updated stats object
    */
   function updatePerformerStats(currentStats, won) {
@@ -959,20 +1366,7 @@
     if (won === null) {
       newStats.wins = currentStats.wins;
       newStats.losses = currentStats.losses;
-      newStats.draws = currentStats.draws || 0;
       newStats.current_streak = currentStats.current_streak;
-      newStats.best_streak = currentStats.best_streak;
-      newStats.worst_streak = currentStats.worst_streak;
-      return newStats;
-    }
-    
-    // Handle draw (skip) - counts as a tie, resets streak
-    if (won === "draw") {
-      newStats.wins = currentStats.wins;
-      newStats.losses = currentStats.losses;
-      newStats.draws = (currentStats.draws || 0) + 1;
-      // A draw resets the current streak to 0 (neither winning nor losing)
-      newStats.current_streak = 0;
       newStats.best_streak = currentStats.best_streak;
       newStats.worst_streak = currentStats.worst_streak;
       return newStats;
@@ -981,7 +1375,6 @@
     // Track win/loss
     newStats.wins = won ? currentStats.wins + 1 : currentStats.wins;
     newStats.losses = won ? currentStats.losses : currentStats.losses + 1;
-    newStats.draws = currentStats.draws || 0;
     
     // Calculate current streak
     if (won) {
@@ -1009,29 +1402,26 @@
   }
 
   /**
-   * Calculate K-factor based on match count (experience), scene count, and mode
+   * Calculate K-factor based on match count (experience) and mode
    * @param {number} currentRating - Current ELO rating
    * @param {number} matchCount - Number of matches played
    * @param {string} mode - Current game mode ("swiss", "gauntlet", "champion")
-   * @param {number} sceneCount - Number of scenes the performer is in (performers only)
    * @returns {number} K-factor value
    */
-  function getKFactor(currentRating, matchCount = null, mode = "swiss", sceneCount = null) {
+  function getKFactor(currentRating, matchCount = null, mode = "swiss") {
     let baseKFactor;
     
     // If match count is available, use it for more accurate K-factor
-    // K-factor ranges follow a reduced USCF/FIDE approach for slower rating changes:
-    // This makes it harder to jump to extreme ratings quickly
     if (matchCount !== null && matchCount !== undefined) {
-      // New performers: Moderate K-factor for convergence (reduced from 32)
+      // New performers: High K-factor for fast convergence
       if (matchCount < 10) {
         baseKFactor = 16;
       }
-      // Moderately established: Lower K-factor (reduced from 24)
+      // Moderately established: Medium K-factor
       else if (matchCount < 30) {
         baseKFactor = 12;
       }
-      // Well-established (30+ matches): Low K-factor for stability (reduced from 16)
+      // Well-established (30+ matches): Low K-factor for stability
       else {
         baseKFactor = 8;
       }
@@ -1042,37 +1432,12 @@
       const distanceFromDefault = Math.abs(currentRating - 50);
       
       if (distanceFromDefault < 10) {
-        baseKFactor = 14;  // Higher K for unproven items near default (reduced from 24)
+        baseKFactor = 12;  // Higher K for unproven items near default
       } else if (distanceFromDefault < 25) {
-        baseKFactor = 10;  // Medium K for moderately established items (reduced from 20)
+        baseKFactor = 10;  // Medium K for moderately established items
       } else {
-        baseKFactor = 8;   // Lower K for well-established items (reduced from 16)
+        baseKFactor = 8;   // Lower K for well-established items
       }
-    }
-    
-    // Apply scene count weighting for performers
-    // Performers with more scenes get lower K-factor (more stable ratings)
-    // This reflects that performers with extensive filmography have more "evidence" 
-    // of their quality and their rating should be more stable
-    if (sceneCount !== null && sceneCount !== undefined && sceneCount > 0) {
-      let sceneMultiplier = 1.0;
-      
-      if (sceneCount >= 100) {
-        // Very prolific performers: 50% K-factor (very stable)
-        sceneMultiplier = 0.5;
-      } else if (sceneCount >= 50) {
-        // Prolific performers: 65% K-factor
-        sceneMultiplier = 0.65;
-      } else if (sceneCount >= 20) {
-        // Established performers: 80% K-factor
-        sceneMultiplier = 0.8;
-      } else if (sceneCount >= 10) {
-        // Moderately established: 90% K-factor
-        sceneMultiplier = 0.9;
-      }
-      // Performers with < 10 scenes: full K-factor (no reduction)
-      
-      baseKFactor = Math.max(2, Math.round(baseKFactor * sceneMultiplier));
     }
     
     // Apply mode-specific multiplier
@@ -1084,40 +1449,6 @@
     
     // Swiss and gauntlet modes use full K-factor
     return baseKFactor;
-  }
-
-  /**
-   * Apply diminishing returns for rating gains at higher ratings.
-   * Makes it progressively harder to reach 100 - the closer you are to 100,
-   * the less points you gain from a win.
-   * @param {number} currentRating - Current rating (1-100)
-   * @param {number} baseGain - Base rating gain calculated from ELO formula
-   * @returns {number} Adjusted gain with diminishing returns applied
-   */
-  function applyDiminishingReturns(currentRating, baseGain) {
-    if (baseGain <= 0) return baseGain;
-    
-    // Calculate how close we are to the ceiling (100)
-    // The multiplier decreases as we approach 100
-    // At rating 50: multiplier = 1.0 (full gain)
-    // At rating 75: multiplier = 0.25
-    // At rating 90: multiplier = 0.04
-    // At rating 95: multiplier = 0.01
-    const distanceFromCeiling = 100 - currentRating;
-    
-    // Use a quadratic curve for smooth diminishing returns
-    // Formula: multiplier = (distance / 50)^2, clamped between 0 and 1
-    // This creates a smooth curve that gets progressively steeper near 100
-    const multiplier = Math.min(1, Math.pow(distanceFromCeiling / 50, 2));
-    
-    // Ensure at least 1 point can be gained if baseGain > 0 and not at the absolute ceiling
-    const adjustedGain = Math.round(baseGain * multiplier);
-    
-    // At rating 100, no more gains possible
-    if (currentRating >= 100) return 0;
-    
-    // Otherwise ensure at least 1 point gain when baseGain > 0
-    return Math.max(1, adjustedGain);
   }
 
   /**
@@ -1190,54 +1521,40 @@
     // Parse match counts from custom fields (only for performers)
     let winnerMatchCount = null;
     let loserMatchCount = null;
-    // Extract scene counts for K-factor weighting (performers only)
-    let winnerSceneCount = null;
-    let loserSceneCount = null;
-    
     if (battleType === "performers" && freshWinnerObj) {
       const winnerStats = parsePerformerEloData(freshWinnerObj);
       winnerMatchCount = winnerStats.total_matches;
-      winnerSceneCount = freshWinnerObj.scene_count || null;
     }
     if (battleType === "performers" && freshLoserObj) {
       const loserStats = parsePerformerEloData(freshLoserObj);
       loserMatchCount = loserStats.total_matches;
-      loserSceneCount = freshLoserObj.scene_count || null;
     }
     
     let winnerGain = 0, loserLoss = 0;
     
     if (currentMode === "gauntlet") {
-      // In gauntlet, only the champion/falling item changes rating
+      // In gauntlet, only the champion/falling scene changes rating
       // Defenders stay the same (they're just benchmarks)
-      // EXCEPT: if the defender is rank #1, they get a full ELO penalty when defeated
-      // to ensure rankings remain fluid and upsets are properly reflected
+      // EXCEPT: if the defender is rank #1, they lose 1 point when defeated
       const isChampionWinner = gauntletChampion && winnerId === gauntletChampion.id;
       const isFallingWinner = gauntletFalling && gauntletFallingItem && winnerId === gauntletFallingItem.id;
       const isChampionLoser = gauntletChampion && loserId === gauntletChampion.id;
       const isFallingLoser = gauntletFalling && gauntletFallingItem && loserId === gauntletFallingItem.id;
       
       const expectedWinner = 1 / (1 + Math.pow(10, ratingDiff / 40));
-      const kFactor = getKFactor(winnerRating, winnerMatchCount, "gauntlet", winnerSceneCount);
+      const kFactor = getKFactor(winnerRating, winnerMatchCount, "gauntlet");
       
-      // Only the active item (champion or falling) gets rating changes
+      // Only the active scene (champion or falling) gets rating changes
       if (isChampionWinner || isFallingWinner) {
-        const baseGain = Math.max(0, Math.round(kFactor * (1 - expectedWinner)));
-        // Apply diminishing returns - harder to gain points at higher ratings
-        winnerGain = applyDiminishingReturns(winnerRating, baseGain);
+        winnerGain = Math.max(0, Math.round(kFactor * (1 - expectedWinner)));
       }
       if (isChampionLoser || isFallingLoser) {
         loserLoss = Math.max(0, Math.round(kFactor * expectedWinner));
       }
       
-      // Special case: if defender was rank #1 and lost, apply full ELO penalty
-      // The ELO formula naturally penalizes the #1 significantly because their
-      // "Expected Score" was nearly 100%, making the upset very costly
+      // Special case: if defender was rank #1 and lost, drop their rating by 1
       if (loserRank === 1 && !isChampionLoser && !isFallingLoser) {
-        const loserK = getKFactor(loserRating, loserMatchCount, "gauntlet", loserSceneCount);
-        // expectedWinner is from winner's perspective, so expectedLoser = 1 - expectedWinner
-        // loserLoss = K * (1 - expectedLoser) = K * expectedWinner (same as normal ELO loss)
-        loserLoss = Math.max(1, Math.round(loserK * expectedWinner));
+        loserLoss = 1;
       }
     } else if (currentMode === "champion") {
       // Champion mode: Both performers get rating updates, but at a reduced rate (50% of Swiss mode)
@@ -1245,52 +1562,27 @@
       const expectedWinner = 1 / (1 + Math.pow(10, ratingDiff / 40));
       
       // Use individual K-factors for each performer with champion mode multiplier
-      const winnerK = getKFactor(winnerRating, winnerMatchCount, "champion", winnerSceneCount);
-      const loserK = getKFactor(loserRating, loserMatchCount, "champion", loserSceneCount);
+      const winnerK = getKFactor(winnerRating, winnerMatchCount, "champion");
+      const loserK = getKFactor(loserRating, loserMatchCount, "champion");
       
       // Calculate changes using their respective K-factors (reduced by 50% for champion mode)
-      const baseGain = Math.max(0, Math.round(winnerK * (1 - expectedWinner)));
-      // Apply diminishing returns - harder to gain points at higher ratings
-      winnerGain = applyDiminishingReturns(winnerRating, baseGain);
+      winnerGain = Math.max(0, Math.round(winnerK * (1 - expectedWinner)));
       loserLoss = Math.max(0, Math.round(loserK * expectedWinner));
     } else {
-      // Swiss mode: True ELO with zero-sum property
-      // Both performers change by the same amount to maintain rating pool integrity
+      // Swiss mode: True ELO - both change based on expected outcome
       const expectedWinner = 1 / (1 + Math.pow(10, ratingDiff / 40));
       
-      // Use individual K-factors but average them for the match
-      // This maintains fairness while preserving zero-sum property
-      const winnerK = getKFactor(winnerRating, winnerMatchCount, "swiss", winnerSceneCount);
-      const loserK = getKFactor(loserRating, loserMatchCount, "swiss", loserSceneCount);
-      const avgK = (winnerK + loserK) / 2;
+      // Use individual K-factors for each performer for more accurate adjustments
+      const winnerK = getKFactor(winnerRating, winnerMatchCount, "swiss");
+      const loserK = getKFactor(loserRating, loserMatchCount, "swiss");
       
-      // Calculate single rating change for zero-sum (winner gains what loser loses)
-      const baseChange = Math.max(0, Math.round(avgK * (1 - expectedWinner)));
-      
-      // Apply diminishing returns based on winner's rating (makes reaching 100 harder)
-      // Then set loser's loss equal to winner's gain (zero-sum)
-      winnerGain = applyDiminishingReturns(winnerRating, baseChange);
-      loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
+      // Calculate changes using their respective K-factors
+      winnerGain = Math.max(0, Math.round(winnerK * (1 - expectedWinner)));
+      loserLoss = Math.max(0, Math.round(loserK * expectedWinner));
     }
     
-    let newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));
-    let newLoserRating = Math.min(100, Math.max(1, loserRating - loserLoss));
-    
-    // Ensure the winner moves to at least the same ranking as the loser (or higher)
-    // If the ELO movement alone doesn't achieve this, adjust the ratings to ensure
-    // the winner ranks above the loser after a direct head-to-head victory
-    if (newWinnerRating < newLoserRating) {
-      // The winner beat the loser head-to-head, so they should rank higher
-      // Set winner's rating to 1 point above loser's new rating
-      // If that would exceed 100, also reduce the loser's rating to make room
-      if (newLoserRating === 100) {
-        // Loser is at ceiling, so reduce loser by 1 to make room for winner
-        newLoserRating = 99;
-        newWinnerRating = 100;
-      } else {
-        newWinnerRating = newLoserRating + 1;
-      }
-    }
+    const newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));
+    const newLoserRating = Math.min(100, Math.max(1, loserRating - loserLoss));
     
     const winnerChange = newWinnerRating - winnerRating;
     const loserChange = newLoserRating - loserRating;
@@ -1329,125 +1621,27 @@
     return { newWinnerRating, newLoserRating, winnerChange, loserChange };
   }
   
-  /**
-   * Handle skip as an ELO draw between two items.
-   * In standard ELO, a draw gives both players a score of 0.5 (instead of 1 for win, 0 for loss).
-   * Rating change = K * (0.5 - Expected)
-   * - If higher-rated item draws with lower-rated: higher loses points, lower gains
-   * - If equally-rated items draw: no change
-   * @param {Object} leftItem - Left item in the comparison
-   * @param {Object} rightItem - Right item in the comparison
-   */
-  async function handleSkip(leftItem, rightItem) {
-    if (!leftItem || !rightItem) {
-      console.log("[HotOrNot] Skip: Missing items, no rating update");
-      return;
-    }
-    
-    const leftRating = leftItem.rating100 || 50;
-    const rightRating = rightItem.rating100 || 50;
-    
-    // Fetch fresh performer data to ensure we have current stats
-    let freshLeftItem = leftItem;
-    let freshRightItem = rightItem;
-    
-    if (battleType === "performers") {
-      const [fetchedLeft, fetchedRight] = await Promise.all([
-        fetchPerformerById(leftItem.id),
-        fetchPerformerById(rightItem.id)
-      ]);
-      freshLeftItem = fetchedLeft || leftItem;
-      freshRightItem = fetchedRight || rightItem;
-    }
-    
-    // Parse match counts for K-factor calculation
-    let leftMatchCount = null;
-    let rightMatchCount = null;
-    let leftSceneCount = null;
-    let rightSceneCount = null;
-    
-    if (battleType === "performers" && freshLeftItem) {
-      const leftStats = parsePerformerEloData(freshLeftItem);
-      leftMatchCount = leftStats.total_matches;
-      leftSceneCount = freshLeftItem.scene_count || null;
-    }
-    if (battleType === "performers" && freshRightItem) {
-      const rightStats = parsePerformerEloData(freshRightItem);
-      rightMatchCount = rightStats.total_matches;
-      rightSceneCount = freshRightItem.scene_count || null;
-    }
-    
-    // Calculate expected scores for both items
-    // Rating diff from left's perspective: (rightRating - leftRating)
-    const ratingDiffLeft = rightRating - leftRating;
-    const expectedLeft = 1 / (1 + Math.pow(10, ratingDiffLeft / 40));
-    const expectedRight = 1 - expectedLeft;
-    
-    // Get K-factors for both items
-    const leftK = getKFactor(leftRating, leftMatchCount, currentMode, leftSceneCount);
-    const rightK = getKFactor(rightRating, rightMatchCount, currentMode, rightSceneCount);
-    
-    // Draw gives score of 0.5 to both
-    // Change = K * (0.5 - Expected)
-    // If Expected > 0.5 (favorite), you lose rating for drawing
-    // If Expected < 0.5 (underdog), you gain rating for drawing
-    let leftChange = Math.round(leftK * (0.5 - expectedLeft));
-    let rightChange = Math.round(rightK * (0.5 - expectedRight));
-    
-    // Ensure there's a minimum effect when there's a significant rating difference
-    // If ratings differ by at least 5 points, ensure at least a 1-point change
-    // This prevents "skip does nothing" when there's a noticeable rating gap
-    const ratingDiff = Math.abs(leftRating - rightRating);
-    if (ratingDiff >= 5 && leftChange === 0 && rightChange === 0) {
-      // Higher rated performer should lose 1 point, lower rated gains 1 point
-      if (leftRating > rightRating) {
-        leftChange = -1;
-        rightChange = 1;
-      } else {
-        leftChange = 1;
-        rightChange = -1;
-      }
-    }
-    
-    const newLeftRating = Math.min(100, Math.max(1, leftRating + leftChange));
-    const newRightRating = Math.min(100, Math.max(1, rightRating + rightChange));
-    
-    console.log(`[HotOrNot] Skip (Draw): Left ${leftRating} -> ${newLeftRating} (${leftChange >= 0 ? '+' : ''}${leftChange}), Right ${rightRating} -> ${newRightRating} (${rightChange >= 0 ? '+' : ''}${rightChange})`);
-    
-    // Update ratings and stats for both items
-    if (battleType === "performers") {
-      // Update left item with draw stats
-      if (leftChange !== 0 || freshLeftItem) {
-        await updateItemRating(leftItem.id, newLeftRating, freshLeftItem, "draw");
-      }
-      // Update right item with draw stats
-      if (rightChange !== 0 || freshRightItem) {
-        await updateItemRating(rightItem.id, newRightRating, freshRightItem, "draw");
-      }
-    } else {
-      // For images, only update if rating changed
-      if (leftChange !== 0) {
-        await updateItemRating(leftItem.id, newLeftRating);
-      }
-      if (rightChange !== 0) {
-        await updateItemRating(rightItem.id, newRightRating);
-      }
-    }
-    
-    return { 
-      leftRating: newLeftRating, 
-      rightRating: newRightRating,
-      leftChange,
-      rightChange
-    };
-  }
-  
   // Called when gauntlet champion loses - place them one below the winner
   function finalizeGauntletLoss(championId, winnerRating) {
-    // Set champion rating to just below the item that beat them
+    // Set champion rating to just below the scene that beat them
     const newRating = Math.max(1, winnerRating - 1);
     updateItemRating(championId, newRating);
     return newRating;
+  }
+
+  // ============================================
+  // UI COMPONENTS
+  // ============================================
+
+  function formatDuration(seconds) {
+    if (!seconds) return "N/A";
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    }
+    return `${m}:${s.toString().padStart(2, "0")}`;
   }
 
 
@@ -1557,73 +1751,53 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   /**
-   * Calculate a weight for performer selection based on last match time and match count.
-   * Performers with fewer matches and older last matches get higher weights (more likely to be selected).
-   * Returns a weight between 0.1 and 3.0 to prioritize undersampled performers.
+   * Calculate a weight for performer selection based on last match time.
+   * More recent matches get lower weights (less likely to be selected).
+   * Returns a weight between 0.1 (very recent) and 1.0 (not recent or no data).
    * @param {Object} performer - Performer object with custom_fields
-   * @returns {number} Weight value between 0.1 and 3.0
+   * @returns {number} Weight value between 0.1 and 1.0
    */
   function getRecencyWeight(performer) {
     const stats = parsePerformerEloData(performer);
     
-    // Calculate match count weight component
-    // Performers with fewer matches get higher weights
-    // 0 matches: weight = 3.0 (highest priority - never been matched)
-    // 1-5 matches: weight = 2.0 (high priority)
-    // 6-15 matches: weight = 1.5 (moderate priority)
-    // 16-30 matches: weight = 1.0 (normal priority)
-    // 30+ matches: weight = 0.5 (low priority - well established)
-    let matchCountWeight;
-    if (stats.total_matches === 0) {
-      matchCountWeight = 3.0;
-    } else if (stats.total_matches <= 5) {
-      matchCountWeight = 2.0;
-    } else if (stats.total_matches <= 15) {
-      matchCountWeight = 1.5;
-    } else if (stats.total_matches <= 30) {
-      matchCountWeight = 1.0;
-    } else {
-      matchCountWeight = 0.5;
+    if (!stats.last_match) {
+      // No previous match - full weight
+      return 1.0;
     }
     
-    // Calculate recency weight component
-    let recencyWeight = 1.0;
-    
-    if (stats.last_match) {
-      try {
-        const lastMatchDate = new Date(stats.last_match);
-        
-        // Check for invalid date
-        if (!isNaN(lastMatchDate.getTime())) {
-          const lastMatchTime = lastMatchDate.getTime();
-          const now = Date.now();
-          const hoursSinceMatch = (now - lastMatchTime) / (1000 * 60 * 60);
-          
-          // Weight calculation:
-          // 0-1 hours ago: weight = 0.1 (very unlikely)
-          // 1-6 hours ago: weight = 0.3 (less likely)
-          // 6-24 hours ago: weight = 0.6 (moderately likely)
-          // 24+ hours ago: weight = 1.0 (full probability)
-          
-          if (hoursSinceMatch < 1) {
-            recencyWeight = 0.1;
-          } else if (hoursSinceMatch < 6) {
-            recencyWeight = 0.3;
-          } else if (hoursSinceMatch < 24) {
-            recencyWeight = 0.6;
-          } else {
-            recencyWeight = 1.0;
-          }
-        }
-      } catch (e) {
-        // If date parsing fails, use default recency weight
-        console.warn(`[HotOrNot] Failed to parse last_match for performer ${performer.id}:`, e);
+    try {
+      const lastMatchDate = new Date(stats.last_match);
+      
+      // Check for invalid date
+      if (isNaN(lastMatchDate.getTime())) {
+        console.warn(`[HotOrNot] Invalid last_match date for performer ${performer.id}`);
+        return 1.0;
       }
+      
+      const lastMatchTime = lastMatchDate.getTime();
+      const now = Date.now();
+      const hoursSinceMatch = (now - lastMatchTime) / (1000 * 60 * 60);
+      
+      // Weight calculation:
+      // 0-1 hours ago: weight = 0.1 (very unlikely)
+      // 1-6 hours ago: weight = 0.3 (less likely)
+      // 6-24 hours ago: weight = 0.6 (moderately likely)
+      // 24+ hours ago: weight = 1.0 (full probability)
+      
+      if (hoursSinceMatch < 1) {
+        return 0.1;
+      } else if (hoursSinceMatch < 6) {
+        return 0.3;
+      } else if (hoursSinceMatch < 24) {
+        return 0.6;
+      } else {
+        return 1.0;
+      }
+    } catch (e) {
+      // If date parsing fails, give full weight
+      console.warn(`[HotOrNot] Failed to parse last_match for performer ${performer.id}:`, e);
+      return 1.0;
     }
-    
-    // Combine weights: multiply match count weight by recency weight
-    // This ensures both factors contribute to the final selection probability
-    return matchCountWeight * recencyWeight;
   }
 
   /**
@@ -1722,24 +1896,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     const performer1 = selected1.performer;
     const randomIndex = selected1.index;
     const rating1 = performer1.rating100 || 50;
-
-    // 10% "Sanity Check" - randomly pair regardless of rating
-    // This helps detect performers stuck in incorrect rating silos
-    // by occasionally testing them against performers from different rating tiers
-    const isRandomSanityCheck = Math.random() < 0.10;
-    
-    if (isRandomSanityCheck) {
-      // Pick any random performer (excluding performer1)
-      const otherPerformers = performersWithWeights.filter(pw => pw.performer.id !== performer1.id);
-      if (otherPerformers.length > 0) {
-        const randomOpponent = otherPerformers[Math.floor(Math.random() * otherPerformers.length)];
-        console.log('[HotOrNot] Sanity check pairing: random matchup regardless of rating');
-        return { 
-          performers: [performer1, randomOpponent.performer], 
-          ranks: [randomIndex + 1, randomOpponent.index + 1] 
-        };
-      }
-    }
 
     // Find performers within adaptive rating window (tighter for larger pools)
     const matchWindow = performers.length > 50 ? 10 : performers.length > 20 ? 15 : 25;
@@ -1843,14 +1999,10 @@ async function fetchPerformerCount(performerFilter = {}) {
       });
       
       if (belowOpponents.length === 0) {
-        // No more undefeated opponents below - found their floor!
-        // Simply place them at their current position
-        const currentRating = gauntletFallingItem.rating100 || 50;
-        
-        // Calculate rank based on current rating
-        const finalRank = performers.filter(p => 
-          p.id !== gauntletFallingItem.id && (p.rating100 || 50) > currentRating
-        ).length + 1;
+        // Hit the bottom - they're the lowest, place them here
+        const finalRank = performers.length;
+        const finalRating = 1; // Lowest rating
+        updatePerformerRating(gauntletFallingItem.id, finalRating);
         
         return {
           performers: [gauntletFallingItem],
@@ -1859,7 +2011,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           isFalling: true,
           isPlacement: true,
           placementRank: finalRank,
-          placementRating: currentRating
+          placementRating: finalRating
         };
       } else {
         // Get next opponent below (first one, closest to falling performer)
@@ -1913,18 +2065,16 @@ async function fetchPerformerCount(performerFilter = {}) {
     // Update champion rank (1-indexed, so +1)
     gauntletChampionRank = championIndex + 1;
     
-    // Create an index map for O(1) lookups (performance optimization)
-    const performerIndexMap = new Map(performers.map((p, idx) => [p.id, idx]));
-    
-    // Find ALL undefeated opponents (anyone the champion hasn't beaten yet)
-    const allUndefeatedOpponents = performers.filter((s) => {
+    // Find opponents above champion that haven't been defeated
+    const remainingOpponents = performers.filter((s, idx) => {
       if (s.id === gauntletChampion.id) return false;
       if (gauntletDefeated.includes(s.id)) return false;
-      return true;
+      // Only performers ranked higher (lower index) or same rating
+      return idx < championIndex || (s.rating100 || 0) >= (gauntletChampion.rating100 || 0);
     });
     
-    // Victory is only when ALL performers have been defeated
-    if (allUndefeatedOpponents.length === 0) {
+    // If no opponents left, champion has truly won
+    if (remainingOpponents.length === 0) {
       gauntletChampionRank = 1;
       return { 
         performers: [gauntletChampion], 
@@ -1934,28 +2084,9 @@ async function fetchPerformerCount(performerFilter = {}) {
       };
     }
     
-    // From undefeated opponents, only fight those ranked higher (lower index = higher rating)
-    // Once the champion has defeated all higher-ranked opponents, they've reached the top
-    const higherRankedOpponents = allUndefeatedOpponents.filter((s) => {
-      const opponentIndex = performerIndexMap.get(s.id);
-      return opponentIndex < championIndex;
-    });
-    
-    // Victory when there are no more higher-ranked opponents to defeat
-    // The champion has proven themselves against all performers above them
-    if (higherRankedOpponents.length === 0) {
-      gauntletChampionRank = 1;
-      return { 
-        performers: [gauntletChampion], 
-        ranks: [1],
-        isVictory: true,
-        isFalling: false
-      };
-    }
-    
-    // Pick from higher ranked opponents
-    const nextOpponent = selectRandomOpponent(higherRankedOpponents);
-    const nextOpponentIndex = performerIndexMap.get(nextOpponent.id);
+    // Pick the next highest-ranked remaining opponent with randomization
+    const nextOpponent = selectRandomOpponent(remainingOpponents);
+    const nextOpponentIndex = performers.findIndex(s => s.id === nextOpponent.id);
     
     return { 
       performers: [gauntletChampion, nextOpponent], 
@@ -2025,18 +2156,15 @@ async function fetchPerformerCount(performerFilter = {}) {
     
     gauntletChampionRank = championIndex + 1;
     
-    // Create an index map for O(1) lookups (performance optimization)
-    const performerIndexMap = new Map(performers.map((p, idx) => [p.id, idx]));
-    
-    // Find ALL undefeated opponents (anyone the champion hasn't beaten yet)
-    const allUndefeatedOpponents = performers.filter((s) => {
+    // Find opponents above champion that haven't been defeated
+    const remainingOpponents = performers.filter((s, idx) => {
       if (s.id === gauntletChampion.id) return false;
       if (gauntletDefeated.includes(s.id)) return false;
-      return true;
+      return idx < championIndex || (s.rating100 || 0) >= (gauntletChampion.rating100 || 0);
     });
     
-    // Victory is only when ALL performers have been defeated
-    if (allUndefeatedOpponents.length === 0) {
+    // If no opponents left, champion has won!
+    if (remainingOpponents.length === 0) {
       gauntletChampionRank = 1;
       return { 
         performers: [gauntletChampion], 
@@ -2045,27 +2173,9 @@ async function fetchPerformerCount(performerFilter = {}) {
       };
     }
     
-    // From undefeated opponents, only fight those ranked higher (lower index = higher rating)
-    // Once the champion has defeated all higher-ranked opponents, they've reached the top
-    const higherRankedOpponents = allUndefeatedOpponents.filter((s) => {
-      const opponentIndex = performerIndexMap.get(s.id);
-      return opponentIndex < championIndex;
-    });
-    
-    // Victory when there are no more higher-ranked opponents to defeat
-    // The champion has proven themselves against all performers above them
-    if (higherRankedOpponents.length === 0) {
-      gauntletChampionRank = 1;
-      return { 
-        performers: [gauntletChampion], 
-        ranks: [1],
-        isVictory: true
-      };
-    }
-    
-    // Pick from higher ranked opponents
-    const nextOpponent = selectRandomOpponent(higherRankedOpponents);
-    const nextOpponentIndex = performerIndexMap.get(nextOpponent.id);
+    // Pick the next highest-ranked remaining opponent with randomization
+    const nextOpponent = selectRandomOpponent(remainingOpponents);
+    const nextOpponentIndex = performers.findIndex(s => s.id === nextOpponent.id);
     
     return { 
       performers: [gauntletChampion, nextOpponent], 
@@ -2230,41 +2340,127 @@ async function fetchPerformerCount(performerFilter = {}) {
   async function fetchSwissPair() {
     if (battleType === "performers") {
       return await fetchSwissPairPerformers();
-    } else {
+    } else if (battleType === "images") {
       return await fetchSwissPairImages();
+    } else {
+      return await fetchSwissPairScenes();
     }
   }
 
   async function fetchGauntletPair() {
     if (battleType === "performers") {
       return await fetchGauntletPairPerformers();
-    } else {
+    } else if (battleType === "images") {
       // Images use Swiss mode only - this should never be called
       console.error("[HotOrNot] ERROR: Gauntlet mode called for images (not supported). Using Swiss mode as fallback.");
       return await fetchSwissPairImages();
+    } else {
+      return await fetchGauntletPairScenes();
     }
   }
 
   async function fetchChampionPair() {
     if (battleType === "performers") {
       return await fetchChampionPairPerformers();
-    } else {
+    } else if (battleType === "images") {
       // Images use Swiss mode only - this should never be called
       console.error("[HotOrNot] ERROR: Champion mode called for images (not supported). Using Swiss mode as fallback.");
       return await fetchSwissPairImages();
+    } else {
+      return await fetchChampionPairScenes();
     }
   }
 
   async function updateItemRating(itemId, newRating, itemObj = null, won = null) {
     if (battleType === "performers") {
       return await updatePerformerRating(itemId, newRating, itemObj, won);
-    } else {
+    } else if (battleType === "images") {
       return await updateImageRating(itemId, newRating);
+    } else {
+      return await updateSceneRating(itemId, newRating);
     }
   }
 
   // UI COMPONENTS
   // ============================================
+
+  
+
+  function createSceneCard(scene, side, rank = null, streak = null) {
+    const file = scene.files && scene.files[0] ? scene.files[0] : {};
+    const duration = file.duration;
+    const performers = scene.performers && scene.performers.length > 0 
+      ? scene.performers.map((p) => p.name).join(", ") 
+      : "No performers";
+    const studio = scene.studio ? scene.studio.name : "No studio";
+    const tags = scene.tags ? scene.tags.slice(0, 5).map((t) => t.name) : [];
+    
+    // Title fallback: title -> filename from path -> Scene ID
+    let title = scene.title;
+    if (!title && file.path) {
+      const pathParts = file.path.split(/[/\\]/);
+      title = pathParts[pathParts.length - 1].replace(/\.[^/.]+$/, "");
+    }
+    if (!title) {
+      title = `Scene #${scene.id}`;
+    }
+    
+    const screenshotPath = scene.paths ? scene.paths.screenshot : null;
+    const previewPath = scene.paths ? scene.paths.preview : null;
+    const stashRating = scene.rating100 ? `${scene.rating100}/100` : "Unrated";
+    
+    // Handle numeric ranks and string ranks
+    let rankDisplay = '';
+    if (rank !== null && rank !== undefined) {
+      if (typeof rank === 'number') {
+        rankDisplay = `<span class="hon-scene-rank">#${rank}</span>`;
+      } else {
+        rankDisplay = `<span class="hon-scene-rank">${rank}</span>`;
+      }
+    }
+    
+    // Streak badge for gauntlet champion
+    let streakDisplay = '';
+    if (streak !== null && streak > 0) {
+      streakDisplay = `<div class="hon-streak-badge">🔥 ${streak} win${streak > 1 ? 's' : ''}</div>`;
+    }
+
+    return `
+      <div class="hon-scene-card" data-scene-id="${scene.id}" data-side="${side}" data-rating="${scene.rating100 || 50}">
+        <div class="hon-scene-image-container" data-scene-url="/scenes/${scene.id}">
+          ${screenshotPath 
+            ? `<img class="hon-scene-image" src="${screenshotPath}" alt="${title}" loading="lazy" />`
+            : `<div class="hon-scene-image hon-no-image">No Screenshot</div>`
+          }
+          ${previewPath ? `<video class="hon-hover-preview" src="${previewPath}" loop playsinline></video>` : ''}
+          <div class="hon-scene-duration">${formatDuration(duration)}</div>
+          ${streakDisplay}
+          <div class="hon-click-hint">Click to open scene</div>
+        </div>
+        
+        <div class="hon-scene-body" data-winner="${scene.id}">
+          <div class="hon-scene-info">
+            <div class="hon-scene-title-row">
+              <h3 class="hon-scene-title">${title}</h3>
+              ${rankDisplay}
+            </div>
+            
+            <div class="hon-scene-meta">
+              <div class="hon-meta-item"><strong>Studio:</strong> ${studio}</div>
+              <div class="hon-meta-item"><strong>Performers:</strong> ${performers}</div>
+              <div class="hon-meta-item"><strong>Date:</strong> ${scene.date || '<span class="hon-none">None</span>'}</div>
+              <div class="hon-meta-item"><strong>Rating:</strong> ${stashRating}</div>
+              <div class="hon-meta-item hon-tags-row"><strong>Tags:</strong> ${tags.length > 0 ? tags.map((tag) => `<span class="hon-tag">${tag}</span>`).join("") : '<span class="hon-none">None</span>'}</div>
+            </div>
+          </div>
+          
+          <div class="hon-choose-btn">
+            ✓ Choose This Scene
+          </div>
+        </div>
+      </div>
+    `;
+  }
 
   function createPerformerCard(performer, side, rank = null, streak = null) {
     // Performer name
@@ -2277,7 +2473,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     const birthdate = performer.birthdate || null;
     const ethnicity = performer.ethnicity || null;
     const country = performer.country || null;
-    const sceneCount = performer.scene_count || 0;
     const stashRating = performer.rating100 ? `${performer.rating100}/100` : "Unrated";
     
     // Handle numeric ranks and string ranks
@@ -2318,7 +2513,6 @@ async function fetchPerformerCount(performerFilter = {}) {
               ${birthdate ? `<div class="hon-meta-item"><strong>Birthdate:</strong> ${birthdate}</div>` : ''}
               ${ethnicity ? `<div class="hon-meta-item"><strong>Ethnicity:</strong> ${ethnicity}</div>` : ''}
               ${country ? `<div class="hon-meta-item"><strong>Country:</strong> ${country}</div>` : ''}
-              <div class="hon-meta-item"><strong>Scenes:</strong> ${sceneCount}</div>
               <div class="hon-meta-item"><strong>Rating:</strong> ${stashRating}</div>
             </div>
           </div>
@@ -2700,7 +2894,6 @@ async function fetchPerformerCount(performerFilter = {}) {
             <td>${p.total_matches}</td>
             <td class="hon-stats-positive">${p.wins}</td>
             <td class="hon-stats-negative">${p.losses}</td>
-            <td class="hon-stats-neutral">${p.draws || 0}</td>
             <td>${winRate}${winRate !== 'N/A' ? '%' : ''}</td>
             <td>${streakDisplay}</td>
             <td class="hon-stats-positive">${p.best_streak}</td>
@@ -2776,7 +2969,6 @@ async function fetchPerformerCount(performerFilter = {}) {
                     <th scope="col" aria-label="Total matches played">Matches</th>
                     <th scope="col" aria-label="Total wins">Wins</th>
                     <th scope="col" aria-label="Total losses">Losses</th>
-                    <th scope="col" aria-label="Total draws (skips)">Draws</th>
                     <th scope="col" aria-label="Win rate percentage">Win Rate</th>
                     <th scope="col" aria-label="Current win or loss streak">Streak</th>
                     <th scope="col" aria-label="Best winning streak">Best</th>
@@ -2902,8 +3094,8 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   function createMainUI() {
-    const itemType = battleType === "performers" ? "performers" : "images";
-    const itemTypeSingular = battleType === "performers" ? "performer" : "image";
+    const itemType = battleType === "performers" ? "performers" : (battleType === "images" ? "images" : "scenes");
+    const itemTypeSingular = battleType === "performers" ? "performer" : (battleType === "images" ? "image" : "scene");
     
     // For images, hide mode selection (only use Swiss mode)
     const showModeToggle = battleType !== "images";
@@ -2995,14 +3187,14 @@ async function fetchPerformerCount(performerFilter = {}) {
       // Images always use Swiss mode
       if (battleType === "images" || currentMode === "swiss") {
         const swissResult = await fetchSwissPair();
-        items = swissResult.performers || swissResult.images;
+        items = swissResult.scenes || swissResult.performers || swissResult.images;
         ranks = swissResult.ranks;
       } else if (currentMode === "gauntlet") {
         const gauntletResult = await fetchGauntletPair();
         
         // Check for victory (champion reached #1)
         if (gauntletResult.isVictory) {
-          comparisonArea.innerHTML = createVictoryScreen((gauntletResult.performers || gauntletResult.images)[0]);
+          comparisonArea.innerHTML = createVictoryScreen((gauntletResult.scenes || gauntletResult.performers || gauntletResult.images)[0]);
           
           // Hide the status banner and skip button
           const statusEl = document.getElementById("hon-gauntlet-status");
@@ -3029,20 +3221,20 @@ async function fetchPerformerCount(performerFilter = {}) {
           return;
         }
         
-        // Check for placement (falling item hit bottom)
+        // Check for placement (falling scene hit bottom)
         if (gauntletResult.isPlacement) {
-          showPlacementScreen((gauntletResult.performers || gauntletResult.images)[0], gauntletResult.placementRank, gauntletResult.placementRating);
+          showPlacementScreen((gauntletResult.scenes || gauntletResult.performers || gauntletResult.images)[0], gauntletResult.placementRank, gauntletResult.placementRating);
           return;
         }
         
-        items = gauntletResult.performers || gauntletResult.images;
+        items = gauntletResult.scenes || gauntletResult.performers || gauntletResult.images;
         ranks = gauntletResult.ranks;
       } else if (currentMode === "champion") {
         const championResult = await fetchChampionPair();
         
         // Check for victory (champion beat everyone)
         if (championResult.isVictory) {
-          comparisonArea.innerHTML = createVictoryScreen((championResult.performers || championResult.images)[0]);
+          comparisonArea.innerHTML = createVictoryScreen((championResult.scenes || championResult.performers || championResult.images)[0]);
           
           // Hide the skip button
           const actionsEl = document.querySelector(".hon-actions");
@@ -3064,12 +3256,12 @@ async function fetchPerformerCount(performerFilter = {}) {
           return;
         }
         
-        items = championResult.performers || championResult.images;
+        items = championResult.scenes || championResult.performers || championResult.images;
         ranks = championResult.ranks;
       }
       
       if (items.length < 2) {
-        const itemType = battleType === "performers" ? "performers" : "images";
+        const itemType = battleType === "performers" ? "performers" : (battleType === "images" ? "images" : "scenes");
         comparisonArea.innerHTML =
           `<div class="hon-error">Not enough ${itemType} available for comparison.</div>`;
         return;
@@ -3093,11 +3285,11 @@ async function fetchPerformerCount(performerFilter = {}) {
 
       comparisonArea.innerHTML = `
         <div class="hon-vs-container">
-          ${(battleType === "performers" ? createPerformerCard : createImageCard)(items[0], "left", ranks[0], leftStreak)}
+          ${(battleType === "performers" ? createPerformerCard : (battleType === "images" ? createImageCard : createSceneCard))(items[0], "left", ranks[0], leftStreak)}
           <div class="hon-vs-divider">
             <span class="hon-vs-text">VS</span>
           </div>
-          ${(battleType === "performers" ? createPerformerCard : createImageCard)(items[1], "right", ranks[1], rightStreak)}
+          ${(battleType === "performers" ? createPerformerCard : (battleType === "images" ? createImageCard : createSceneCard))(items[1], "right", ranks[1], rightStreak)}
         </div>
       `;
 
@@ -3108,7 +3300,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
       // Attach click-to-open (for thumbnail only)
       comparisonArea.querySelectorAll(".hon-scene-image-container").forEach((container) => {
-        const itemUrl = container.dataset.performerUrl || container.dataset.imageUrl;
+        const itemUrl = container.dataset.sceneUrl || container.dataset.performerUrl || container.dataset.imageUrl;
         
         container.addEventListener("click", () => {
           if (itemUrl) {
@@ -3144,10 +3336,10 @@ async function fetchPerformerCount(performerFilter = {}) {
         skipBtn.style.cursor = disableSkip ? "not-allowed" : "pointer";
       }
     } catch (error) {
-      console.error("[HotOrNot] Error loading items:", error);
+      console.error("[HotOrNot] Error loading scenes:", error);
       comparisonArea.innerHTML = `
         <div class="hon-error">
-          Error loading items: ${error.message}<br>
+          Error loading scenes: ${error.message}<br>
           <button class="btn btn-primary" onclick="location.reload()">Retry</button>
         </div>
       `;
@@ -3163,7 +3355,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     const loserId = winnerId === currentPair.left.id ? currentPair.right.id : currentPair.left.id;
     
     const winnerRating = parseInt(winnerCard.dataset.rating) || 50;
-    const loserCard = document.querySelector(`.hon-scene-card[data-performer-id="${loserId}"], .hon-scene-card[data-image-id="${loserId}"]`);
+    const loserCard = document.querySelector(`.hon-scene-card[data-scene-id="${loserId}"], .hon-scene-card[data-performer-id="${loserId}"], .hon-scene-card[data-image-id="${loserId}"]`);
     const loserRating = parseInt(loserCard?.dataset.rating) || 50;
     
     // Get the loser's rank for #1 dethrone logic
@@ -3202,31 +3394,9 @@ async function fetchPerformerCount(performerFilter = {}) {
       // Check if we're in falling mode (finding floor after a loss)
       if (gauntletFalling && gauntletFallingItem) {
         if (winnerId === gauntletFallingItem.id) {
-          // Falling item won - found their floor!
-          // Simple placement: place them just above the person they beat
-          
-          // Final rating is just above the loser they beat
+          // Falling scene won - found their floor!
+          // Set their rating to just above the scene they beat
           const finalRating = Math.min(100, loserRating + 1);
-          
-          // Fetch all performers to calculate rank for display
-          const performerFilter = getPerformerFilter();
-          const performersQuery = `
-            query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
-              findPerformers(performer_filter: $performer_filter, filter: $filter) {
-                performers {
-                  id
-                  rating100
-                }
-              }
-            }
-          `;
-          
-          const performersResult = await graphqlQuery(performersQuery, {
-            performer_filter: performerFilter,
-            filter: { per_page: -1, sort: "rating", direction: "DESC" }
-          });
-          
-          const allPerformers = performersResult.findPerformers.performers || [];
           
           // Fetch latest performer data to get current stats before updating (parallel fetch for performance)
           let freshFallingPerformer = gauntletFallingItem;
@@ -3247,11 +3417,9 @@ async function fetchPerformerCount(performerFilter = {}) {
           // Track participation for the loser (defender)
           updateItemRating(loserId, loserRating, freshLoserPerformer, null);
           
-          // Calculate final rank based on the final rating
-          // Count performers with ratings higher than finalRating
-          const finalRank = allPerformers.filter(p => 
-            p.id !== gauntletFallingItem.id && (p.rating100 || 50) > finalRating
-          ).length + 1;
+          // Final rank is one above the opponent (we beat them, so we're above them)
+          const opponentRank = loserId === currentPair.left.id ? currentRanks.left : currentRanks.right;
+          const finalRank = Math.max(1, (opponentRank || 1) - 1);
           
           // Visual feedback
           winnerCard.classList.add("hon-winner");
@@ -3263,9 +3431,8 @@ async function fetchPerformerCount(performerFilter = {}) {
           }, 800);
           return;
         } else {
-          // Falling item lost again - keep falling
-          // Note: We don't add winners to gauntletDefeated during falling phase
-          // gauntletDefeated is only for performers beaten during the climb
+          // Falling scene lost again - keep falling
+          gauntletDefeated.push(winnerId);
           
           // Fetch latest performer data to get current stats before updating (parallel fetch for performance)
           let freshFallingPerformer = gauntletFallingItem;
@@ -3280,17 +3447,9 @@ async function fetchPerformerCount(performerFilter = {}) {
             freshWinnerPerformer = fetchedWinner || winnerItem;
           }
           
-          // Update falling performer's rating to just below the winner (they lost, so they fall)
-          // Ensure the rating only goes down, never up - a falling performer should only move down in ranking
-          const currentFallingRating = gauntletFallingItem.rating100 || 50;
-          const newFallingRating = Math.max(1, Math.min(currentFallingRating, winnerRating - 1));
-          
           // Track stats for both participants
-          // Track loss for the falling performer with their new (lower) rating
-          updateItemRating(gauntletFallingItem.id, newFallingRating, freshFallingPerformer, false);
-          
-          // Update the local object to reflect the new rating
-          gauntletFallingItem.rating100 = newFallingRating;
+          // Track loss for the falling performer
+          updateItemRating(gauntletFallingItem.id, loserRating, freshFallingPerformer, false);
           
           // Track participation for the winner (defender)
           updateItemRating(winnerId, winnerRating, freshWinnerPerformer, null);
@@ -3320,11 +3479,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         // Champion LOST - start falling to find their floor
         gauntletFalling = true;
         gauntletFallingItem = loserItem; // The old champion is now falling
-        // Update the falling item's rating to match what handleComparison calculated
-        gauntletFallingItem.rating100 = newLoserRating;
-        // Preserve the list of opponents already defeated during the climb
-        // Note: Don't add the winner to gauntletDefeated - they beat us fair and square
-        // gauntletDefeated is only for performers we actually defeated
+        gauntletDefeated = [winnerId]; // They lost to this scene
         
         // Winner becomes the new climbing champion
         gauntletChampion = winnerItem;
@@ -3457,7 +3612,7 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   // ============================================
-  // MODAL & NAVIGATION
+  // PERFORMER PAGE RANK BADGE
   // ============================================
 
   /**
@@ -3482,17 +3637,250 @@ async function fetchPerformerCount(performerFilter = {}) {
     return getPerformerIdFromUrl() !== null;
   }
 
+  /**
+   * Fetch the battle rank for a performer by comparing their rating to all performers.
+   * @param {string} performerId - The ID of the performer
+   * @returns {Promise<{rank: number, total: number, rating: number}|null>} Rank info or null on error
+   */
+  async function getPerformerBattleRank(performerId) {
+    try {
+      const performersQuery = `
+        query FindPerformersByRating($filter: FindFilterType) {
+          findPerformers(filter: $filter) {
+            count
+            performers {
+              id
+              rating100
+              custom_fields
+            }
+          }
+        }
+      `;
+
+      // Get ALL performers sorted by rating descending (highest first)
+      const result = await graphqlQuery(performersQuery, {
+        filter: {
+          per_page: -1, // Get all
+          sort: "rating",
+          direction: "DESC"
+        }
+      });
+
+      const performers = result.findPerformers.performers || [];
+      const total = performers.length;
+
+      if (total === 0) {
+        return null;
+      }
+
+      // Find the performer's position in the sorted list
+      const index = performers.findIndex(p => p.id === performerId);
+      if (index === -1) {
+        return null;
+      }
+
+      const performer = performers[index];
+      
+      // Parse match stats from custom_fields
+      const stats = parsePerformerEloData(performer);
+      
+      return {
+        rank: index + 1,
+        total: total,
+        rating: performer.rating100 || 0,
+        stats: stats
+      };
+    } catch (error) {
+      console.error("[HotOrNot] Error fetching performer battle rank:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Create the battle rank badge element with match stats
+   * @param {number} rank - The performer's rank
+   * @param {number} total - Total number of performers
+   * @param {number} rating - The performer's rating100
+   * @param {Object} stats - Match statistics (wins, losses, draws, current_streak, etc.)
+   * @returns {HTMLElement} The badge element
+   */
+  function createBattleRankBadge(rank, total, rating, stats = null) {
+    const badge = document.createElement("div");
+    badge.className = "hon-battle-rank-badge";
+    badge.id = "hon-battle-rank-badge";
+    
+    // Determine rank tier for styling
+    const percentile = ((total - rank + 1) / total) * 100;
+    let tierClass = "";
+    let tierEmoji = "";
+    
+    if (percentile >= 95) {
+      tierClass = "hon-rank-legendary";
+      tierEmoji = "👑";
+    } else if (percentile >= 80) {
+      tierClass = "hon-rank-gold";
+      tierEmoji = "🥇";
+    } else if (percentile >= 60) {
+      tierClass = "hon-rank-silver";
+      tierEmoji = "🥈";
+    } else if (percentile >= 40) {
+      tierClass = "hon-rank-bronze";
+      tierEmoji = "🥉";
+    } else {
+      tierClass = "hon-rank-default";
+      tierEmoji = "🔥";
+    }
+    
+    // Note: Tier-based color classes removed for better readability
+    // The tier emoji still indicates ranking percentile
+    
+    // Build match stats HTML if stats are available and performer has played matches
+    let matchStatsHTML = '';
+    let winRate = null;
+    const hasMatchStats = stats && stats.total_matches > 0;
+    
+    if (hasMatchStats) {
+      // Calculate win rate once for both display and tooltip
+      winRate = ((stats.wins / stats.total_matches) * 100).toFixed(1);
+      
+      // Format current streak with color indicator
+      let streakDisplay = '';
+      if (stats.current_streak > 0) {
+        streakDisplay = `<span class="hon-streak-positive">W${stats.current_streak}</span>`;
+      } else if (stats.current_streak < 0) {
+        streakDisplay = `<span class="hon-streak-negative">L${Math.abs(stats.current_streak)}</span>`;
+      }
+      
+      matchStatsHTML = `
+        <span class="hon-match-stats">
+          <span class="hon-stats-record">
+            <span class="hon-wins">${stats.wins}W</span>
+            <span class="hon-losses">${stats.losses}L</span>
+            <span class="hon-draws">${stats.draws}D</span>
+          </span>
+          <span class="hon-win-rate">${winRate}%</span>
+          ${streakDisplay}
+        </span>
+      `;
+    }
+    
+    badge.innerHTML = `
+      <span class="hon-rank-emoji">${tierEmoji}</span>
+      <span class="hon-rank-text">Battle Rank #${rank}</span>
+      <span class="hon-rank-total">of ${total}</span>
+      ${matchStatsHTML}
+    `;
+    
+    // Build comprehensive tooltip
+    let tooltipText = `Battle Rank #${rank} of ${total} performers (Rating: ${rating}/100)`;
+    if (hasMatchStats) {
+      tooltipText += `\n\nMatch Stats:`;
+      tooltipText += `\n• Record: ${stats.wins}W - ${stats.losses}L - ${stats.draws}D`;
+      tooltipText += `\n• Win Rate: ${winRate}%`;
+      tooltipText += `\n• Total Matches: ${stats.total_matches}`;
+      if (stats.current_streak !== 0) {
+        const streakType = stats.current_streak > 0 ? 'Winning' : 'Losing';
+        tooltipText += `\n• Current Streak: ${streakType} ${Math.abs(stats.current_streak)}`;
+      }
+      if (stats.best_streak > 0) {
+        tooltipText += `\n• Best Streak: ${stats.best_streak}`;
+      }
+      if (stats.worst_streak < 0) {
+        tooltipText += `\n• Worst Streak: ${Math.abs(stats.worst_streak)}`;
+      }
+    }
+    badge.title = tooltipText;
+    
+    return badge;
+  }
+
+  /**
+   * Inject the battle rank badge into the performer detail page.
+   * Looks for the rating stars section and adds the badge next to it.
+   */
+  async function injectBattleRankBadge() {
+    // Use compare-and-set pattern with global flag to prevent concurrent injections
+    // This handles both same-plugin races and cross-plugin races
+    // In JavaScript's single-threaded event loop, this synchronous block before any await is atomic
+    if (window._honBadgeInjectionInProgress || badgeInjectionInProgress) {
+      return;
+    }
+    // Set flags immediately after check - atomic in JS single-threaded event loop
+    window._honBadgeInjectionInProgress = true;
+    badgeInjectionInProgress = true;
+    
+    try {
+      const performerId = getPerformerIdFromUrl();
+      if (!performerId) {
+        return;
+      }
+
+      // Check if badge already exists (another plugin or previous call may have added it)
+      const existingBadge = document.getElementById("hon-battle-rank-badge");
+      if (existingBadge) {
+        return;
+      }
+
+      // Fetch the performer's battle rank
+      const rankInfo = await getPerformerBattleRank(performerId);
+      if (!rankInfo) {
+        console.log("[HotOrNot] Could not fetch battle rank for performer");
+        return;
+      }
+
+      // Double-check badge doesn't exist after async fetch (another call may have completed)
+      if (document.getElementById("hon-battle-rank-badge")) {
+        return;
+      }
+
+      // Create the badge with stats
+      const badge = createBattleRankBadge(rankInfo.rank, rankInfo.total, rankInfo.rating, rankInfo.stats);
+
+      // Find the best place to inject the badge
+      // Try to find the rating stars container first (next to star rating)
+      const ratingContainer = document.querySelector(".rating-stars") ||
+                             document.querySelector(".rating-number") ||
+                             document.querySelector("[class*='rating']");
+      
+      if (ratingContainer && ratingContainer.parentElement) {
+        // Insert badge next to the rating
+        ratingContainer.parentElement.appendChild(badge);
+        console.log(`[HotOrNot] Injected battle rank badge: #${rankInfo.rank} of ${rankInfo.total}`);
+        return;
+      }
+
+      // Alternative: Find performer detail header area
+      const detailHeader = document.querySelector(".performer-head") ||
+                          document.querySelector(".detail-header") ||
+                          document.querySelector(".performer-meta") ||
+                          document.querySelector(".detail-container h2")?.parentElement;
+      
+      if (detailHeader) {
+        detailHeader.appendChild(badge);
+        console.log(`[HotOrNot] Injected battle rank badge into header: #${rankInfo.rank} of ${rankInfo.total}`);
+        return;
+      }
+
+      // Last resort: Find performer name and insert after it
+      const performerName = document.querySelector("h2") || document.querySelector("h1");
+      if (performerName && performerName.parentElement) {
+        performerName.parentElement.insertBefore(badge, performerName.nextSibling);
+        console.log(`[HotOrNot] Injected battle rank badge after name: #${rankInfo.rank} of ${rankInfo.total}`);
+      }
+    } finally {
+      window._honBadgeInjectionInProgress = false;
+      badgeInjectionInProgress = false;
+    }
+  }
+
+  // ============================================
+  // MODAL & NAVIGATION
+  // ============================================
+
   function shouldShowButton() {
     const path = window.location.pathname;
-    // Show on /performers or /images listing pages
-    if (path === '/performers' || path === '/performers/' || path === '/images' || path === '/images/') {
-      return true;
-    }
-    // Also show on individual performer pages (/performers/{id})
-    if (isOnSinglePerformerPage()) {
-      return true;
-    }
-    return false;
+    // Show on /performers or /images pages
+    return (path === '/performers' || path === '/performers/' || path === '/images' || path === '/images/');
   }
 
 function addFloatingButton() {
@@ -3527,7 +3915,7 @@ function addFloatingButton() {
     document.body.appendChild(btn);
   }
 
-  async function openRankingModal() {
+  function openRankingModal() {
     // Detect if we're on performers or images page
     const path = window.location.pathname;
     if (path === '/images' || path === '/images/') {
@@ -3538,31 +3926,18 @@ function addFloatingButton() {
       cachedUrlFilter = null;
     } else {
       battleType = "performers";
-      // Check if we're on a single performer page (only relevant for performers)
-      const singlePerformerId = getPerformerIdFromUrl();
-      // When on a single performer page, use gauntlet mode to battle with that performer
-      if (singlePerformerId) {
-        currentMode = "gauntlet";
-        // No URL filters when on single performer page
-        cachedUrlFilter = null;
-        console.log(`[HotOrNot] On single performer page, auto-launching gauntlet with performer ID: ${singlePerformerId}`);
+      // Always refresh URL filters when modal opens to capture current state
+      // This ensures we get the latest filters from the URL, including any changes
+      // made since the last location event or page load
+      cachedUrlFilter = getUrlPerformerFilter();
+      
+      // Log cached filter for debugging
+      if (cachedUrlFilter && Object.keys(cachedUrlFilter).length > 0) {
+        console.log('[HotOrNot] Using URL filters for performers:', cachedUrlFilter);
       } else {
-        // Always refresh URL filters when modal opens to capture current state
-        // This ensures we get the latest filters from the URL, including any changes
-        // made since the last location event or page load
-        cachedUrlFilter = getUrlPerformerFilter();
-        
-        // Log cached filter for debugging
-        if (cachedUrlFilter && Object.keys(cachedUrlFilter).length > 0) {
-          console.log('[HotOrNot] Using URL filters for performers:', cachedUrlFilter);
-        } else {
-          console.log('[HotOrNot] No URL filters detected');
-        }
+        console.log('[HotOrNot] No URL filters detected');
       }
     }
-    
-    // Get performer ID again after battleType is set (only check for performers)
-    const singlePerformerId = battleType === "performers" ? getPerformerIdFromUrl() : null;
     
     const existingModal = document.getElementById("hon-modal");
     if (existingModal) existingModal.remove();
@@ -3619,7 +3994,7 @@ function addFloatingButton() {
     // Skip button
     const skipBtn = modal.querySelector("#hon-skip-btn");
     if (skipBtn) {
-      skipBtn.addEventListener("click", async () => {
+      skipBtn.addEventListener("click", () => {
         // In gauntlet/champion mode with active run (performers only), skip is disabled
         if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion) {
           return;
@@ -3634,10 +4009,6 @@ function addFloatingButton() {
           gauntletFalling = false;
           gauntletFallingItem = null;
         }
-        // Apply ELO draw rating changes for skips in Swiss mode
-        if (currentMode === "swiss" && currentPair.left && currentPair.right) {
-          await handleSkip(currentPair.left, currentPair.right);
-        }
         loadNewPair();
       });
     }
@@ -3650,21 +4021,8 @@ function addFloatingButton() {
       });
     }
 
-    // If on a single performer page, fetch the performer and auto-start gauntlet
-    if (singlePerformerId) {
-      const performer = await fetchPerformerById(singlePerformerId);
-      if (performer) {
-        console.log(`[HotOrNot] Fetched performer for gauntlet:`, performer.name);
-        startGauntletWithPerformer(performer);
-      } else {
-        console.error(`[HotOrNot] Could not fetch performer with ID: ${singlePerformerId}. Performer may have been deleted, access restricted, or ID is invalid.`);
-        // Fall back to normal behavior if performer not found
-        loadNewPair();
-      }
-    } else {
-      // Load initial comparison
-      loadNewPair();
-    }
+    // Load initial comparison
+    loadNewPair();
 
     // Close handlers
     modal.querySelector(".hon-modal-backdrop").addEventListener("click", closeRankingModal);
@@ -3678,7 +4036,7 @@ function addFloatingButton() {
     });
 
     // Keyboard shortcuts for choosing
-    document.addEventListener("keydown", async function keyHandler(e) {
+    document.addEventListener("keydown", function keyHandler(e) {
       const modal = document.getElementById("hon-modal");
       if (!modal) {
         document.removeEventListener("keydown", keyHandler);
@@ -3701,6 +4059,7 @@ function addFloatingButton() {
           if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion) {
             return;
           }
+          // TODO: Put these skip functionalities into ONE function
           if(disableChoice) return;
           disableChoice = true;
           if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion")) {
@@ -3709,10 +4068,6 @@ function addFloatingButton() {
             gauntletDefeated = [];
             gauntletFalling = false;
             gauntletFallingItem = null;
-          }
-          // Apply ELO draw rating changes for skips in Swiss mode
-          if (currentMode === "swiss" && currentPair.left && currentPair.right) {
-            await handleSkip(currentPair.left, currentPair.right);
           }
           loadNewPair();
         }
@@ -3733,10 +4088,20 @@ function addFloatingButton() {
     console.log("[HotOrNot] Initialized");
     
     addFloatingButton();
+    
+    // Inject battle rank badge if on a single performer page
+    if (isOnSinglePerformerPage()) {
+      // Delay slightly to ensure the page has rendered
+      setTimeout(() => injectBattleRankBadge(), 500);
+    }
 
     // Watch for SPA navigation
     const observer = new MutationObserver(() => {
       addFloatingButton();
+      // Also try to inject badge when DOM changes on performer pages
+      if (isOnSinglePerformerPage() && !document.getElementById("hon-battle-rank-badge")) {
+        injectBattleRankBadge();
+      }
     });
 
     observer.observe(document.body, {
@@ -3767,6 +4132,12 @@ function addFloatingButton() {
               console.log('[HotOrNot] Cleared cached filters (no filters active)');
             }
           }
+        }
+        
+        // Inject battle rank badge when navigating to a single performer page
+        if (isOnSinglePerformerPage()) {
+          // Delay to allow the page to render
+          setTimeout(() => injectBattleRankBadge(), 500);
         }
       });
     }
