@@ -2648,8 +2648,10 @@ async function fetchPerformerCount(performerFilter = {}) {
     performersWithStats.forEach(p => {
       const ratingValue = parseFloat(p.rating); // Rating is 0.0-10.0
       // Map rating to bucket index (0-99)
+      // Rating 0.1 goes into bucket 0 (displayed as 0.1)
       // Rating 10.0 goes into bucket 99 (displayed as 10.0)
-      const bucketIndex = Math.min(99, Math.floor(ratingValue * 10));
+      // Use Math.round to handle floating point precision, then subtract 1 to align with display labels
+      const bucketIndex = Math.max(0, Math.min(99, Math.round(ratingValue * 10) - 1));
       ratingBuckets[bucketIndex]++;
     });
     
