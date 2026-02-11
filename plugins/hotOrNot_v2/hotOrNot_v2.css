@@ -1500,3 +1500,99 @@
     flex-wrap: nowrap;
   }
 }
+
+/* ============================================
+   STAR RATING WIDGET (Performer Card)
+   ============================================ */
+
+/* Star Rating Container */
+.hon-star-rating {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 0;
+  margin-bottom: 8px;
+  position: relative;
+  z-index: 10;
+  cursor: default;
+  user-select: none;
+}
+
+/* Individual Stars */
+.hon-star {
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.hon-star:hover {
+  transform: scale(1.2);
+}
+
+/* Star States */
+.hon-star-filled {
+  color: #ffc107;
+  text-shadow: 0 0 4px rgba(255, 193, 7, 0.5);
+}
+
+.hon-star-half {
+  color: #ffc107;
+  text-shadow: 0 0 4px rgba(255, 193, 7, 0.5);
+  opacity: 0.7;
+}
+
+.hon-star-empty {
+  color: #39444f;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 3px rgba(0, 0, 0, 0.3);
+}
+
+.hon-star-preview {
+  color: #ffdb4d !important;
+  text-shadow: 0 0 6px rgba(255, 219, 77, 0.7);
+}
+
+/* Feedback Animations */
+.hon-star-rating.hon-feedback-success .hon-star-filled {
+  animation: hon-star-pulse 0.3s ease;
+}
+
+.hon-star-rating.hon-feedback-error {
+  animation: hon-star-shake 0.3s ease;
+}
+
+@keyframes hon-star-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+@keyframes hon-star-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .hon-star-rating {
+    padding: 3px 0;
+  }
+  
+  .hon-star {
+    font-size: 0.85rem;
+  }
+}
+
+/* Dark/Light Theme Compatibility - Uses styling to match surrounding UI */
+@media (prefers-color-scheme: light) {
+  .hon-star-empty {
+    color: #6c757d;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 0 3px rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* Hover effect on card to ensure rating stays interactive */
+.hon-star-rating:hover .hon-star {
+  opacity: 1;
+}
