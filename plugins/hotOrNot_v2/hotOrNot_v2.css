@@ -115,6 +115,18 @@
   min-height: 350px;
 }
 
+/* Performer cards in battles: constrain card width to match image container like selection cards */
+.hon-performer-card.hon-scene-card {
+  max-width: 350px;
+  margin: 0 auto;
+}
+
+/* Image cards in battles: constrain card width to match image container like selection cards */
+.hon-image-card.hon-scene-card {
+  max-width: 350px;
+  margin: 0 auto;
+}
+
 @media (max-width: 1200px) {
   .hon-vs-container {
     grid-template-columns: 1fr;
@@ -131,12 +143,14 @@
     min-height: auto;
   }
   
-  /* Performer images in battles: constrained size on mobile/tablet */
+  /* Performer images in battles: fill card width on mobile/tablet */
   .hon-performer-image-container.hon-scene-image-container {
-    max-width: 350px;
-    max-height: 525px;
+    width: 100%;
+    max-width: none;
+    max-height: none;
     aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
-    margin: 0 auto;
+    margin: 0;
+    background: #333;
   }
 }
 
@@ -243,6 +257,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #333;
 }
 
 /* Performer images - fixed aspect ratio container for uniform grid */
@@ -265,7 +280,7 @@
   height: auto;
   object-fit: contain;
   transition: opacity 0.3s ease;
-  background: #000;
+  background: #333;
 }
 
 .hon-performer-image {
@@ -273,7 +288,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  background: #1a1a1a;
+  background: #333;
 }
 
 /* Desktop optimization: Reduce image height so comparison fits without scrolling */
@@ -298,7 +313,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1a1a1a;
+  background: #333;
   color: #555;
   font-size: 1rem;
 }
@@ -837,13 +852,18 @@
 .hon-performer-meta.hon-scene-meta,
 .hon-performer-rank.hon-scene-rank {}
 
-/* Override scene styles for performer images to use uniform sizing */
+/* Override scene styles for performer images to use uniform sizing like selection cards */
 .hon-performer-image-container.hon-scene-image-container {
   aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
-  max-width: 350px;
-  max-height: 525px;
-  display: block;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  background: #333;
+  overflow: hidden;
 }
 
 .hon-performer-image.hon-scene-image {
@@ -853,15 +873,21 @@
   max-height: none;
   object-fit: cover;
   object-position: center;
+  background: #333;
 }
 
-/* Override scene styles for images in comparison boxes to use uniform sizing */
+/* Override scene styles for images in comparison boxes to use uniform sizing like selection cards */
 .hon-image-image-container.hon-scene-image-container {
   aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
-  max-width: 350px;
-  max-height: 525px;
-  display: block;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  background: #333;
+  overflow: hidden;
 }
 
 .hon-image-image.hon-scene-image {
@@ -871,6 +897,7 @@
   max-height: none;
   object-fit: cover;
   object-position: center;
+  background: #333;
 }
 
 /* End shim */
