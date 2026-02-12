@@ -130,14 +130,6 @@
   .hon-scene-card {
     min-height: auto;
   }
-  
-  /* Performer images in battles: constrained size on mobile/tablet */
-  .hon-performer-image-container.hon-scene-image-container {
-    max-width: 350px;
-    max-height: 525px;
-    aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
-    margin: 0 auto;
-  }
 }
 
 /* VS Divider */
@@ -286,11 +278,8 @@
     max-height: 45vh;
   }
   
-  /* Performer images in battles: fixed size like gauntlet selection */
   .hon-performer-image-container.hon-scene-image-container {
-    max-width: 350px;
-    max-height: 525px;
-    aspect-ratio: var(--hon-performer-aspect-ratio, 2 / 3);
+    max-height: 450px;
   }
 }
 
