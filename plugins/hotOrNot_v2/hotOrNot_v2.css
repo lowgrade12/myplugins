@@ -265,21 +265,6 @@
   background: #1a1a1a;
 }
 
-/* Desktop optimization: Reduce image height so comparison fits without scrolling */
-@media (min-width: 1201px) {
-  .hon-scene-image-container {
-    max-height: 45vh;
-  }
-  
-  .hon-scene-image {
-    max-height: 45vh;
-  }
-  
-  .hon-performer-image-container.hon-scene-image-container {
-    max-height: none;
-  }
-}
-
 .hon-scene-image.hon-no-image {
   display: flex;
   align-items: center;
