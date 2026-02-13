@@ -10,6 +10,7 @@ A plugin for [Stash](https://stashapp.cc/) that synchronizes your favorite perfo
 - **Performer favorites** - Automatically syncs to StashDB when you update a performer in Stash
 - **Studio favorites** - Automatically syncs to StashDB when you update a studio in Stash
 - **Real-time updates** - Changes are pushed immediately via `Performer.Update.Post` and `Studio.Update.Post` hooks
+- **Gallery tag support** - Optionally add a tag (e.g., "[Stashbox Performer Gallery]") to performers when they are favorited
 
 ### Manual Sync (Tasks)
 - **Bulk performer sync** - Sync all favorite performers to StashDB at once
@@ -33,6 +34,8 @@ A plugin for [Stash](https://stashapp.cc/) that synchronizes your favorite perfo
 |---------|-------------|
 | **Tag performers/studios with invalid stashids** | When enabled, adds a tag to performers/studios that have invalid or missing StashDB IDs |
 | **Invalid stashid tag name** | The name of the tag to apply to invalid entries |
+| **Add gallery tag to favorited performers** | When enabled, adds a tag to performers when they are added to favorites |
+| **Gallery tag name** | The name of the tag to add to favorited performers (default: `[Stashbox Performer Gallery]`) |
 
 ### StashDB Configuration
 
