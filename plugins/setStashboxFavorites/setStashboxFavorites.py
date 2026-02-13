@@ -98,7 +98,7 @@ def get_stashdb_credentials(endpoint, api_key):
     return None, None
 
 def get_performer(performer_id):
-    """Get performer details including stash_ids and favorite status"""
+    """Get performer details including stash_ids, favorite status, and tags"""
     result = stash_graphql("""
         query FindPerformer($id: ID!) {
             findPerformer(id: $id) {
@@ -108,6 +108,10 @@ def get_performer(performer_id):
                 stash_ids {
                     endpoint
                     stash_id
+                }
+                tags {
+                    id
+                    name
                 }
             }
         }
@@ -142,9 +146,109 @@ def get_plugin_settings():
         return {}
     return result.get('configuration', {}).get('plugins', {}).get('setStashboxFavorites', {})
 
+
+def get_or_create_tag(tag_name):
+    """Get or create a tag by name.
+    
+    Args:
+        tag_name: Name of the tag to find or create
+        
+    Returns:
+        Tag dict with id and name, or None
+    """
+    # First try to find the tag
+    find_query = """
+    query FindTag($name: String!) {
+        findTags(tag_filter: { name: { value: $name, modifier: EQUALS } }) {
+            tags {
+                id
+                name
+            }
+        }
+    }
+    """
+    
+    data = stash_graphql(find_query, {"name": tag_name})
+    if data and "findTags" in data:
+        tags = data["findTags"].get("tags", [])
+        if tags:
+            return tags[0]
+    
+    # Create the tag if it doesn't exist
+    create_query = """
+    mutation TagCreate($input: TagCreateInput!) {
+        tagCreate(input: $input) {
+            id
+            name
+        }
+    }
+    """
+    
+    log.info(f'Tag "{tag_name}" missing. Creating...')
+    data = stash_graphql(create_query, {
+        "input": {
+            "name": tag_name,
+            "description": "Tag created by Set Stashbox Favorites plugin. Marks performers that have been favorited for gallery viewing."
+        }
+    })
+    
+    if data and "tagCreate" in data:
+        return data["tagCreate"]
+    
+    log.error(f"Failed to create tag: {tag_name}")
+    return None
+
+
+def add_tag_to_performer(performer_id, performer_name, current_tags, tag_id, tag_name):
+    """Add a tag to a performer if not already present.
+    
+    Args:
+        performer_id: The local Stash performer ID
+        performer_name: The performer's name (for logging)
+        current_tags: List of current tag dicts with 'id' keys
+        tag_id: The ID of the tag to add
+        tag_name: The name of the tag (for logging)
+    
+    Returns:
+        True if tag was added, False if already present or failed
+    """
+    current_tag_ids = [tag["id"] for tag in current_tags]
+    
+    # Check if already tagged
+    if tag_id in current_tag_ids:
+        log.debug(f'Performer {performer_name} already has tag "{tag_name}"')
+        return False
+    
+    # Add the tag using performerUpdate mutation
+    update_query = """
+    mutation PerformerUpdate($input: PerformerUpdateInput!) {
+        performerUpdate(input: $input) {
+            id
+        }
+    }
+    """
+    
+    new_tag_ids = current_tag_ids + [tag_id]
+    
+    data = stash_graphql(update_query, {
+        "input": {
+            "id": performer_id,
+            "tag_ids": new_tag_ids
+        }
+    })
+    
+    if data:
+        log.info(f'Added tag "{tag_name}" to performer {performer_name}')
+        return True
+    else:
+        log.warning(f'Failed to add tag "{tag_name}" to performer {performer_name}')
+        return False
+
 plugin_settings = get_plugin_settings()
 tag_errors = plugin_settings.get('tagErrors', False)
 tag_name = plugin_settings.get('tagName')
+gallery_tag_enabled = plugin_settings.get('galleryTagEnabled', False)
+gallery_tag_name = plugin_settings.get('galleryTagName', '[Stashbox Performer Gallery]')
 
 # Handle hook context (triggered by Performer.Update.Post or Studio.Update.Post)
 if hook_context:
@@ -179,6 +283,20 @@ if hook_context:
     elif hook_type == 'Performer.Update.Post' and entity_id:
         log.debug(f"Hook triggered for performer ID: {entity_id}")
         performer = get_performer(entity_id)
+        favorite = performer.get('favorite', False) if performer else False
+        
+        # Add gallery tag to performer when favorited (if enabled)
+        if performer and favorite and gallery_tag_enabled and gallery_tag_name:
+            gallery_tag = get_or_create_tag(gallery_tag_name)
+            if gallery_tag:
+                add_tag_to_performer(
+                    performer['id'],
+                    performer.get('name', 'Unknown'),
+                    performer.get('tags', []),
+                    gallery_tag['id'],
+                    gallery_tag_name
+                )
+        
         if performer and performer.get('stash_ids'):
             stashboxes = get_stashboxes()
             stashbox_map = {sb.get('endpoint'): sb.get('api_key') for sb in stashboxes if sb.get('endpoint') and sb.get('api_key')}
@@ -196,7 +314,6 @@ if hook_context:
                     log.warning(f"No API key found for endpoint: {endpoint}")
                     continue
                 
-                favorite = performer.get('favorite', False)
                 log.info(f"Syncing performer {performer.get('name')} (stash_id={stash_id}) favorite={favorite} to {endpoint}")
                 set_stashbox_favorite_performer(endpoint, api_key, stash_id, favorite)
         else:

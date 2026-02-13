@@ -1,7 +1,7 @@
 name: Set Stashbox Favorites
 # requires: stashUserscriptLibrary7dJx1qP
 description: Set Stashbox favorite performers and studios according to stash favorites
-version: 0.8.0
+version: 0.9.0
 url: https://github.com/lowgrade12/hotornottest/tree/main/plugins/setStashboxFavorites
 settings:
   tagErrors:
@@ -9,6 +9,14 @@ settings:
     type: BOOLEAN
   tagName:
     displayName: Invalid stashid tag name
+    type: STRING
+  galleryTagEnabled:
+    displayName: Add gallery tag to favorited performers
+    description: When enabled, adds a tag to performers when they are added to favorites
+    type: BOOLEAN
+  galleryTagName:
+    displayName: Gallery tag name
+    description: Name of the tag to add to favorited performers (default is [Stashbox Performer Gallery])
     type: STRING
 exec:
   - python
