@@ -662,7 +662,7 @@ if "mode" in json_input["args"]:
         processed_ids = processPerformers()
         stash.metadata_scan([settings["path"]])
         stash.run_plugin_task(
-            "stashdb-performer-gallery", "relink missing images", args={"processed_performer_ids": ",".join(processed_ids)}
+            "stashdb-performer-gallery", "relink missing images", args={"processed_performer_ids": ",".join(str(pid) for pid in processed_ids)}
         )
     elif "processImages" in PLUGIN_ARGS:
         if "performer_id" in json_input["args"]:
