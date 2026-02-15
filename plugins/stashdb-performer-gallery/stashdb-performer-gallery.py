@@ -44,6 +44,65 @@ FRAGMENT_IMAGE = """
 """
 
 
+def validate_ids(image_data):
+    """Validate that IDs in the image data still exist in Stash.
+
+    This prevents FOREIGN KEY constraint errors when referenced entities
+    (tags, galleries, performers) have been deleted from Stash.
+
+    Args:
+        image_data: Dictionary containing image update data with tag_ids, gallery_ids, performer_ids
+
+    Returns:
+        Dictionary with filtered ID lists (invalid IDs removed)
+    """
+    validated = image_data.copy()
+
+    # Validate tag_ids - filter out tags that no longer exist
+    if "tag_ids" in validated and validated["tag_ids"]:
+        valid_tag_ids = []
+        for tag_id in validated["tag_ids"]:
+            try:
+                tag = stash.find_tag(tag_id)
+                if tag:
+                    valid_tag_ids.append(tag_id)
+                else:
+                    log.debug(f"Tag {tag_id} no longer exists, skipping")
+            except Exception as e:
+                log.debug(f"Error checking tag {tag_id}: {e}")
+        validated["tag_ids"] = valid_tag_ids
+
+    # Validate gallery_ids - filter out galleries that no longer exist
+    if "gallery_ids" in validated and validated["gallery_ids"]:
+        valid_gallery_ids = []
+        for gallery_id in validated["gallery_ids"]:
+            try:
+                gallery = stash.find_gallery(gallery_id)
+                if gallery:
+                    valid_gallery_ids.append(gallery_id)
+                else:
+                    log.debug(f"Gallery {gallery_id} no longer exists, skipping")
+            except Exception as e:
+                log.debug(f"Error checking gallery {gallery_id}: {e}")
+        validated["gallery_ids"] = valid_gallery_ids
+
+    # Validate performer_ids - filter out performers that no longer exist
+    if "performer_ids" in validated and validated["performer_ids"]:
+        valid_performer_ids = []
+        for performer_id in validated["performer_ids"]:
+            try:
+                performer = stash.find_performer(performer_id)
+                if performer:
+                    valid_performer_ids.append(performer_id)
+                else:
+                    log.debug(f"Performer {performer_id} no longer exists, skipping")
+            except Exception as e:
+                log.debug(f"Error checking performer {performer_id}: {e}")
+        validated["performer_ids"] = valid_performer_ids
+
+    return validated
+
+
 def processImages(img):
     log.debug("image: %s" % (img,))
     image_data = None
@@ -61,8 +120,9 @@ def processImages(img):
                     else:
                         image_data = index
     if image_data:
-        #        log.debug(image_data)
-        stash.update_image(image_data)
+        # Validate IDs before updating to prevent FOREIGN KEY constraint errors
+        validated_data = validate_ids(image_data)
+        stash.update_image(validated_data)
 
 
 def processPerformers():
@@ -94,7 +154,9 @@ def is_theporndb_endpoint(endpoint):
     """Check if the endpoint is theporndb.net by parsing the URL hostname."""
     try:
         parsed = urlparse(endpoint)
-        hostname = parsed.hostname or ""
+        hostname = parsed.hostname
+        if not hostname:
+            return False
         return hostname == "theporndb.net" or hostname.endswith(".theporndb.net")
     except Exception:
         return False
