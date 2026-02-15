@@ -533,35 +533,7 @@ def remove_tag_from_performer(performer_id):
         return False
 
 
-def remove_tag_from_all_performers():
-    """Remove the [Stashbox Performer Gallery] tag from all performers that have it.
-
-    This function is called after batch processing of performers to clean up
-    the gallery tag from all performers whose galleries have been downloaded.
-
-    Returns:
-        int: Number of performers from which the tag was removed
-    """
-    query = {
-        "tags": {
-            "depth": 0,
-            "excludes": [],
-            "modifier": "INCLUDES_ALL",
-            "value": [tag_stashbox_performer_gallery],
-        }
-    }
-    performers = stash.find_performers(f=query)
-    removed_count = 0
-
-    for performer in performers:
-        if remove_tag_from_performer(performer["id"]):
-            removed_count += 1
-
-    log.info(f"Removed [Stashbox Performer Gallery] tag from {removed_count} performers")
-    return removed_count
-
-
-def relink_images(performer_id=None):
+def relink_images(performer_id=None, processed_performer_ids=None):
     """Relink images that are missing their gallery associations.
 
     POTENTIAL HANG CAUSES ANALYSIS:
@@ -592,6 +564,7 @@ def relink_images(performer_id=None):
 
     Args:
         performer_id: Optional performer ID to limit relinking to a specific performer
+        processed_performer_ids: Optional list of performer IDs that were processed in batch mode
     """
     query = {
         "path": {"modifier": "INCLUDES", "value": settings["path"]},
@@ -642,10 +615,14 @@ def relink_images(performer_id=None):
             # Single performer mode - remove tag from the specific performer
             log.info(f"removeTagAfterDownload is enabled, removing tag from performer {performer_id}")
             remove_tag_from_performer(performer_id)
-        else:
-            # Batch mode - remove tag from ALL performers that have the gallery tag
-            log.info("removeTagAfterDownload is enabled, removing tag from all processed performers")
-            remove_tag_from_all_performers()
+        elif processed_performer_ids:
+            # Batch mode with explicit list - remove tag only from processed performers
+            log.info(f"removeTagAfterDownload is enabled, removing tag from {len(processed_performer_ids)} processed performers")
+            removed_count = 0
+            for pid in processed_performer_ids:
+                if remove_tag_from_performer(pid):
+                    removed_count += 1
+            log.info(f"Removed [Stashbox Performer Gallery] tag from {removed_count} performers")
 
 
 json_input = json.loads(sys.stdin.read())
@@ -682,14 +659,19 @@ if "mode" in json_input["args"]:
                 args={"performer_id": p["id"]},
             )
     elif "processPerformers" in PLUGIN_ARGS:
-        processPerformers()
+        processed_ids = processPerformers()
         stash.metadata_scan([settings["path"]])
         stash.run_plugin_task(
-            "stashdb-performer-gallery", "relink missing images", args={}
+            "stashdb-performer-gallery", "relink missing images", args={"processed_performer_ids": ",".join(processed_ids)}
         )
     elif "processImages" in PLUGIN_ARGS:
         if "performer_id" in json_input["args"]:
             relink_images(performer_id=json_input["args"]["performer_id"])
+        elif "processed_performer_ids" in json_input["args"]:
+            # Batch mode - parse comma-separated performer IDs
+            ids_str = json_input["args"]["processed_performer_ids"]
+            processed_ids = [pid.strip() for pid in ids_str.split(",") if pid.strip()]
+            relink_images(processed_performer_ids=processed_ids)
         else:
             relink_images()
 
