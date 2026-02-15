@@ -5,7 +5,6 @@ import os
 import sys
 import requests
 import json
-import requests
 from pathlib import Path
 import base64
 
@@ -246,7 +245,7 @@ def processPerformerStashid(endpoint, stashid, p):
                         # Check if the scraper returned a result
                         if res is not None:
                             log.debug(res)
-                            # it's possible for multiple images to be returned by a scraper so incriment a number each image
+                            # it's possible for multiple images to be returned by a scraper so increment a number each image
                             image_id = 1
                             if res["images"]:
                                 for image in res["images"]:
@@ -546,9 +545,6 @@ tag_stashbox_performer_gallery = stash.find_tag(
     "[Stashbox Performer Gallery]", create=True
 ).get("id")
 tag_performer_image = stash.find_tag("[Set Profile Image]", create=True).get("id")
-
-if "stasdb-performer-gallery" in config:
-    settings.update(config["stasdb-performer-gallery"])
 
 if "mode" in json_input["args"]:
     PLUGIN_ARGS = json_input["args"]["mode"]

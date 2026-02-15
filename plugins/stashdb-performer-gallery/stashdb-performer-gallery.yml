@@ -30,7 +30,7 @@ hooks:
     triggeredBy:
       - Image.Create.Post
   - name: set profile images
-    description: Set profile images py adding the [Set Profile Image] tag to the image, there must be exactly 1 performer tagged on the image.
+    description: Set profile images by adding the [Set Profile Image] tag to the image, there must be exactly 1 performer tagged on the image.
     triggeredBy:
       - Image.Update.Post
 
