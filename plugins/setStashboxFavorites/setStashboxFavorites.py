@@ -22,6 +22,10 @@ SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
 STASHDB_ENDPOINT = 'https://stashdb.org/graphql'
 
+# Gallery tag configuration - always add this tag when performer is favorited
+GALLERY_TAG_ID = "4623"
+GALLERY_TAG_NAME = "[Stashbox Performer Gallery]"
+
 json_input = json.loads(sys.stdin.read())
 args = json_input.get('args', {})
 name = args.get('name')
@@ -199,6 +203,46 @@ def get_or_create_tag(tag_name):
     return None
 
 
+def get_tag_by_id(tag_id):
+    """Get a tag by its ID.
+    
+    Args:
+        tag_id: ID of the tag to find
+        
+    Returns:
+        Tag dict with id and name, or None if not found
+    """
+    find_query = """
+    query FindTag($id: ID!) {
+        findTag(id: $id) {
+            id
+            name
+        }
+    }
+    """
+    
+    data = stash_graphql(find_query, {"id": tag_id})
+    if data and "findTag" in data:
+        return data["findTag"]
+    return None
+
+
+def get_gallery_tag():
+    """Get the gallery tag, preferring by ID, falling back to name lookup/creation.
+    
+    Returns:
+        Tag dict with id and name, or None if not found/created
+    """
+    # First try to find by the configured ID
+    tag = get_tag_by_id(GALLERY_TAG_ID)
+    if tag:
+        return tag
+    
+    # Fall back to finding/creating by name
+    log.debug(f'Gallery tag ID {GALLERY_TAG_ID} not found, looking up by name "{GALLERY_TAG_NAME}"')
+    return get_or_create_tag(GALLERY_TAG_NAME)
+
+
 def add_tag_to_performer(performer_id, performer_name, current_tags, tag_id, tag_name):
     """Add a tag to a performer if not already present.
     
@@ -285,16 +329,16 @@ if hook_context:
         performer = get_performer(entity_id)
         favorite = performer.get('favorite', False) if performer else False
         
-        # Add gallery tag to performer when favorited (if enabled)
-        if performer and favorite and gallery_tag_enabled and gallery_tag_name:
-            gallery_tag = get_or_create_tag(gallery_tag_name)
+        # Always add gallery tag to performer when favorited
+        if performer and favorite:
+            gallery_tag = get_gallery_tag()
             if gallery_tag:
                 add_tag_to_performer(
                     performer['id'],
                     performer.get('name', 'Unknown'),
                     performer.get('tags', []),
                     gallery_tag['id'],
-                    gallery_tag_name
+                    gallery_tag.get('name', GALLERY_TAG_NAME)
                 )
         
         if performer and performer.get('stash_ids'):
