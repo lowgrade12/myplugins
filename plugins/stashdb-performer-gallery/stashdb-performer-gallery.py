@@ -656,13 +656,13 @@ if "mode" in json_input["args"]:
             stash.run_plugin_task(
                 "stashdb-performer-gallery",
                 "relink missing images",
-                args={"performer_id": p["id"]},
+                args={"mode": "processImages", "performer_id": p["id"]},
             )
     elif "processPerformers" in PLUGIN_ARGS:
         processed_ids = processPerformers()
         stash.metadata_scan([settings["path"]])
         stash.run_plugin_task(
-            "stashdb-performer-gallery", "relink missing images", args={"processed_performer_ids": ",".join(str(pid) for pid in processed_ids)}
+            "stashdb-performer-gallery", "relink missing images", args={"mode": "processImages", "processed_performer_ids": ",".join(str(pid) for pid in processed_ids)}
         )
     elif "processImages" in PLUGIN_ARGS:
         if "performer_id" in json_input["args"]:
@@ -687,5 +687,5 @@ elif "hookContext" in json_input["args"]:
             setPerformerPicture(img)
     if json_input["args"]["hookContext"]["type"] == "Performer.Update.Post":
         stash.run_plugin_task(
-            "stashdb-performer-gallery", "Process Performers", args={"performer": id}
+            "stashdb-performer-gallery", "Process Performers", args={"mode": "processPerformers", "performer": id}
         )
