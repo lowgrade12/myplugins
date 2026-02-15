@@ -6,6 +6,7 @@ import sys
 import requests
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 import base64
 
 
@@ -43,6 +44,65 @@ FRAGMENT_IMAGE = """
 """
 
 
+def validate_ids(image_data):
+    """Validate that IDs in the image data still exist in Stash.
+
+    This prevents FOREIGN KEY constraint errors when referenced entities
+    (tags, galleries, performers) have been deleted from Stash.
+
+    Args:
+        image_data: Dictionary containing image update data with tag_ids, gallery_ids, performer_ids
+
+    Returns:
+        Dictionary with filtered ID lists (invalid IDs removed)
+    """
+    validated = image_data.copy()
+
+    # Validate tag_ids - filter out tags that no longer exist
+    if "tag_ids" in validated and validated["tag_ids"]:
+        valid_tag_ids = []
+        for tag_id in validated["tag_ids"]:
+            try:
+                tag = stash.find_tag(tag_id)
+                if tag:
+                    valid_tag_ids.append(tag_id)
+                else:
+                    log.debug(f"Tag {tag_id} no longer exists, skipping")
+            except Exception as e:
+                log.debug(f"Error checking tag {tag_id}: {e}")
+        validated["tag_ids"] = valid_tag_ids
+
+    # Validate gallery_ids - filter out galleries that no longer exist
+    if "gallery_ids" in validated and validated["gallery_ids"]:
+        valid_gallery_ids = []
+        for gallery_id in validated["gallery_ids"]:
+            try:
+                gallery = stash.find_gallery(gallery_id)
+                if gallery:
+                    valid_gallery_ids.append(gallery_id)
+                else:
+                    log.debug(f"Gallery {gallery_id} no longer exists, skipping")
+            except Exception as e:
+                log.debug(f"Error checking gallery {gallery_id}: {e}")
+        validated["gallery_ids"] = valid_gallery_ids
+
+    # Validate performer_ids - filter out performers that no longer exist
+    if "performer_ids" in validated and validated["performer_ids"]:
+        valid_performer_ids = []
+        for performer_id in validated["performer_ids"]:
+            try:
+                performer = stash.find_performer(performer_id)
+                if performer:
+                    valid_performer_ids.append(performer_id)
+                else:
+                    log.debug(f"Performer {performer_id} no longer exists, skipping")
+            except Exception as e:
+                log.debug(f"Error checking performer {performer_id}: {e}")
+        validated["performer_ids"] = valid_performer_ids
+
+    return validated
+
+
 def processImages(img):
     log.debug("image: %s" % (img,))
     image_data = None
@@ -60,8 +120,9 @@ def processImages(img):
                     else:
                         image_data = index
     if image_data:
-        #        log.debug(image_data)
-        stash.update_image(image_data)
+        # Validate IDs before updating to prevent FOREIGN KEY constraint errors
+        validated_data = validate_ids(image_data)
+        stash.update_image(validated_data)
 
 
 def processPerformers():
@@ -89,7 +150,24 @@ def processPerformer(performer):
         processPerformerStashid(sid["endpoint"], sid["stash_id"], performer)
 
 
+def is_theporndb_endpoint(endpoint):
+    """Check if the endpoint is theporndb.net by parsing the URL hostname."""
+    try:
+        parsed = urlparse(endpoint)
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        return hostname == "theporndb.net" or hostname.endswith(".theporndb.net")
+    except Exception:
+        return False
+
+
 def get_stashbox(endpoint):
+    # Skip theporndb.net as it's not a compatible Stash-Box instance
+    if is_theporndb_endpoint(endpoint):
+        log.info("Skipping theporndb.net endpoint - it uses a different API (https://api.theporndb.net/docs/)")
+        return None
+
     for sbx_config in stash.get_configuration()["general"]["stashBoxes"]:
         if sbx_config["endpoint"] == endpoint:
             stashbox = StashBoxInterface(
@@ -358,7 +436,9 @@ def processPerformerStashid(endpoint, stashid, p):
     #                    scrape=stash.scrape_performer_url(ur)
 
     else:
-        log.error("endpoint %s not configured, skipping" % (endpoint,))
+        # Don't log an error if we already logged an info message about skipping theporndb.net
+        if not is_theporndb_endpoint(endpoint):
+            log.error("endpoint %s not configured, skipping" % (endpoint,))
 
 
 def setPerformerPicture(img):
@@ -409,10 +489,10 @@ def processQueue():
 
 def remove_tag_from_performer(performer_id):
     """Remove the [Stashbox Performer Gallery] tag from a performer after galleries are downloaded.
-    
+
     This function retrieves the performer's current tags, removes the gallery tag,
     and updates the performer with the remaining tags.
-    
+
     Args:
         performer_id: The ID of the performer to remove the tag from
     """
@@ -421,22 +501,22 @@ def remove_tag_from_performer(performer_id):
         if not performer:
             log.warning(f"Could not find performer {performer_id} to remove tag")
             return False
-        
+
         current_tag_ids = [tag["id"] for tag in performer.get("tags", [])]
-        
+
         # Check if the tag is present
         if tag_stashbox_performer_gallery not in current_tag_ids:
             log.debug(f"Performer {performer.get('name', performer_id)} doesn't have the gallery tag")
             return False
-        
+
         # Remove the tag
         new_tag_ids = [tid for tid in current_tag_ids if tid != tag_stashbox_performer_gallery]
-        
+
         stash.update_performer({
             "id": performer_id,
             "tag_ids": new_tag_ids
         })
-        
+
         log.info(f"Removed [Stashbox Performer Gallery] tag from performer {performer.get('name', performer_id)}")
         return True
     except Exception as e:
@@ -446,33 +526,33 @@ def remove_tag_from_performer(performer_id):
 
 def relink_images(performer_id=None):
     """Relink images that are missing their gallery associations.
-    
+
     POTENTIAL HANG CAUSES ANALYSIS:
     ================================
-    1. INFINITE LOOP RISK: The pagination logic uses a counter `i` that increments 
-       for each image processed, but the query uses `i` as the page number. If 
+    1. INFINITE LOOP RISK: The pagination logic uses a counter `i` that increments
+       for each image processed, but the query uses `i` as the page number. If
        `stash.find_images` returns images with pagination starting at page 0/1,
        after processing `per_page` images, `i` would be 100, then `filter={"page": 100, ...}`
        would skip pages 1-99, potentially causing issues or missing images.
-       
-       FIX: The pagination should increment page numbers correctly, not use the 
+
+       FIX: The pagination should increment page numbers correctly, not use the
        image counter as the page number.
-    
+
     2. LARGE DATASET ISSUES: If there are many images missing galleries, the function
        fetches them all with no timeout or batch limiting, which could cause hangs
        on large libraries.
-    
+
     3. NO REQUEST TIMEOUT: The `stash.find_images` calls have no timeout, so if the
        Stash server is slow or unresponsive, the function will hang indefinitely.
-    
+
     4. FILE I/O BLOCKING: The `processImages` function opens and reads JSON files
        synchronously without timeouts, which could block if files are on slow storage
        or network mounts.
-    
+
     5. COUNTER VS PAGE MISMATCH: `i` is used both as an image counter AND as a page
        number, but `per_page` is 100. After the first batch, `i=100` but `page` should
        be `1` or `2` (depending on 0/1-based pagination).
-    
+
     Args:
         performer_id: Optional performer ID to limit relinking to a specific performer
     """
@@ -490,35 +570,35 @@ def relink_images(performer_id=None):
 
     total = stash.find_images(f=query, get_count=True)[0]
     log.info(f"Found {total} images to process for relinking")
-    
+
     # FIX: Use proper pagination with page numbers starting from 1
     page = 1
     processed = 0
-    
+
     while processed < total:
         log.debug(f"Fetching page {page} (processed {processed}/{total})")
         images = stash.find_images(f=query, filter={"page": page, "per_page": per_page})
-        
+
         # Safety check: if no images returned, break to avoid infinite loop
         if not images:
             log.warning(f"No images returned for page {page}, breaking loop")
             break
-        
+
         for img in images:
             log.debug("image: %s" % (img,))
             processImages(img)
             processed += 1
             log.progress((processed / total))
-        
+
         page += 1
-        
+
         # Safety check: prevent runaway pagination
         if page > (total // per_page) + 10:
             log.warning(f"Pagination exceeded expected bounds (page {page}), breaking loop")
             break
-    
+
     log.info(f"Completed relinking {processed} images")
-    
+
     # FEATURE: Remove the tag from the performer after galleries are downloaded
     if settings.get("removeTagAfterDownload", False) and performer_id:
         log.info(f"removeTagAfterDownload is enabled, removing tag from performer {performer_id}")
