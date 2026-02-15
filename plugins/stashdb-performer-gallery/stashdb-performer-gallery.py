@@ -126,6 +126,11 @@ def processImages(img):
 
 
 def processPerformers():
+    """Process all performers with the [Stashbox Performer Gallery] tag.
+
+    Returns:
+        list: List of performer IDs that were processed
+    """
     query = {
         "tags": {
             "depth": 0,
@@ -135,9 +140,13 @@ def processPerformers():
         }
     }
     performers = stash.find_performers(f=query)
+    processed_performer_ids = []
 
     for performer in performers:
         processPerformer(performer)
+        processed_performer_ids.append(performer["id"])
+
+    return processed_performer_ids
 
 
 def processPerformer(performer):
@@ -524,6 +533,34 @@ def remove_tag_from_performer(performer_id):
         return False
 
 
+def remove_tag_from_all_performers():
+    """Remove the [Stashbox Performer Gallery] tag from all performers that have it.
+
+    This function is called after batch processing of performers to clean up
+    the gallery tag from all performers whose galleries have been downloaded.
+
+    Returns:
+        int: Number of performers from which the tag was removed
+    """
+    query = {
+        "tags": {
+            "depth": 0,
+            "excludes": [],
+            "modifier": "INCLUDES_ALL",
+            "value": [tag_stashbox_performer_gallery],
+        }
+    }
+    performers = stash.find_performers(f=query)
+    removed_count = 0
+
+    for performer in performers:
+        if remove_tag_from_performer(performer["id"]):
+            removed_count += 1
+
+    log.info(f"Removed [Stashbox Performer Gallery] tag from {removed_count} performers")
+    return removed_count
+
+
 def relink_images(performer_id=None):
     """Relink images that are missing their gallery associations.
 
@@ -599,10 +636,16 @@ def relink_images(performer_id=None):
 
     log.info(f"Completed relinking {processed} images")
 
-    # FEATURE: Remove the tag from the performer after galleries are downloaded
-    if settings.get("removeTagAfterDownload", False) and performer_id:
-        log.info(f"removeTagAfterDownload is enabled, removing tag from performer {performer_id}")
-        remove_tag_from_performer(performer_id)
+    # FEATURE: Remove the tag from the performer(s) after galleries are downloaded
+    if settings.get("removeTagAfterDownload", False):
+        if performer_id:
+            # Single performer mode - remove tag from the specific performer
+            log.info(f"removeTagAfterDownload is enabled, removing tag from performer {performer_id}")
+            remove_tag_from_performer(performer_id)
+        else:
+            # Batch mode - remove tag from ALL performers that have the gallery tag
+            log.info("removeTagAfterDownload is enabled, removing tag from all processed performers")
+            remove_tag_from_all_performers()
 
 
 json_input = json.loads(sys.stdin.read())
