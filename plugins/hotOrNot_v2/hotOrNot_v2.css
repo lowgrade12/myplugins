@@ -1596,3 +1596,32 @@
 .hon-star-rating:hover .hon-star {
   opacity: 1;
 }
+
+/* ============================================
+   CONFIDENCE BADGE & ENHANCED STATS DISPLAY
+   ============================================ */
+
+/* Confidence badge inline with match count */
+.hon-confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  font-size: 0.85em;
+  cursor: help;
+  vertical-align: middle;
+}
+
+/* Stats inline display for battle cards */
+.hon-stats-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Streak icons in performer cards */
+.hon-meta-item .hon-streak-icon {
+  margin-left: 4px;
+}

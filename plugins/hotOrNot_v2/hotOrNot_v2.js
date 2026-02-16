@@ -892,7 +892,8 @@
         current_streak: 0,
         best_streak: 0,
         worst_streak: 0,
-        last_match: null
+        last_match: null,
+        recent_results: 0
       };
     }
     
@@ -908,7 +909,8 @@
           current_streak: stats.current_streak || 0,
           best_streak: stats.best_streak || 0,
           worst_streak: stats.worst_streak || 0,
-          last_match: stats.last_match || null
+          last_match: stats.last_match || null,
+          recent_results: stats.recent_results || 0
         };
       } catch (e) {
         console.warn(`[HotOrNot] Failed to parse hotornot_stats for performer ${performer.id}:`, e);
@@ -927,7 +929,8 @@
         current_streak: 0,
         best_streak: 0,
         worst_streak: 0,
-        last_match: null
+        last_match: null,
+        recent_results: 0
       };
     }
     
@@ -940,7 +943,8 @@
       current_streak: 0,
       best_streak: 0,
       worst_streak: 0,
-      last_match: null
+      last_match: null,
+      recent_results: 0
     };
   }
 
@@ -966,6 +970,7 @@
       newStats.current_streak = currentStats.current_streak;
       newStats.best_streak = currentStats.best_streak;
       newStats.worst_streak = currentStats.worst_streak;
+      newStats.recent_results = currentStats.recent_results || 0;
       return newStats;
     }
     
@@ -978,6 +983,10 @@
       newStats.current_streak = 0;
       newStats.best_streak = currentStats.best_streak;
       newStats.worst_streak = currentStats.worst_streak;
+      // For trend tracking, draws count as 0 (loss) since they don't indicate a clear victory
+      let recentResults = currentStats.recent_results || 0;
+      recentResults = (recentResults << 1) & 0x3FF; // Shift left, add 0 for draw, keep only 10 bits
+      newStats.recent_results = recentResults;
       return newStats;
     }
     
@@ -1008,7 +1017,147 @@
       newStats.worst_streak = Math.min(currentStats.worst_streak, newStats.current_streak);
     }
     
+    // Update recent results bitmask for trend tracking
+    // Each bit represents a match outcome: 1=win, 0=loss
+    // Least significant bit is the most recent match
+    let recentResults = currentStats.recent_results || 0;
+    recentResults = (recentResults << 1) | (won ? 1 : 0); // Shift left and add new result
+    recentResults = recentResults & 0x3FF; // Keep only 10 bits (0x3FF = 1023)
+    newStats.recent_results = recentResults;
+    
     return newStats;
+  }
+
+  /**
+   * Get confidence level based on match count.
+   * Returns an object with emoji, label, and match count.
+   * @param {Object} stats - Stats object from parsePerformerEloData
+   * @returns {Object} Confidence indicator with emoji, label, and matches
+   */
+  function getConfidenceLevel(stats) {
+    const matches = stats.total_matches || 0;
+    if (matches < 10) {
+      return { emoji: "⚡", label: "New", matches };
+    } else if (matches < 30) {
+      return { emoji: "📊", label: "Growing", matches };
+    } else {
+      return { emoji: "✅", label: "Established", matches };
+    }
+  }
+
+  /**
+   * Calculate rating confidence interval based on match count.
+   * More matches = narrower confidence interval (more reliable rating).
+   * @param {number} rating - Current rating (1-100)
+   * @param {number} matchCount - Number of matches played
+   * @returns {Object} Object with low, high bounds and match count
+   */
+  function getRatingConfidenceInterval(rating, matchCount) {
+    const matches = matchCount || 0;
+    const baseUncertainty = 15;
+    const uncertainty = Math.round(baseUncertainty / Math.sqrt(Math.max(1, matches)));
+    
+    return {
+      low: Math.max(1, rating - uncertainty),
+      high: Math.min(100, rating + uncertainty),
+      matches: matches
+    };
+  }
+
+  /**
+   * Calculate skip/draw rate for a performer.
+   * High skip rate indicates a "controversial" performer users have trouble deciding on.
+   * @param {Object} stats - Stats object from parsePerformerEloData
+   * @returns {number} Skip rate as decimal (0-1)
+   */
+  function getSkipRate(stats) {
+    if (!stats || stats.total_matches === 0) return 0;
+    return (stats.draws || 0) / stats.total_matches;
+  }
+
+  /**
+   * Check if a performer is "controversial" based on skip rate.
+   * Controversial performers are skipped more than 30% of the time.
+   * @param {Object} stats - Stats object from parsePerformerEloData
+   * @returns {boolean} True if performer is controversial
+   */
+  function isControversialPerformer(stats) {
+    return getSkipRate(stats) > 0.3;
+  }
+
+  // Constants for streak-based adjustments
+  const STREAK_THRESHOLD_MODERATE = 3;  // Streak length to trigger moderate bonus
+  const STREAK_THRESHOLD_STRONG = 5;    // Streak length to trigger strong bonus
+  const STREAK_RATING_MULTIPLIER = 2;   // Rating points adjustment per streak count
+
+  /**
+   * Calculate streak-based weight modifier for matchmaking.
+   * Performers on streaks (hot or cold) get a weight bonus to give 
+   * opportunities to continue or break their streaks.
+   * @param {Object} stats - Stats object from parsePerformerEloData
+   * @returns {number} Weight multiplier (1.0 = no bonus, higher = more likely to be selected)
+   */
+  function getStreakWeight(stats) {
+    const streak = stats.current_streak || 0;
+    const absStreak = Math.abs(streak);
+    
+    // No bonus for performers without significant streaks
+    if (absStreak < STREAK_THRESHOLD_MODERATE) {
+      return 1.0;
+    }
+    
+    // Strong streak bonus (5+): 1.5x weight
+    // Moderate streak bonus (3-4): 1.3x weight
+    // This gives streaking performers slightly higher chance to be selected
+    // so their streak can either continue or be broken
+    if (absStreak >= STREAK_THRESHOLD_STRONG) {
+      return 1.5;
+    } else {
+      return 1.3;
+    }
+  }
+
+  /**
+   * Get a streak indicator icon based on current streak.
+   * @param {number} streak - Current streak (positive = winning, negative = losing)
+   * @returns {string} Icon string or empty string if no significant streak
+   */
+  function getStreakIcon(streak) {
+    if (streak >= STREAK_THRESHOLD_MODERATE) return "🔥"; // Hot streak
+    if (streak <= -STREAK_THRESHOLD_MODERATE) return "❄️"; // Cold streak
+    return "";
+  }
+
+  /**
+   * Get performance trend from recent results bitmask.
+   * Compares recent win rate to overall win rate.
+   * @param {Object} stats - Stats object from parsePerformerEloData
+   * @returns {Object} Object with trend string and emoji
+   */
+  function getPerformanceTrend(stats) {
+    if (!stats.recent_results || stats.total_matches < 5) {
+      return { trend: "new", emoji: "⚡", label: "New" };
+    }
+    
+    // Count wins in recent results using Brian Kernighan's bit counting algorithm
+    let recentWins = 0;
+    let n = stats.recent_results;
+    while (n) {
+      recentWins++;
+      n &= n - 1; // Clear the least significant set bit
+    }
+    
+    const recentMatches = Math.min(10, stats.total_matches);
+    const recentWinRate = recentWins / recentMatches;
+    const overallWinRate = stats.wins / stats.total_matches;
+    
+    if (recentWinRate > overallWinRate + 0.2) {
+      return { trend: "rising", emoji: "📈", label: "Rising" };
+    }
+    if (recentWinRate < overallWinRate - 0.2) {
+      return { trend: "falling", emoji: "📉", label: "Falling" };
+    }
+    return { trend: "stable", emoji: "📊", label: "Stable" };
   }
 
   /**
@@ -1667,9 +1816,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
     }
     
-    // Combine weights: multiply match count weight by recency weight
-    // This ensures both factors contribute to the final selection probability
-    return matchCountWeight * recencyWeight;
+    // Calculate streak weight component
+    // Performers on streaks get a bonus to give opportunities for streak continuation/breaking
+    const streakWeight = getStreakWeight(stats);
+    
+    // Combine weights: multiply all factors together
+    // This ensures match count, recency, and streak all contribute to the final selection probability
+    return matchCountWeight * recencyWeight * streakWeight;
   }
 
   /**
@@ -1787,12 +1940,36 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
     }
 
+    // Get streak-adjusted target rating for opponent selection
+    // If performer is on a hot streak, look for opponents ABOVE their rating
+    // If performer is on a cold streak, look for opponents BELOW their rating
+    // This helps accelerate rating convergence and makes streaks more interesting
+    const stats1 = parsePerformerEloData(performer1);
+    const streak1 = stats1.current_streak || 0;
+    let targetRating = rating1;
+    
+    if (Math.abs(streak1) >= STREAK_THRESHOLD_MODERATE) {
+      // Streak bonus/penalty: up to ±10 rating points based on streak magnitude
+      const maxStreakAdjustment = 10;
+      const streakAdjustment = Math.min(Math.abs(streak1) * STREAK_RATING_MULTIPLIER, maxStreakAdjustment);
+      if (streak1 > 0) {
+        // Hot streak: look for slightly tougher opponents
+        targetRating = rating1 + streakAdjustment;
+        console.log(`[HotOrNot] Hot streak (${streak1}): targeting opponents near rating ${targetRating} (+${streakAdjustment})`);
+      } else {
+        // Cold streak: look for slightly easier opponents
+        targetRating = rating1 - streakAdjustment;
+        console.log(`[HotOrNot] Cold streak (${streak1}): targeting opponents near rating ${targetRating} (-${streakAdjustment})`);
+      }
+    }
+
     // Find performers within adaptive rating window (tighter for larger pools)
+    // Window is centered on targetRating (which may be streak-adjusted)
     const matchWindow = performers.length > 50 ? 10 : performers.length > 20 ? 15 : 25;
     const similarPerformersWithWeights = performersWithWeights.filter(pw => {
       if (pw.performer.id === performer1.id) return false;
       const rating = pw.performer.rating100 || 50;
-      return Math.abs(rating - rating1) <= matchWindow;
+      return Math.abs(rating - targetRating) <= matchWindow;
     });
 
     let performer2;
@@ -1813,13 +1990,13 @@ async function fetchPerformerCount(performerFilter = {}) {
         performer2Index = selected2.index;
       }
     } else {
-      // No similar performers, pick closest with recency weighting
+      // No similar performers within window, pick closest to targetRating with recency weighting
       const otherPerformersWithWeights = performersWithWeights.filter(pw => pw.performer.id !== performer1.id);
       
-      // Sort by rating similarity
+      // Sort by rating similarity to targetRating (which may be streak-adjusted)
       otherPerformersWithWeights.sort((a, b) => {
-        const diffA = Math.abs((a.performer.rating100 || 50) - rating1);
-        const diffB = Math.abs((b.performer.rating100 || 50) - rating1);
+        const diffA = Math.abs((a.performer.rating100 || 50) - targetRating);
+        const diffB = Math.abs((b.performer.rating100 || 50) - targetRating);
         return diffA - diffB;
       });
       
@@ -2328,6 +2505,41 @@ async function fetchPerformerCount(performerFilter = {}) {
     const sceneCount = performer.scene_count || 0;
     const stashRating = performer.rating100 ? `${performer.rating100}/100` : "Unrated";
     
+    // Parse stats for enhanced display
+    const stats = parsePerformerEloData(performer);
+    const confidence = getConfidenceLevel(stats);
+    const rating = performer.rating100 || 50;
+    const ratingInterval = getRatingConfidenceInterval(rating, stats.total_matches);
+    
+    // Build confidence and stats display
+    let statsDisplay = '';
+    if (stats.total_matches > 0) {
+      const winRate = ((stats.wins / stats.total_matches) * 100).toFixed(0);
+      const streakIcon = getStreakIcon(stats.current_streak);
+      statsDisplay = `
+        <div class="hon-meta-item hon-stats-inline">
+          <strong>Matches:</strong> ${stats.total_matches} 
+          <span class="hon-confidence-badge" title="${confidence.label} performer">${confidence.emoji}</span>
+        </div>
+        <div class="hon-meta-item">
+          <strong>Win Rate:</strong> ${winRate}% ${streakIcon}
+        </div>
+      `;
+    } else {
+      statsDisplay = `
+        <div class="hon-meta-item hon-stats-inline">
+          <strong>Matches:</strong> 0 
+          <span class="hon-confidence-badge" title="${confidence.label} performer">${confidence.emoji}</span>
+        </div>
+      `;
+    }
+    
+    // Enhanced rating display with confidence interval if enough matches
+    let enhancedRating = stashRating;
+    if (stats.total_matches >= 5 && performer.rating100) {
+      enhancedRating = `${rating} (${ratingInterval.low}-${ratingInterval.high})`;
+    }
+    
     // Handle numeric ranks and string ranks
     let rankDisplay = '';
     if (rank !== null && rank !== undefined) {
@@ -2339,9 +2551,9 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
     
     // Streak badge for gauntlet champion
-    let streakDisplay = '';
+    let streakBadgeDisplay = '';
     if (streak !== null && streak > 0) {
-      streakDisplay = `<div class="hon-streak-badge">🔥 ${streak} win${streak > 1 ? 's' : ''}</div>`;
+      streakBadgeDisplay = `<div class="hon-streak-badge">🔥 ${streak} win${streak > 1 ? 's' : ''}</div>`;
     }
 
     return `
@@ -2351,7 +2563,7 @@ async function fetchPerformerCount(performerFilter = {}) {
             ? `<img class="hon-performer-image hon-scene-image" src="${imagePath}" alt="${name}" loading="lazy" />`
             : `<div class="hon-performer-image hon-scene-image hon-no-image">No Image</div>`
           }
-          ${streakDisplay}
+          ${streakBadgeDisplay}
           <div class="hon-click-hint">Click to open performer</div>
         </div>
         
@@ -2367,7 +2579,8 @@ async function fetchPerformerCount(performerFilter = {}) {
               ${ethnicity ? `<div class="hon-meta-item"><strong>Ethnicity:</strong> ${ethnicity}</div>` : ''}
               ${country ? `<div class="hon-meta-item"><strong>Country:</strong> ${country}</div>` : ''}
               <div class="hon-meta-item"><strong>Scenes:</strong> ${sceneCount}</div>
-              <div class="hon-meta-item"><strong>Rating:</strong> ${stashRating}</div>
+              <div class="hon-meta-item"><strong>Rating:</strong> ${enhancedRating}</div>
+              ${statsDisplay}
             </div>
           </div>
           
