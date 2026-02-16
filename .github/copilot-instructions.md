@@ -184,6 +184,6 @@ ui:
 ## Resources
 
 - [Stash Documentation](https://docs.stashapp.cc/)
-- [Stash GraphQL API](https://stashapp.cc/graphql)
+- Stash GraphQL API: Available at `/graphql` endpoint on each Stash instance
 - Repository README: `/README.md`
 - Plugin documentation in individual plugin directories
