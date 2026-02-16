@@ -1085,9 +1085,14 @@
     return getSkipRate(stats) > 0.3;
   }
 
+  // Constants for streak-based adjustments
+  const STREAK_THRESHOLD_MODERATE = 3;  // Streak length to trigger moderate bonus
+  const STREAK_THRESHOLD_STRONG = 5;    // Streak length to trigger strong bonus
+  const STREAK_RATING_MULTIPLIER = 2;   // Rating points adjustment per streak count
+
   /**
    * Calculate streak-based weight modifier for matchmaking.
-   * Performers on streaks (hot or cold) get a small weight bonus to give 
+   * Performers on streaks (hot or cold) get a weight bonus to give 
    * opportunities to continue or break their streaks.
    * @param {Object} stats - Stats object from parsePerformerEloData
    * @returns {number} Weight multiplier (1.0 = no bonus, higher = more likely to be selected)
@@ -1096,16 +1101,16 @@
     const streak = stats.current_streak || 0;
     const absStreak = Math.abs(streak);
     
-    // No bonus for performers without streaks
-    if (absStreak < 2) {
+    // No bonus for performers without significant streaks
+    if (absStreak < STREAK_THRESHOLD_MODERATE) {
       return 1.0;
     }
     
-    // Moderate streak bonus (2-4): 1.3x weight
-    // Strong streak bonus (5+): 1.5x weight  
+    // Strong streak bonus (5+): 1.5x weight
+    // Moderate streak bonus (3-4): 1.3x weight
     // This gives streaking performers slightly higher chance to be selected
     // so their streak can either continue or be broken
-    if (absStreak >= 5) {
+    if (absStreak >= STREAK_THRESHOLD_STRONG) {
       return 1.5;
     } else {
       return 1.3;
@@ -1118,8 +1123,8 @@
    * @returns {string} Icon string or empty string if no significant streak
    */
   function getStreakIcon(streak) {
-    if (streak >= 3) return "🔥"; // Hot streak
-    if (streak <= -3) return "❄️"; // Cold streak
+    if (streak >= STREAK_THRESHOLD_MODERATE) return "🔥"; // Hot streak
+    if (streak <= -STREAK_THRESHOLD_MODERATE) return "❄️"; // Cold streak
     return "";
   }
 
@@ -1943,9 +1948,10 @@ async function fetchPerformerCount(performerFilter = {}) {
     const streak1 = stats1.current_streak || 0;
     let targetRating = rating1;
     
-    if (Math.abs(streak1) >= 3) {
+    if (Math.abs(streak1) >= STREAK_THRESHOLD_MODERATE) {
       // Streak bonus/penalty: up to ±10 rating points based on streak magnitude
-      const streakAdjustment = Math.min(Math.abs(streak1) * 2, 10);
+      const maxStreakAdjustment = 10;
+      const streakAdjustment = Math.min(Math.abs(streak1) * STREAK_RATING_MULTIPLIER, maxStreakAdjustment);
       if (streak1 > 0) {
         // Hot streak: look for slightly tougher opponents
         targetRating = rating1 + streakAdjustment;
