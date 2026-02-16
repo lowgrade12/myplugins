@@ -244,15 +244,21 @@ function getRatingConfidence(performer) {
 **Solution:** Track recent performance vs historical.
 
 ```javascript
-// Add to stats: recent_wins, recent_losses (last 10 matches)
-function updatePerformerStatsWithTrend(currentStats, won) {
-  const newStats = updatePerformerStats(currentStats, won);
+// Add to stats: recent_results as a 10-bit bitmask
+// Each bit represents a match outcome: 1=win, 0=loss (draws are treated as losses for trend)
+// Least significant bit is the most recent match
+// Example: 0b1110010001 means: W, W, W, L, L, W, L, L, L, W (oldest to newest)
+function updatePerformerStatsWithTrend(currentStats, outcome) {
+  // outcome: true (win), false (loss), or "draw" (skip)
+  // For trend tracking, draws count as 0 (loss) since they don't indicate a clear victory
+  const isWin = outcome === true;
   
-  // Keep a rolling window of last 10 results
-  // Store as bitmask for efficiency (10 bits)
+  const newStats = updatePerformerStats(currentStats, outcome);
+  
+  // Keep a rolling window of last 10 results using efficient bitmask storage
   let recentResults = currentStats.recent_results || 0;
-  recentResults = (recentResults << 1) | (won ? 1 : 0); // Shift and add new result
-  recentResults = recentResults & 0x3FF; // Keep only 10 bits
+  recentResults = (recentResults << 1) | (isWin ? 1 : 0); // Shift left and add new result
+  recentResults = recentResults & 0x3FF; // Keep only 10 bits (0x3FF = 1023 = 0b1111111111)
   
   newStats.recent_results = recentResults;
   return newStats;
@@ -262,10 +268,15 @@ function getTrend(performer) {
   const stats = parsePerformerEloData(performer);
   if (!stats.recent_results) return "neutral";
   
-  // Count 1s in the bitmask
-  const recentWins = (stats.recent_results.toString(2).match(/1/g) || []).length;
-  const recentMatches = Math.min(10, stats.total_matches);
+  // Count wins using Brian Kernighan's bit counting algorithm (efficient)
+  let recentWins = 0;
+  let n = stats.recent_results;
+  while (n) {
+    recentWins++;
+    n &= n - 1; // Clear the least significant set bit
+  }
   
+  const recentMatches = Math.min(10, stats.total_matches);
   if (recentMatches < 5) return "new";
   
   const recentWinRate = recentWins / recentMatches;
