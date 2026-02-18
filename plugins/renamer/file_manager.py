@@ -165,6 +165,33 @@ class StashFile:
 
         return directory_path
     
+    def get_new_file_base_stem(self) -> str:
+        """Get the file stem (name without extension) without duplicate suffix.
+        
+        This is used for directory naming when rename_directory is enabled,
+        so the directory name doesn't include duplicate suffixes like (1).
+        """
+        if not self.config.default_file_name_format:
+            basename = self.file_data["basename"]
+            return basename.rsplit(".", 1)[0] if "." in basename else basename
+
+        file_data = {**self.file_data, "index": 0}  # Always use index 0 for base stem
+        file_name = apply_format(self.config.default_file_name_format, self.stash, self.scene_data, file_data)
+
+        # Get base name without extension
+        base_name = file_name.rsplit(".", 1)[0]
+
+        if not self.config.allow_unsafe_characters:
+            base_name = re.sub(r"[<>:\"/\\|?*]", "", base_name)
+
+        if self.config.remove_extra_spaces_from_file_name:
+            base_name = re.sub(r"\s+", " ", base_name)
+
+        # Replace three or more consecutive dots with a single dot
+        base_name = re.sub(r"\.{3,}", ".", base_name)
+
+        return base_name
+
     def get_new_file_name(self) -> str:
         if not self.config.default_file_name_format:
             return self.file_data["basename"]
@@ -235,15 +262,17 @@ class StashFile:
         """Rename the parent directory to match the new file name.
         
         Note: This renames the parent directory of the file to match the file's
-        stem (filename without extension). For example, if a file is renamed to
-        "MyScene.mp4", the parent directory will be renamed to "MyScene".
+        base stem (filename without extension and without duplicate suffix).
+        For example, if a file is renamed to "MyScene (1).mp4", the parent
+        directory will still be renamed to "MyScene" (without the duplicate suffix).
         """
         if not self.config.rename_directory:
             return
 
         # Use the new path's parent as the current directory since the file has been moved
         old_directory = new_path.parent
-        new_directory_name = new_path.stem  # Use the file stem (without extension) as directory name
+        # Use base stem without duplicate suffix to avoid naming directories like "MyScene (1)"
+        new_directory_name = self.get_new_file_base_stem()
         
         # Get the parent of the current directory
         parent_of_old_directory = old_directory.parent
