@@ -17,6 +17,7 @@
   let battleType = "performers"; // HotOrNot is performers-only
   let cachedUrlFilter = null; // Cache the URL filter when modal is opened
   let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
+  let previousBattle = null; // Stores pre-battle state for undo functionality
 
   // GraphQL filter modifier constants
   // Array-based modifiers require value_list field for enum-based criterion inputs
@@ -3220,6 +3221,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           </div>
           <div class="hon-actions">
             <button id="hon-skip-btn" class="btn btn-secondary">Skip (Get New Pair)</button>
+            <button id="hon-undo-btn" class="btn btn-secondary hon-undo-btn" style="display: none;" disabled>↩ Undo Last Battle</button>
             <div class="hon-keyboard-hint">
               <span>← Left Arrow</span> to choose left · 
               <span>→ Right Arrow</span> to choose right · 
@@ -3408,6 +3410,18 @@ async function fetchPerformerCount(performerFilter = {}) {
         skipBtn.style.opacity = disableSkip ? "0.5" : "1";
         skipBtn.style.cursor = disableSkip ? "not-allowed" : "pointer";
       }
+
+      // Show undo button when there is a previous battle to revert
+      const undoBtn = document.querySelector("#hon-undo-btn");
+      if (undoBtn) {
+        if (previousBattle) {
+          undoBtn.style.display = "";
+          undoBtn.disabled = false;
+          undoBtn.textContent = "↩ Undo Last Battle";
+        } else {
+          undoBtn.style.display = "none";
+        }
+      }
     } catch (error) {
       console.error("[HotOrNot] Error loading items:", error);
       comparisonArea.innerHTML = `
@@ -3419,9 +3433,175 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
   }
 
+  /**
+   * Save the current battle state before a choice is processed (for undo support).
+   * Captures a deep copy of both items, ranks, mode, and gauntlet state.
+   */
+  function saveBattleState() {
+    previousBattle = {
+      left: structuredClone(currentPair.left),
+      right: structuredClone(currentPair.right),
+      ranks: { left: currentRanks.left, right: currentRanks.right },
+      mode: currentMode,
+      gauntletChampion: gauntletChampion ? structuredClone(gauntletChampion) : null,
+      gauntletWins: gauntletWins,
+      gauntletDefeated: [...gauntletDefeated],
+      gauntletFalling: gauntletFalling,
+      gauntletFallingItem: gauntletFallingItem ? structuredClone(gauntletFallingItem) : null,
+      gauntletFallingTested: [...gauntletFallingTested],
+    };
+  }
+
+  /**
+   * Restore a performer's rating and stats to a pre-battle snapshot.
+   * @param {string} performerId - The performer's ID
+   * @param {number} oldRating - The rating to restore
+   * @param {string|null} oldStats - Serialised hotornot_stats JSON string (or null if none)
+   */
+  async function restorePerformerState(performerId, oldRating, oldStats) {
+    const mutation = `
+      mutation RestorePerformerState($id: ID!, $rating: Int!, $fields: Map) {
+        performerUpdate(input: {
+          id: $id,
+          rating100: $rating,
+          custom_fields: {
+            partial: $fields
+          }
+        }) {
+          id
+          rating100
+          custom_fields
+        }
+      }
+    `;
+
+    const fields = oldStats !== null && oldStats !== undefined
+      ? { hotornot_stats: oldStats }
+      : {};
+
+    return await graphqlQuery(mutation, {
+      id: performerId,
+      rating: Math.round(oldRating),
+      fields
+    });
+  }
+
+  /**
+   * Undo the last battle: restore both items to their pre-battle state and
+   * re-show the same pair so the user can re-vote.
+   */
+  async function undoLastBattle() {
+    if (!previousBattle) return;
+
+    const undo = previousBattle;
+    previousBattle = null;
+
+    const undoBtn = document.getElementById("hon-undo-btn");
+    if (undoBtn) {
+      undoBtn.disabled = true;
+      undoBtn.textContent = "↩ Reverting...";
+    }
+
+    try {
+      if (battleType === "performers") {
+        const leftStats = undo.left.custom_fields && undo.left.custom_fields.hotornot_stats
+          ? undo.left.custom_fields.hotornot_stats : null;
+        const rightStats = undo.right.custom_fields && undo.right.custom_fields.hotornot_stats
+          ? undo.right.custom_fields.hotornot_stats : null;
+        await Promise.all([
+          restorePerformerState(undo.left.id, undo.left.rating100 || 50, leftStats),
+          restorePerformerState(undo.right.id, undo.right.rating100 || 50, rightStats)
+        ]);
+      } else if (battleType === "images") {
+        await Promise.all([
+          updateImageRating(undo.left.id, undo.left.rating100 || 50),
+          updateImageRating(undo.right.id, undo.right.rating100 || 50)
+        ]);
+      }
+
+      // Restore gauntlet/mode state
+      currentMode = undo.mode;
+      gauntletChampion = undo.gauntletChampion;
+      gauntletWins = undo.gauntletWins;
+      gauntletDefeated = undo.gauntletDefeated;
+      gauntletFalling = undo.gauntletFalling;
+      gauntletFallingItem = undo.gauntletFallingItem;
+      gauntletFallingTested = undo.gauntletFallingTested;
+
+      // Restore the pair objects (with original ratings)
+      currentPair.left = undo.left;
+      currentPair.right = undo.right;
+      currentRanks.left = undo.ranks.left;
+      currentRanks.right = undo.ranks.right;
+
+      // Re-render the comparison area with the same pair
+      const comparisonArea = document.getElementById("hon-comparison-area");
+      if (comparisonArea) {
+        let leftStreak = null;
+        let rightStreak = null;
+        if (currentMode === "gauntlet" || currentMode === "champion") {
+          if (gauntletChampion && undo.left.id === gauntletChampion.id) {
+            leftStreak = gauntletWins;
+          } else if (gauntletChampion && undo.right.id === gauntletChampion.id) {
+            rightStreak = gauntletWins;
+          }
+        }
+
+        comparisonArea.innerHTML = `
+          <div class="hon-vs-container">
+            ${(battleType === "performers" ? createPerformerCard : createImageCard)(undo.left, "left", undo.ranks.left, leftStreak)}
+            <div class="hon-vs-divider">
+              <span class="hon-vs-text">VS</span>
+            </div>
+            ${(battleType === "performers" ? createPerformerCard : createImageCard)(undo.right, "right", undo.ranks.right, rightStreak)}
+          </div>
+        `;
+
+        comparisonArea.querySelectorAll(".hon-scene-body").forEach((body) => {
+          body.addEventListener("click", handleChooseItem);
+        });
+
+        comparisonArea.querySelectorAll(".hon-scene-image-container").forEach((container) => {
+          const itemUrl = container.dataset.performerUrl || container.dataset.imageUrl;
+          container.addEventListener("click", () => {
+            if (itemUrl) window.open(itemUrl, "_blank");
+          });
+        });
+      }
+
+      // Update mode toggle button states
+      const modal = document.getElementById("hon-modal");
+      if (modal) {
+        modal.querySelectorAll(".hon-mode-btn").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.mode === currentMode);
+        });
+      }
+
+      disableChoice = false;
+
+      // Hide undo button — user can only undo one battle at a time
+      if (undoBtn) {
+        undoBtn.disabled = true;
+        undoBtn.style.display = "none";
+      }
+
+      console.log("[HotOrNot] Battle undone successfully");
+    } catch (err) {
+      console.error("[HotOrNot] Error undoing battle:", err);
+      // Restore previousBattle so the user can try again
+      previousBattle = undo;
+      if (undoBtn) {
+        undoBtn.disabled = false;
+        undoBtn.textContent = "↩ Undo Last Battle";
+      }
+    }
+  }
+
   async function handleChooseItem(event) {
     if(disableChoice) return;
     disableChoice = true;
+    // Save state BEFORE processing so the user can undo if they made a mistake
+    saveBattleState();
     const body = event.currentTarget;
     const winnerId = body.dataset.winner;
     const winnerCard = body.closest(".hon-scene-card");
@@ -4037,17 +4217,73 @@ async function fetchPerformerCount(performerFilter = {}) {
     return false;
   }
 
+  /**
+   * Attempt to inject the 🔥 HotOrNot button into Stash's top navigation bar.
+   * Tries several common Stash navbar CSS selectors in order of preference.
+   * @returns {boolean} True if the button was successfully injected, false if no navbar was found.
+   */
+function addNavbarButton() {
+    if (document.getElementById("hon-nav-btn")) return true;
+
+    // Try multiple selectors for Stash's navbar container (right-side area)
+    const navbarSelectors = [
+      ".top-nav .ms-auto",
+      ".navbar .ms-auto",
+      ".navbar-buttons",
+      ".top-nav",
+      ".navbar"
+    ];
+
+    let navbarContainer = null;
+    for (const selector of navbarSelectors) {
+      const found = document.querySelector(selector);
+      if (found) {
+        navbarContainer = found;
+        break;
+      }
+    }
+
+    if (!navbarContainer) return false;
+
+    const btn = document.createElement("button");
+    btn.id = "hon-nav-btn";
+    btn.innerHTML = "🔥";
+    btn.title = "HotOrNot";
+    btn.className = "hon-nav-btn";
+    btn.addEventListener("click", openRankingModal);
+    navbarContainer.appendChild(btn);
+    return true;
+  }
+
+  /**
+   * Add the HotOrNot launch button to the UI.
+   * Attempts navbar injection first; falls back to the original fixed floating button
+   * when no Stash navbar container can be located.
+   */
 function addFloatingButton() {
-    const existingBtn = document.getElementById("hon-floating-btn");
-    
-    // Remove button if we're not on the performers page
-    if (!shouldShowButton()) {
-      if (existingBtn) existingBtn.remove();
+    const existingNavBtn = document.getElementById("hon-nav-btn");
+    const existingFloatBtn = document.getElementById("hon-floating-btn");
+
+    // If navbar button already present, ensure no floating button
+    if (existingNavBtn) {
+      if (existingFloatBtn) existingFloatBtn.remove();
       return;
     }
-    
+
+    // Try to inject into navbar first
+    if (addNavbarButton()) {
+      if (existingFloatBtn) existingFloatBtn.remove();
+      return;
+    }
+
+    // Fall back to floating button (original behaviour)
+    if (!shouldShowButton()) {
+      if (existingFloatBtn) existingFloatBtn.remove();
+      return;
+    }
+
     // Don't add duplicate
-    if (existingBtn) return;
+    if (existingFloatBtn) return;
 
     const btn = document.createElement("button");
     btn.id = "hon-floating-btn";
@@ -4138,6 +4374,8 @@ function addFloatingButton() {
           gauntletFalling = false;
           gauntletFallingItem = null;
           gauntletFallingTested = [];
+          // Clear undo state on mode change (previous battle is no longer valid)
+          previousBattle = null;
           
           // Update button states
           modal.querySelectorAll(".hon-mode-btn").forEach((b) => {
@@ -4191,6 +4429,14 @@ function addFloatingButton() {
     if (statsBtn) {
       statsBtn.addEventListener("click", () => {
         openStatsModal();
+      });
+    }
+
+    // Undo button
+    const undoBtn = modal.querySelector("#hon-undo-btn");
+    if (undoBtn) {
+      undoBtn.addEventListener("click", () => {
+        undoLastBattle();
       });
     }
 
@@ -4268,6 +4514,8 @@ function addFloatingButton() {
   function closeRankingModal() {
     const modal = document.getElementById("hon-modal");
     if (modal) modal.remove();
+    // Clear undo state when modal closes
+    previousBattle = null;
   }
 
   // ============================================

@@ -616,6 +616,35 @@
 
 }
 
+/* Navbar button — injected into Stash's top nav bar */
+.hon-nav-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  vertical-align: middle;
+  transition: background 0.2s ease;
+}
+
+.hon-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Undo Last Battle button */
+.hon-undo-btn {
+  background-color: #495057;
+  border-color: #495057;
+}
+
+.hon-undo-btn:hover:not(:disabled) {
+  background-color: #343a40;
+  border-color: #343a40;
+}
+
 .hon-modal-close {
   position: absolute;
   top: 15px;
