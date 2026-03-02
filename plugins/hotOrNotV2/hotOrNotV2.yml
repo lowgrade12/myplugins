@@ -4,9 +4,9 @@ version: 2.1.0
 url: https://github.com/lowgrade12/hot-or-not
 ui:
   javascript:
-    - hotOrNot_v2.js
+    - hotOrNotV2.js
   css:
-    - hotOrNot_v2.css
+    - hotOrNotV2.css
 settings:
   showBattleRankBadge:
     displayName: Show Battle Rank Badge

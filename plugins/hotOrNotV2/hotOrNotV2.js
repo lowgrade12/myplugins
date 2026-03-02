@@ -37,7 +37,7 @@
           }
         }
       `);
-      pluginConfigCache = (result.configuration.plugins || {})["hotOrNot_v2"] || {};
+      pluginConfigCache = (result.configuration.plugins || {})["hotOrNotV2"] || {};
     } catch (e) {
       console.error("[HotOrNot] Failed to fetch plugin config:", e);
       pluginConfigCache = {};
