@@ -65,11 +65,11 @@ Respects the current page's filter criteria when launched from a filtered perfor
 ### User Interface
 
 - **Floating action button** on performer pages to launch the comparison modal
+- **Settings button** (⚙️) to toggle the Battle Rank Badge on or off (enabled by default)
 - **Side-by-side comparison** with performer images and metadata
 - **Visual feedback** showing rating changes after each choice
 - **Keyboard shortcuts**: Left Arrow (choose left), Right Arrow (choose right), Escape (close)
 - **Responsive design** that works on desktop and mobile
-- **Video preview on hover** for performers with preview clips
 
 ## Installation
 

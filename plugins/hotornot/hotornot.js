@@ -17,6 +17,24 @@
   let cachedUrlFilter = null; // Cache the URL filter when modal is opened
   let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
 
+  const BADGE_SETTING_KEY = "hon_battle_rank_badge_enabled";
+
+  /**
+   * Returns true if the battle rank badge is enabled (default: true).
+   * @returns {boolean}
+   */
+  function isBattleRankBadgeEnabled() {
+    return localStorage.getItem(BADGE_SETTING_KEY) !== "false";
+  }
+
+  /**
+   * Persist the battle rank badge enabled/disabled preference.
+   * @param {boolean} enabled
+   */
+  function setBattleRankBadgeEnabled(enabled) {
+    localStorage.setItem(BADGE_SETTING_KEY, enabled ? "true" : "false");
+  }
+
   // GraphQL filter modifier constants
   // Array-based modifiers require value_list field for enum-based criterion inputs
   // (e.g., GenderCriterionInput uses value_list for INCLUDES/EXCLUDES).
@@ -3799,6 +3817,10 @@ async function fetchPerformerCount(performerFilter = {}) {
    * Looks for the rating stars section and adds the badge next to it.
    */
   async function injectBattleRankBadge() {
+    // Skip injection if the user has disabled the battle rank badge
+    if (!isBattleRankBadgeEnabled()) {
+      return;
+    }
     // Use compare-and-set pattern with global flag to prevent concurrent injections
     // This handles both same-plugin races and cross-plugin races
     // In JavaScript's single-threaded event loop, this synchronous block before any await is atomic
@@ -3913,6 +3935,60 @@ function addFloatingButton() {
     btn.addEventListener("click", openRankingModal);
 
     document.body.appendChild(btn);
+    addSettingsButton();
+  }
+
+  /**
+   * Add the floating settings button and panel if not already present.
+   */
+  function addSettingsButton() {
+    if (document.getElementById("hon-settings-btn")) return;
+
+    const panel = document.createElement("div");
+    panel.id = "hon-settings-panel";
+    panel.className = "hon-settings-panel";
+    panel.innerHTML = `
+      <div class="hon-settings-row">
+        <span class="hon-settings-label">Battle Rank Badge</span>
+        <label class="hon-toggle-switch">
+          <input type="checkbox" id="hon-badge-toggle" ${isBattleRankBadgeEnabled() ? "checked" : ""}>
+          <span class="hon-toggle-slider"></span>
+        </label>
+      </div>
+    `;
+    document.body.appendChild(panel);
+
+    panel.querySelector("#hon-badge-toggle").addEventListener("change", (e) => {
+      setBattleRankBadgeEnabled(e.target.checked);
+      // Remove existing badge if turning off; inject if turning on
+      if (!e.target.checked) {
+        const badge = document.getElementById("hon-battle-rank-badge");
+        if (badge) badge.remove();
+      } else if (isOnSinglePerformerPage()) {
+        injectBattleRankBadge();
+      }
+    });
+
+    const settingsBtn = document.createElement("button");
+    settingsBtn.id = "hon-settings-btn";
+    settingsBtn.className = "hon-settings-btn";
+    settingsBtn.innerHTML = "⚙️";
+    settingsBtn.title = "HotOrNot Settings";
+
+    settingsBtn.addEventListener("click", () => {
+      const isVisible = panel.classList.toggle("hon-settings-panel--visible");
+      settingsBtn.classList.toggle("hon-settings-btn--active", isVisible);
+    });
+
+    // Close panel when clicking outside
+    document.addEventListener("click", (e) => {
+      if (!panel.contains(e.target) && e.target !== settingsBtn) {
+        panel.classList.remove("hon-settings-panel--visible");
+        settingsBtn.classList.remove("hon-settings-btn--active");
+      }
+    });
+
+    document.body.appendChild(settingsBtn);
   }
 
   function openRankingModal() {
@@ -4088,6 +4164,9 @@ function addFloatingButton() {
     console.log("[HotOrNot] Initialized");
     
     addFloatingButton();
+    
+    // Always add settings button (needed on performer detail pages too)
+    addSettingsButton();
     
     // Inject battle rank badge if on a single performer page
     if (isOnSinglePerformerPage()) {

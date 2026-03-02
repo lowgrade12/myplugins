@@ -616,6 +616,118 @@
 
 }
 
+/* Settings gear button */
+.hon-settings-btn {
+  position: fixed;
+  bottom: 84px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(30, 30, 30, 0.85);
+  color: white;
+  border: 1px solid #444;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+  transition: background 0.2s, transform 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hon-settings-btn:hover,
+.hon-settings-btn--active {
+  background: rgba(13, 110, 253, 0.85);
+  transform: rotate(30deg);
+}
+
+/* Settings panel */
+.hon-settings-panel {
+  position: fixed;
+  bottom: 128px;
+  right: 20px;
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 10px;
+  padding: 12px 16px;
+  z-index: 9998;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  display: none;
+  min-width: 200px;
+}
+
+.hon-settings-panel--visible {
+  display: block;
+}
+
+.hon-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hon-settings-label {
+  color: #ccc;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* CSS toggle switch */
+.hon-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.hon-toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.hon-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #555;
+  border-radius: 20px;
+  transition: background-color 0.2s;
+}
+
+.hon-toggle-slider::before {
+  content: "";
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.hon-toggle-switch input:checked + .hon-toggle-slider {
+  background-color: #0d6efd;
+}
+
+.hon-toggle-switch input:checked + .hon-toggle-slider::before {
+  transform: translateX(16px);
+}
+
+@media (max-width: 580px) {
+  .hon-settings-btn {
+    bottom: 124px;
+  }
+  .hon-settings-panel {
+    bottom: 168px;
+  }
+}
+
 /* Navbar button — injected into Stash's top nav bar */
 .hon-nav-btn {
   background: transparent;
