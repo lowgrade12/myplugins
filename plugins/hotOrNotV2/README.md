@@ -93,7 +93,7 @@ When viewing a single performer's page, a badge displays their battle rank:
 
 ## Installation
 
-1. Download the `/plugins/hotOrNot_v2/` folder to your Stash plugins directory
+1. Download the `/plugins/hotOrNotV2/` folder to your Stash plugins directory
 2. Reload plugins in Stash (Settings → Plugins → Reload)
 3. Navigate to the Performers page to see the floating HotOrNot button and star rating widgets on performer cards
 
