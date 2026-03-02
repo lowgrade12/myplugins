@@ -87,7 +87,7 @@ When viewing a single performer's page, a badge displays their battle rank:
 - Shows rank position and total performers (e.g., "Battle Rank #5 of 100")
 - Tier-based styling: 👑 Legendary (top 5%), 🥇 Gold (top 20%), 🥈 Silver (top 40%), 🥉 Bronze (top 60%), 🔥 Default
 - Hover for tooltip showing exact rating
-- Toggle on/off via **Settings → Plugins → HotOrNotV2 → Show Battle Rank Badge** (enabled by default)
+- Toggle on/off Battle Rank Badge and Star Rating Widget via **Settings → Plugins → HotOrNotV2** (enabled by default)
 
 ## Installation
 
