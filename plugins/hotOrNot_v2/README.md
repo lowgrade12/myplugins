@@ -80,6 +80,7 @@ On the performers list page, each performer card displays a 10-star rating widge
 - **Real-time updates** - Changes are saved immediately to Stash
 - **Smart caching** - Batch fetches ratings for performance with 5-minute TTL
 - **Native sync** - Updates Stash's native rating displays when you change a rating
+- Toggle on/off via **Settings → Plugins → HotOrNotV2 → Show Star Rating Widget** (enabled by default)
 
 ### Battle Rank Badge
 
@@ -87,7 +88,7 @@ When viewing a single performer's page, a badge displays their battle rank:
 - Shows rank position and total performers (e.g., "Battle Rank #5 of 100")
 - Tier-based styling: 👑 Legendary (top 5%), 🥇 Gold (top 20%), 🥈 Silver (top 40%), 🥉 Bronze (top 60%), 🔥 Default
 - Hover for tooltip showing exact rating
-- Toggle on/off Battle Rank Badge and Star Rating Widget via **Settings → Plugins → HotOrNotV2** (enabled by default)
+- Toggle on/off via **Settings → Plugins → HotOrNotV2 → Show Battle Rank Badge** (enabled by default)
 
 ## Installation
 
