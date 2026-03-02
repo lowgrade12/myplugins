@@ -16,23 +16,42 @@
   let battleType = "performers"; // HotOrNot is performers-only
   let cachedUrlFilter = null; // Cache the URL filter when modal is opened
   let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
-
-  const BADGE_SETTING_KEY = "hon_battle_rank_badge_enabled";
+  let pluginConfigCache = null; // Cached plugin configuration from Stash settings
 
   /**
-   * Returns true if the battle rank badge is enabled (default: true).
-   * @returns {boolean}
+   * Fetch the HotOrNot plugin configuration from Stash settings.
+   * Caches the result to avoid repeated GraphQL calls.
+   * @returns {Promise<Object>} Plugin config object (may be empty if not yet configured)
    */
-  function isBattleRankBadgeEnabled() {
-    return localStorage.getItem(BADGE_SETTING_KEY) !== "false";
+  async function getHotOrNotConfig() {
+    if (pluginConfigCache !== null) {
+      return pluginConfigCache;
+    }
+    try {
+      const result = await graphqlQuery(`
+        query Configuration {
+          configuration {
+            plugins
+          }
+        }
+      `);
+      pluginConfigCache = (result.configuration.plugins || {})["HotOrNot"] || {};
+    } catch (e) {
+      console.error("[HotOrNot] Failed to fetch plugin config:", e);
+      pluginConfigCache = {};
+    }
+    return pluginConfigCache;
   }
 
   /**
-   * Persist the battle rank badge enabled/disabled preference.
-   * @param {boolean} enabled
+   * Returns true if the battle rank badge is enabled.
+   * Reads from Stash plugin settings; defaults to true when not explicitly set to false.
+   * @returns {Promise<boolean>}
    */
-  function setBattleRankBadgeEnabled(enabled) {
-    localStorage.setItem(BADGE_SETTING_KEY, enabled ? "true" : "false");
+  async function isBattleRankBadgeEnabled() {
+    const config = await getHotOrNotConfig();
+    // Default to true if the setting has never been changed
+    return config.showBattleRankBadge !== false;
   }
 
   // GraphQL filter modifier constants
@@ -3817,8 +3836,8 @@ async function fetchPerformerCount(performerFilter = {}) {
    * Looks for the rating stars section and adds the badge next to it.
    */
   async function injectBattleRankBadge() {
-    // Skip injection if the user has disabled the battle rank badge
-    if (!isBattleRankBadgeEnabled()) {
+    // Skip injection if the user has disabled the battle rank badge in Stash settings
+    if (!await isBattleRankBadgeEnabled()) {
       return;
     }
     // Use compare-and-set pattern with global flag to prevent concurrent injections
@@ -3935,60 +3954,6 @@ function addFloatingButton() {
     btn.addEventListener("click", openRankingModal);
 
     document.body.appendChild(btn);
-    addSettingsButton();
-  }
-
-  /**
-   * Add the floating settings button and panel if not already present.
-   */
-  function addSettingsButton() {
-    if (document.getElementById("hon-settings-btn")) return;
-
-    const panel = document.createElement("div");
-    panel.id = "hon-settings-panel";
-    panel.className = "hon-settings-panel";
-    panel.innerHTML = `
-      <div class="hon-settings-row">
-        <span class="hon-settings-label">Battle Rank Badge</span>
-        <label class="hon-toggle-switch">
-          <input type="checkbox" id="hon-badge-toggle" ${isBattleRankBadgeEnabled() ? "checked" : ""}>
-          <span class="hon-toggle-slider"></span>
-        </label>
-      </div>
-    `;
-    document.body.appendChild(panel);
-
-    panel.querySelector("#hon-badge-toggle").addEventListener("change", (e) => {
-      setBattleRankBadgeEnabled(e.target.checked);
-      // Remove existing badge if turning off; inject if turning on
-      if (!e.target.checked) {
-        const badge = document.getElementById("hon-battle-rank-badge");
-        if (badge) badge.remove();
-      } else if (isOnSinglePerformerPage()) {
-        injectBattleRankBadge();
-      }
-    });
-
-    const settingsBtn = document.createElement("button");
-    settingsBtn.id = "hon-settings-btn";
-    settingsBtn.className = "hon-settings-btn";
-    settingsBtn.innerHTML = "⚙️";
-    settingsBtn.title = "HotOrNot Settings";
-
-    settingsBtn.addEventListener("click", () => {
-      const isVisible = panel.classList.toggle("hon-settings-panel--visible");
-      settingsBtn.classList.toggle("hon-settings-btn--active", isVisible);
-    });
-
-    // Close panel when clicking outside
-    document.addEventListener("click", (e) => {
-      if (!panel.contains(e.target) && e.target !== settingsBtn) {
-        panel.classList.remove("hon-settings-panel--visible");
-        settingsBtn.classList.remove("hon-settings-btn--active");
-      }
-    });
-
-    document.body.appendChild(settingsBtn);
   }
 
   function openRankingModal() {
@@ -4165,9 +4130,6 @@ function addFloatingButton() {
     
     addFloatingButton();
     
-    // Always add settings button (needed on performer detail pages too)
-    addSettingsButton();
-    
     // Inject battle rank badge if on a single performer page
     if (isOnSinglePerformerPage()) {
       // Delay slightly to ensure the page has rendered
@@ -4194,8 +4156,15 @@ function addFloatingButton() {
       PluginApi.Event.addEventListener("stash:location", (e) => {
         console.log("[HotOrNot] Page changed:", e.detail.data.location.pathname);
         
-        // Update cached filter when on performers page
         const path = e.detail.data.location.pathname;
+
+        // Invalidate plugin config cache when navigating away from Settings,
+        // so the badge respects any changes the user made.
+        if (path !== '/settings') {
+          pluginConfigCache = null;
+        }
+
+        // Update cached filter when on performers page
         if (path === '/performers' || path === '/performers/') {
           // Parse current filters from URL
           const newFilter = getUrlPerformerFilter();
