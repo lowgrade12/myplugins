@@ -56,6 +56,17 @@
     return config.showBattleRankBadge !== false;
   }
 
+  /**
+   * Returns true if the star rating widget is enabled.
+   * Reads from Stash plugin settings; defaults to true when not explicitly set to false.
+   * @returns {Promise<boolean>}
+   */
+  async function isStarRatingWidgetEnabled() {
+    const config = await getHotOrNotConfig();
+    // Default to true if the setting has never been changed
+    return config.showStarRatingWidget !== false;
+  }
+
   // GraphQL filter modifier constants
   // Array-based modifiers require value_list field for enum-based criterion inputs
   // (e.g., GenderCriterionInput uses value_list for INCLUDES/EXCLUDES).
@@ -5201,7 +5212,11 @@ function addFloatingButton() {
   /**
    * Initialize star rating widgets
    */
-  function initStarRatingWidgets() {
+  async function initStarRatingWidgets() {
+    if (!(await isStarRatingWidgetEnabled())) {
+      console.log("[HotOrNot] Star rating widget disabled via settings");
+      return;
+    }
     console.log("[HotOrNot] Star rating widgets initialized");
 
     // Global event listener for rating updates (event delegation pattern)
