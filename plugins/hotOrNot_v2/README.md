@@ -64,7 +64,8 @@ Respects the current page's filter criteria when launched from a filtered perfor
 
 ### User Interface
 
-- **Floating action button** on performer pages to launch the comparison modal
+- **Navbar fire button** launch Swiss mode from anywhere
+- **Performer Gauntlet** launch from performer page to start Gauntlet with that performer
 - **Battle rank badge** on individual performer pages showing their rank position (e.g., "#5 of 100")
 - **Star rating widget** on performer cards in the grid view for quick inline rating
 - **Side-by-side comparison** with performer images and metadata
