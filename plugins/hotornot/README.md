@@ -65,11 +65,19 @@ Respects the current page's filter criteria when launched from a filtered perfor
 ### User Interface
 
 - **Floating action button** on performer pages to launch the comparison modal
+- **Battle rank badge** on individual performer pages showing their rank position (e.g., "#5 of 100")
 - **Side-by-side comparison** with performer images and metadata
 - **Visual feedback** showing rating changes after each choice
 - **Keyboard shortcuts**: Left Arrow (choose left), Right Arrow (choose right), Escape (close)
 - **Responsive design** that works on desktop and mobile
-- **Video preview on hover** for performers with preview clips
+
+### Battle Rank Badge
+
+When viewing a single performer's page, a badge displays their battle rank:
+- Shows rank position and total performers (e.g., "Battle Rank #5 of 100")
+- Tier-based styling: 👑 Legendary (top 5%), 🥇 Gold (top 20%), 🥈 Silver (top 40%), 🥉 Bronze (top 60%), 🔥 Default
+- Hover for tooltip showing exact rating
+- Toggle on/off via **Settings → Plugins → HotOrNot → Show Battle Rank Badge** (enabled by default)
 
 ## Installation
 
