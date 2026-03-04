@@ -22,7 +22,9 @@
           new CustomEvent("response", { detail: data })
         );
       } catch (e) {
-        console.error("Error parsing JSON:", e);
+        if (e.name !== "AbortError") {
+          console.error("Error parsing JSON:", e);
+        }
       }
     }
     return response;
