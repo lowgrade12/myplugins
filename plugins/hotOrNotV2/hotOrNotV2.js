@@ -185,16 +185,22 @@
       PluginApi.libraries &&
       PluginApi.libraries.Apollo
     ) {
-      const { gql } = PluginApi.libraries.Apollo;
-      const client = PluginApi.utils.StashService.getClient();
-      const doc = gql(query);
-      const isMutation = doc.definitions.some(
-        (def) => def.kind === "OperationDefinition" && def.operation === "mutation"
-      );
-      const result = isMutation
-        ? await client.mutate({ mutation: doc, variables })
-        : await client.query({ query: doc, variables, fetchPolicy: "no-cache" });
-      return result.data;
+      try {
+        const { gql } = PluginApi.libraries.Apollo;
+        const client = PluginApi.utils.StashService.getClient();
+        const doc = gql(query);
+        const isMutation = doc.definitions.some(
+          (def) => def.kind === "OperationDefinition" && def.operation === "mutation"
+        );
+        const result = isMutation
+          ? await client.mutate({ mutation: doc, variables })
+          : await client.query({ query: doc, variables, fetchPolicy: "no-cache" });
+        return result.data;
+      } catch (apolloError) {
+        // Fall back to direct fetch when Apollo client is unavailable or in an invalid
+        // state (e.g., clearStore called during an in-progress query/mutation)
+        console.warn("[HotOrNot] Apollo client error, falling back to fetch:", apolloError?.message || apolloError);
+      }
     }
     // Fallback: direct fetch (for environments where PluginApi is not available)
     const response = await fetch("/graphql", {
