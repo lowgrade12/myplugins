@@ -169,6 +169,11 @@
     return `<span class="${flagClass}"></span> ${name}`;
   }
 
+  function getGenderDisplay(gender) {
+    if (!gender) return "";
+    return (ALL_GENDERS.find(g => g.value === gender) || { label: gender }).label;
+  }
+
   // ============================================
   // GRAPHQL QUERIES
   // ============================================
@@ -2738,6 +2743,7 @@ async function fetchPerformerCount(performerFilter = {}) {
               ${birthdate ? `<div class="hon-meta-item"><strong>Birthdate:</strong> ${birthdate}</div>` : ''}
               ${ethnicity ? `<div class="hon-meta-item"><strong>Ethnicity:</strong> ${ethnicity}</div>` : ''}
               ${country ? `<div class="hon-meta-item"><strong>Country:</strong> ${getCountryDisplay(country)}</div>` : ''}
+              ${performer.gender ? `<div class="hon-meta-item"><strong>Gender:</strong> ${getGenderDisplay(performer.gender)}</div>` : ''}
               <div class="hon-meta-item"><strong>Rating:</strong> ${stashRating}</div>
             </div>
           </div>
