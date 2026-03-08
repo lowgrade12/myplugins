@@ -185,6 +185,20 @@
     return (ALL_GENDERS.find(g => g.value === gender) || { label: gender }).label;
   }
 
+  /**
+   * Filter a list of performers to only those matching the target gender.
+   * Falls back to the original list if fewer than minCount performers match.
+   * @param {Array} performers - Array of performer objects
+   * @param {string|null} targetGender - Gender to match (e.g., "FEMALE")
+   * @param {number} [minCount=1] - Minimum number of same-gender performers required
+   * @returns {Array} Filtered array (same gender) or original array (fallback)
+   */
+  function filterSameGender(performers, targetGender, minCount = 1) {
+    if (!targetGender) return performers;
+    const sameGender = performers.filter(p => p.gender === targetGender);
+    return sameGender.length >= minCount ? sameGender : performers;
+  }
+
   // ============================================
   // GRAPHQL QUERIES
   // ============================================
@@ -1909,7 +1923,10 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   const shuffled = allPerformers.sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, 2);
+  const performer1 = shuffled[0];
+  const sameGenderPool = filterSameGender(shuffled.slice(1), performer1.gender);
+  const performer2 = sameGenderPool[0];
+  return [performer1, performer2];
 }
 
   /**
@@ -2117,8 +2134,10 @@ async function fetchPerformerCount(performerFilter = {}) {
     const isRandomSanityCheck = Math.random() < 0.10;
     
     if (isRandomSanityCheck) {
-      // Pick any random performer (excluding performer1)
-      const otherPerformers = performersWithWeights.filter(pw => pw.performer.id !== performer1.id);
+      // Pick any random performer (excluding performer1), preferring same gender
+      let otherPerformers = performersWithWeights.filter(pw => pw.performer.id !== performer1.id);
+      const sameGenderOthers = otherPerformers.filter(pw => pw.performer.gender === performer1.gender);
+      if (sameGenderOthers.length > 0) otherPerformers = sameGenderOthers;
       if (otherPerformers.length > 0) {
         const randomOpponent = otherPerformers[Math.floor(Math.random() * otherPerformers.length)];
         console.log('[HotOrNot] Sanity check pairing: random matchup regardless of rating');
@@ -2155,11 +2174,17 @@ async function fetchPerformerCount(performerFilter = {}) {
     // Find performers within adaptive rating window (tighter for larger pools)
     // Window is centered on targetRating (which may be streak-adjusted)
     const matchWindow = performers.length > 50 ? 10 : performers.length > 20 ? 15 : 25;
-    const similarPerformersWithWeights = performersWithWeights.filter(pw => {
+    let similarPerformersWithWeights = performersWithWeights.filter(pw => {
       if (pw.performer.id === performer1.id) return false;
       const rating = pw.performer.rating100 || 50;
       return Math.abs(rating - targetRating) <= matchWindow;
     });
+
+    // Prefer same-gender opponents within the rating window
+    if (performer1.gender) {
+      const sameGenderSimilar = similarPerformersWithWeights.filter(pw => pw.performer.gender === performer1.gender);
+      if (sameGenderSimilar.length > 0) similarPerformersWithWeights = sameGenderSimilar;
+    }
 
     let performer2;
     let performer2Index;
@@ -2180,8 +2205,14 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
     } else {
       // No similar performers within window, pick closest to targetRating with recency weighting
-      const otherPerformersWithWeights = performersWithWeights.filter(pw => pw.performer.id !== performer1.id);
+      let otherPerformersWithWeights = performersWithWeights.filter(pw => pw.performer.id !== performer1.id);
       
+      // Prefer same-gender opponents in fallback
+      if (performer1.gender) {
+        const sameGenderOthers = otherPerformersWithWeights.filter(pw => pw.performer.gender === performer1.gender);
+        if (sameGenderOthers.length > 0) otherPerformersWithWeights = sameGenderOthers;
+      }
+
       // Sort by rating similarity to targetRating (which may be streak-adjusted)
       otherPerformersWithWeights.sort((a, b) => {
         const diffA = Math.abs((a.performer.rating100 || 50) - targetRating);
@@ -2275,8 +2306,13 @@ async function fetchPerformerCount(performerFilter = {}) {
           placementRating: currentRating
         };
       } else {
-        // Get next opponent below (first one, closest to falling performer)
-        const nextBelow = belowOpponents[0];
+        // Get next opponent below, preferring same gender (first one, closest to falling performer)
+        let fallingPool = belowOpponents;
+        if (gauntletFallingItem.gender) {
+          const sameGenderBelow = belowOpponents.filter(s => s.gender === gauntletFallingItem.gender);
+          if (sameGenderBelow.length > 0) fallingPool = sameGenderBelow;
+        }
+        const nextBelow = fallingPool[0];
         const nextBelowIndex = performers.findIndex(s => s.id === nextBelow.id);
         
         // Update the falling performer's rank for display
@@ -2303,9 +2339,11 @@ async function fetchPerformerCount(performerFilter = {}) {
       const randomIndex = Math.floor(Math.random() * performers.length);
       const challenger = performers[randomIndex];
       
-      // Start at the bottom - find lowest rated performer that isn't the challenger
-      const lowestRated = performers
-        .filter(s => s.id !== challenger.id)
+      // Start at the bottom - find lowest rated performer that isn't the challenger, preferring same gender
+      let lowestCandidates = performers.filter(s => s.id !== challenger.id);
+      const sameGenderLowestG = lowestCandidates.filter(s => s.gender === challenger.gender);
+      if (sameGenderLowestG.length > 0) lowestCandidates = sameGenderLowestG;
+      const lowestRated = lowestCandidates
         .sort((a, b) => (a.rating100 || 0) - (b.rating100 || 0))[0];
       
       const lowestIndex = performers.findIndex(s => s.id === lowestRated.id);
@@ -2367,8 +2405,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       };
     }
     
-    // Pick from higher ranked opponents
-    const nextOpponent = selectRandomOpponent(higherRankedOpponents);
+    // Pick from higher ranked opponents, preferring same gender
+    let opponentsPool = higherRankedOpponents;
+    if (gauntletChampion.gender) {
+      const sameGenderHigher = higherRankedOpponents.filter(s => s.gender === gauntletChampion.gender);
+      if (sameGenderHigher.length > 0) opponentsPool = sameGenderHigher;
+    }
+    const nextOpponent = selectRandomOpponent(opponentsPool);
     const nextOpponentIndex = performerIndexMap.get(nextOpponent.id);
     
     return { 
@@ -2418,9 +2461,11 @@ async function fetchPerformerCount(performerFilter = {}) {
       const randomIndex = Math.floor(Math.random() * performers.length);
       const challenger = performers[randomIndex];
       
-      // Start at the bottom - find lowest rated performer that isn't the challenger
-      const lowestRated = performers
-        .filter(s => s.id !== challenger.id)
+      // Start at the bottom - find lowest rated performer that isn't the challenger, preferring same gender
+      let lowestCandidatesC = performers.filter(s => s.id !== challenger.id);
+      const sameGenderLowestC = lowestCandidatesC.filter(s => s.gender === challenger.gender);
+      if (sameGenderLowestC.length > 0) lowestCandidatesC = sameGenderLowestC;
+      const lowestRated = lowestCandidatesC
         .sort((a, b) => (a.rating100 || 0) - (b.rating100 || 0))[0];
       
       const lowestIndex = performers.findIndex(s => s.id === lowestRated.id);
@@ -2477,8 +2522,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       };
     }
     
-    // Pick from higher ranked opponents
-    const nextOpponent = selectRandomOpponent(higherRankedOpponents);
+    // Pick from higher ranked opponents, preferring same gender
+    let champOpponentsPool = higherRankedOpponents;
+    if (gauntletChampion.gender) {
+      const sameGenderHigherC = higherRankedOpponents.filter(s => s.gender === gauntletChampion.gender);
+      if (sameGenderHigherC.length > 0) champOpponentsPool = sameGenderHigherC;
+    }
+    const nextOpponent = selectRandomOpponent(champOpponentsPool);
     const nextOpponentIndex = performerIndexMap.get(nextOpponent.id);
     
     return { 
@@ -3426,7 +3476,8 @@ async function fetchPerformerCount(performerFilter = {}) {
   // EVENT HANDLERS
   // ============================================
 
-  async function loadNewPair() {
+  async function loadNewPair(retryCount = 0) {
+    const MAX_RETRIES = 3;
     disableChoice = false;
     const comparisonArea = document.getElementById("hon-comparison-area");
     if (!comparisonArea) return;
@@ -3525,6 +3576,10 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
       
       if (items.length < 2) {
+        if (battleType === "performers" && retryCount < MAX_RETRIES) {
+          console.warn(`[HotOrNot] Not enough performers, auto-retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+          return loadNewPair(retryCount + 1);
+        }
         const itemType = battleType === "performers" ? "performers" : "images";
         comparisonArea.innerHTML =
           `<div class="hon-error">Not enough ${itemType} available for comparison.</div>`;
@@ -3612,6 +3667,10 @@ async function fetchPerformerCount(performerFilter = {}) {
         }
       }
     } catch (error) {
+      if (battleType === "performers" && retryCount < MAX_RETRIES && error.message && error.message.includes("Not enough")) {
+        console.warn(`[HotOrNot] ${error.message} Auto-retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+        return loadNewPair(retryCount + 1);
+      }
       console.error("[HotOrNot] Error loading items:", error);
       comparisonArea.innerHTML = `
         <div class="hon-error">
