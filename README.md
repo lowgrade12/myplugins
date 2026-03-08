@@ -95,6 +95,29 @@ Recently matched performers are less likely to reappear:
 - Stash v0.27 or later
 - At least 2 performers or images in your library
 
+## Contributing with GitHub Copilot Coding Agent
+
+This repository uses [GitHub Copilot Coding Agent](https://docs.github.com/en/copilot/using-github-copilot/using-copilot-coding-agent) to help develop features and fix issues. Copilot can be assigned to issues and will autonomously create pull requests with the necessary changes.
+
+### How It Works
+
+1. **Create an issue** describing the feature or bug fix you need
+2. **Assign Copilot** to the issue (use `@copilot` or assign the `copilot` user)
+3. Copilot creates a **draft PR** on a new branch with the proposed changes
+4. **Review the PR**, request changes or approve, and merge when ready
+
+### Setup Requirements
+
+To enable Copilot Coding Agent on your repository:
+
+1. **Enable Copilot** — You need a [GitHub Copilot Enterprise or Copilot Pro+](https://docs.github.com/en/copilot/about-github-copilot/subscription-plans-for-github-copilot) subscription
+2. **Enable the coding agent** — Go to your repository (or organization) **Settings → Copilot → Coding agent** and enable it
+3. **No collaborator invite needed** — Copilot is a built-in GitHub feature, not an external user. Once enabled in settings, you can assign it to issues directly
+
+### Custom Instructions
+
+Repository-specific coding instructions for Copilot are defined in [`.github/copilot-instructions.md`](.github/copilot-instructions.md). Edit that file to adjust Copilot's behavior for this project (coding style, conventions, architecture patterns, etc.).
+
 ## Credits
 
 Inspired by [stash-battle](https://github.com/dtt-git/stash-battle) by dtt-git
