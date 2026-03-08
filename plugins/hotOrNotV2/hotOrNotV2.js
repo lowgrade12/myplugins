@@ -19,8 +19,6 @@
   let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
   let previousBattle = null; // Stores pre-battle state for undo functionality
   let pluginConfigCache = null; // Cached plugin configuration from Stash settings
-  // Gender filter: which genders are included in battles. Default excludes MALE to match original behavior.
-  let selectedGenders = ["FEMALE", "TRANSGENDER_MALE", "TRANSGENDER_FEMALE", "INTERSEX", "NON_BINARY"];
 
   // All genders supported by Stash, with display labels
   const ALL_GENDERS = [
@@ -1854,68 +1852,36 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   function getPerformerFilter() {
-    // Start with URL filters from the current page (cached when modal opens),
-    // but always strip any gender filter from the URL — gender is controlled by selectedGenders.
+    // Start with URL filters from the current page (cached when modal opens)
     const urlFilter = cachedUrlFilter || {};
-    const filter = Object.assign({}, urlFilter);
-    delete filter.gender;
-
-    // Apply selected genders filter
-    if (selectedGenders.length > 0) {
+    const filter = { ...urlFilter };
+    
+    // Apply default filters only when no other filters are selected
+    // Check if urlFilter is empty (no user-applied filters)
+    const hasUserFilters = Object.keys(urlFilter).length > 0;
+    
+    if (!hasUserFilters) {
+      // Exclude male performers by default
       filter.gender = {
-        value_list: selectedGenders,
-        modifier: "INCLUDES"
+        value_list: ["MALE"],
+        modifier: "EXCLUDES"
       };
-    }
-
-    // Exclude performers with missing default image when no other URL filters are active
-    const hasOtherUserFilters = Object.keys(urlFilter).some(k => k !== "gender");
-    if (!hasOtherUserFilters && !filter.NOT) {
+      
+      // Exclude performers with missing default image
+      // Use NOT wrapper to invert the is_missing filter
       filter.NOT = {
         is_missing: "image"
       };
     }
-
-    return filter;
-  }
-
-  /**
-   * Build a performer filter restricted to a specific gender, used to ensure same-gender battles.
-   * Strips any gender filter from the cached URL filter and applies the given gender exclusively.
-   * @param {string} gender - GraphQL GenderEnum value (e.g. "FEMALE")
-   * @returns {Object} GraphQL PerformerFilterType object
-   */
-  function getPerformerFilterForGender(gender) {
-    const urlFilter = cachedUrlFilter || {};
-    const filter = Object.assign({}, urlFilter);
-    delete filter.gender;
-
-    // Exact gender match for this battle
-    filter.gender = {
-      value: gender,
-      modifier: "EQUALS"
-    };
-
-    // Exclude performers with missing default image when no other URL filters are active
-    const hasOtherUserFilters = Object.keys(urlFilter).some(k => k !== "gender");
-    if (!hasOtherUserFilters && !filter.NOT) {
-      filter.NOT = {
-        is_missing: "image"
-      };
-    }
-
+    
     return filter;
   }
 
   async function fetchRandomPerformers(count = 2) {
-  if (selectedGenders.length === 0) {
-    throw new Error("No genders selected. Please select at least one gender in the filter.");
-  }
-  const battleGender = selectedGenders[Math.floor(Math.random() * selectedGenders.length)];
-  const performerFilter = getPerformerFilterForGender(battleGender);
+  const performerFilter = getPerformerFilter();
   const totalPerformers = await fetchPerformerCount(performerFilter);
   if (totalPerformers < 2) {
-    throw new Error("Not enough performers for comparison. You need at least 2 performers matching the selected gender.");
+    throw new Error("Not enough performers for comparison. You need at least 2 non-male performers.");
   }
 
   const performerQuery = `
@@ -2095,12 +2061,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   // Swiss mode: fetch two performers with similar ratings
   async function fetchSwissPairPerformers() {
-    if (selectedGenders.length === 0) {
-      throw new Error("No genders selected. Please select at least one gender in the filter.");
-    }
-    // Pick a random gender for this battle to ensure same-gender matchups
-    const battleGender = selectedGenders[Math.floor(Math.random() * selectedGenders.length)];
-    const performerFilter = getPerformerFilterForGender(battleGender);
+    const performerFilter = getPerformerFilter();
     
     const performersQuery = `
       query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
@@ -2253,14 +2214,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   // Gauntlet mode: champion vs next challenger
   async function fetchGauntletPairPerformers() {
-    if (selectedGenders.length === 0) {
-      throw new Error("No genders selected. Please select at least one gender in the filter.");
-    }
-    // Lock to the champion's gender for the entire gauntlet run; pick a random gender if no champion yet
-    const battleGender = (gauntletChampion && gauntletChampion.gender)
-      ? gauntletChampion.gender
-      : selectedGenders[Math.floor(Math.random() * selectedGenders.length)];
-    const performerFilter = getPerformerFilterForGender(battleGender);
+    const performerFilter = getPerformerFilter();
     const performersQuery = `
       query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
         findPerformers(performer_filter: $performer_filter, filter: $filter) {
@@ -2427,14 +2381,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   // Champion mode: like gauntlet but winner stays on (no falling)
   async function fetchChampionPairPerformers() {
-    if (selectedGenders.length === 0) {
-      throw new Error("No genders selected. Please select at least one gender in the filter.");
-    }
-    // Lock to the champion's gender for the entire run; pick a random gender if no champion yet
-    const battleGender = (gauntletChampion && gauntletChampion.gender)
-      ? gauntletChampion.gender
-      : selectedGenders[Math.floor(Math.random() * selectedGenders.length)];
-    const performerFilter = getPerformerFilterForGender(battleGender);
+    const performerFilter = getPerformerFilter();
     const performersQuery = `
       query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
         findPerformers(performer_filter: $performer_filter, filter: $filter) {
@@ -3434,20 +3381,6 @@ async function fetchPerformerCount(performerFilter = {}) {
           </div>
     ` : '';
 
-    // Gender filter (performers only)
-    const genderFilterHTML = battleType === "performers" ? `
-          <div class="hon-gender-filter">
-            <span class="hon-gender-filter-label">Genders:</span>
-            <div class="hon-gender-btns">
-              ${ALL_GENDERS.map(g => `
-                <button class="hon-gender-btn ${selectedGenders.includes(g.value) ? 'active' : ''}" data-gender="${g.value}">
-                  ${g.label}
-                </button>
-              `).join('')}
-            </div>
-          </div>
-    ` : '';
-    
     // Stats button for performers
     const statsButtonHTML = battleType === "performers" ? `
           <button id="hon-stats-btn" class="btn btn-primary hon-stats-button">
@@ -3461,7 +3394,6 @@ async function fetchPerformerCount(performerFilter = {}) {
           <h1 class="hon-title">🔥 HotOrNot</h1>
           <p class="hon-subtitle">Compare ${itemType} head-to-head to build your rankings</p>
           ${modeToggleHTML}
-          ${genderFilterHTML}
           ${statsButtonHTML}
         </div>
 
@@ -4703,32 +4635,6 @@ function addFloatingButton() {
         openStatsModal();
       });
     }
-
-    // Gender filter buttons (performers only)
-    modal.querySelectorAll(".hon-gender-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const gender = btn.dataset.gender;
-        const idx = selectedGenders.indexOf(gender);
-        if (idx === -1) {
-          selectedGenders.push(gender);
-          btn.classList.add("active");
-        } else {
-          // Prevent deselecting the last gender
-          if (selectedGenders.length === 1) return;
-          selectedGenders.splice(idx, 1);
-          btn.classList.remove("active");
-        }
-        // Reset gauntlet state when gender selection changes
-        gauntletChampion = null;
-        gauntletWins = 0;
-        gauntletDefeated = [];
-        gauntletFalling = false;
-        gauntletFallingItem = null;
-        gauntletFallingTested = [];
-        previousBattle = null;
-        loadNewPair();
-      });
-    });
 
     // Undo button
     const undoBtn = modal.querySelector("#hon-undo-btn");
