@@ -19,6 +19,7 @@
   let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
   let previousBattle = null; // Stores pre-battle state for undo functionality
   let pluginConfigCache = null; // Cached plugin configuration from Stash settings
+  const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
 
   // All genders supported by Stash, with display labels
   const ALL_GENDERS = [
@@ -3477,7 +3478,6 @@ async function fetchPerformerCount(performerFilter = {}) {
   // ============================================
 
   async function loadNewPair(retryCount = 0) {
-    const MAX_RETRIES = 3;
     disableChoice = false;
     const comparisonArea = document.getElementById("hon-comparison-area");
     if (!comparisonArea) return;
@@ -3576,8 +3576,8 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
       
       if (items.length < 2) {
-        if (battleType === "performers" && retryCount < MAX_RETRIES) {
-          console.warn(`[HotOrNot] Not enough performers, auto-retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+        if (battleType === "performers" && retryCount < MAX_LOAD_RETRIES) {
+          console.warn(`[HotOrNot] Not enough performers, auto-retrying (${retryCount + 1}/${MAX_LOAD_RETRIES})...`);
           return loadNewPair(retryCount + 1);
         }
         const itemType = battleType === "performers" ? "performers" : "images";
@@ -3667,8 +3667,8 @@ async function fetchPerformerCount(performerFilter = {}) {
         }
       }
     } catch (error) {
-      if (battleType === "performers" && retryCount < MAX_RETRIES && error.message && error.message.includes("Not enough")) {
-        console.warn(`[HotOrNot] ${error.message} Auto-retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+      if (battleType === "performers" && retryCount < MAX_LOAD_RETRIES && error.message && error.message.includes("Not enough")) {
+        console.warn(`[HotOrNot] ${error.message} Auto-retrying (${retryCount + 1}/${MAX_LOAD_RETRIES})...`);
         return loadNewPair(retryCount + 1);
       }
       console.error("[HotOrNot] Error loading items:", error);
