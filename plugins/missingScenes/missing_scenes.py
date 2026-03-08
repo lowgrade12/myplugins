@@ -1737,7 +1737,6 @@ def format_scene(scene, stash_id):
             "id": p.get("id"),
             "name": p.get("name"),
             "disambiguation": p.get("disambiguation"),
-            "gender": p.get("gender"),
             "as": perf.get("as")
         })
 
