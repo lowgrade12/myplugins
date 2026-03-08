@@ -1,4 +1,4 @@
-# HotOrNotV2 Plugin
+# HotOrNot Plugin
 
 An ELO-based ranking system for performers in [Stash](https://stashapp.cc/). Compare performers head-to-head in an interactive battle interface to build personalized rankings based on your preferences.
 
@@ -81,7 +81,7 @@ On the performers list page, each performer card displays a 10-star rating widge
 - **Real-time updates** - Changes are saved immediately to Stash
 - **Smart caching** - Batch fetches ratings for performance with 5-minute TTL
 - **Native sync** - Updates Stash's native rating displays when you change a rating
-- Toggle on/off via **Settings → Plugins → HotOrNotV2 → Show Star Rating Widget** (enabled by default)
+- Toggle on/off via **Settings → Plugins → HotOrNot → Show Star Rating Widget** (enabled by default)
 
 ### Battle Rank Badge
 
@@ -89,11 +89,11 @@ When viewing a single performer's page, a badge displays their battle rank:
 - Shows rank position and total performers (e.g., "Battle Rank #5 of 100")
 - Tier-based styling: 👑 Legendary (top 5%), 🥇 Gold (top 20%), 🥈 Silver (top 40%), 🥉 Bronze (top 60%), 🔥 Default
 - Hover for tooltip showing exact rating
-- Toggle on/off via **Settings → Plugins → HotOrNotV2 → Show Battle Rank Badge** (enabled by default)
+- Toggle on/off via **Settings → Plugins → HotOrNot → Show Battle Rank Badge** (enabled by default)
 
 ## Installation
 
-1. Download the `/plugins/hotOrNotV2/` folder to your Stash plugins directory
+1. Download the `/plugins/hotOrNot/` folder to your Stash plugins directory
 2. Reload plugins in Stash (Settings → Plugins → Reload)
 3. Navigate to the Performers page to see the floating HotOrNot button and star rating widgets on performer cards
 

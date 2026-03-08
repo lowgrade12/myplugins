@@ -31,7 +31,7 @@
   ];
 
   /**
-   * Fetch the HotOrNotV2 plugin configuration from Stash settings.
+   * Fetch the HotOrNot plugin configuration from Stash settings.
    * Caches the result to avoid repeated GraphQL calls.
    * @returns {Promise<Object>} Plugin config object (may be empty if not yet configured)
    */
@@ -47,7 +47,7 @@
           }
         }
       `);
-      pluginConfigCache = (result.configuration.plugins || {})["hotOrNotV2"] || {};
+      pluginConfigCache = (result.configuration.plugins || {})["hotOrNot"] || {};
     } catch (e) {
       console.error("[HotOrNot] Failed to fetch plugin config:", e);
       pluginConfigCache = {};
