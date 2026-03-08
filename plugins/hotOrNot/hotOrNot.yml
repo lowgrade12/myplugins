@@ -1,12 +1,12 @@
-name: HotOrNotV2
+name: HotOrNot
 description: Adds an ELO based ranking system for performers and images
 version: 2.1.0
 url: https://github.com/lowgrade12/hot-or-not
 ui:
   javascript:
-    - hotOrNotV2.js
+    - hotOrNot.js
   css:
-    - hotOrNotV2.css
+    - hotOrNot.css
 settings:
   showBattleRankBadge:
     displayName: Show Battle Rank Badge
