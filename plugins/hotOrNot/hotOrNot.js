@@ -186,20 +186,6 @@
     return (ALL_GENDERS.find(g => g.value === gender) || { label: gender }).label;
   }
 
-  /**
-   * Filter a list of performers to only those matching the target gender.
-   * Falls back to the original list if fewer than minCount performers match.
-   * @param {Array} performers - Array of performer objects
-   * @param {string|null} targetGender - Gender to match (e.g., "FEMALE")
-   * @param {number} [minCount=1] - Minimum number of same-gender performers required
-   * @returns {Array} Filtered array (same gender) or original array (fallback)
-   */
-  function filterSameGender(performers, targetGender, minCount = 1) {
-    if (!targetGender) return performers;
-    const sameGender = performers.filter(p => p.gender === targetGender);
-    return sameGender.length >= minCount ? sameGender : performers;
-  }
-
   // ============================================
   // GRAPHQL QUERIES
   // ============================================
@@ -1021,7 +1007,7 @@
     }
   }
 
-  async function updatePerformerRating(performerId, newRating, performerObj = null, won = null) {
+  async function updatePerformerRating(performerId, newRating, performerObj = null, won = null, ratingChange = 0) {
     const mutation = `
       mutation UpdatePerformerCustomFields($id: ID!, $rating: Int!, $fields: Map) {
         performerUpdate(input: {
@@ -1049,8 +1035,8 @@
     if (performerObj && battleType === "performers" && won !== undefined) {
       const currentStats = parsePerformerEloData(performerObj);
       
-      // Update stats based on match outcome
-      const newStats = updatePerformerStats(currentStats, won);
+      // Update stats based on match outcome, including rating change for recovery tracking
+      const newStats = updatePerformerStats(currentStats, won, ratingChange);
       
       // Save stats as JSON string in custom field
       variables.fields = {
@@ -1097,7 +1083,8 @@
         best_streak: 0,
         worst_streak: 0,
         last_match: null,
-        recent_results: 0
+        recent_results: 0,
+        last_rating_change: 0
       };
     }
     
@@ -1114,7 +1101,8 @@
           best_streak: stats.best_streak || 0,
           worst_streak: stats.worst_streak || 0,
           last_match: stats.last_match || null,
-          recent_results: stats.recent_results || 0
+          recent_results: stats.recent_results || 0,
+          last_rating_change: stats.last_rating_change || 0
         };
       } catch (e) {
         console.warn(`[HotOrNot] Failed to parse hotornot_stats for performer ${performer.id}:`, e);
@@ -1134,7 +1122,8 @@
         best_streak: 0,
         worst_streak: 0,
         last_match: null,
-        recent_results: 0
+        recent_results: 0,
+        last_rating_change: 0
       };
     }
     
@@ -1148,7 +1137,8 @@
       best_streak: 0,
       worst_streak: 0,
       last_match: null,
-      recent_results: 0
+      recent_results: 0,
+      last_rating_change: 0
     };
   }
 
@@ -1156,13 +1146,15 @@
    * Update performer stats after a match
    * @param {Object} currentStats - Current stats object from parsePerformerEloData
    * @param {boolean|null|string} won - True if performer won, false if lost, null for participation-only (no win/loss tracking), "draw" for skipped/drawn matches
+   * @param {number} [ratingChange=0] - Rating change from this match (positive for gains, negative for losses)
    * @returns {Object} Updated stats object
    */
-  function updatePerformerStats(currentStats, won) {
+  function updatePerformerStats(currentStats, won, ratingChange = 0) {
     // Base stats that always update
     const newStats = {
       total_matches: currentStats.total_matches + 1,
-      last_match: new Date().toISOString()
+      last_match: new Date().toISOString(),
+      last_rating_change: ratingChange
     };
     
     // If won is null, this is participation-only (gauntlet mode defender benchmark only)
@@ -1293,6 +1285,10 @@
   const STREAK_THRESHOLD_MODERATE = 3;  // Streak length to trigger moderate bonus
   const STREAK_THRESHOLD_STRONG = 5;    // Streak length to trigger strong bonus
   const STREAK_RATING_MULTIPLIER = 2;   // Rating points adjustment per streak count
+  const BIG_LOSS_THRESHOLD = 4;         // Rating point loss that triggers recovery matchmaking boost
+  const BIG_LOSS_WEIGHT_MODERATE = 2.0;  // Weight boost for moderate big loss (4-5 points)
+  const BIG_LOSS_WEIGHT_STRONG = 2.5;    // Weight boost for strong big loss (6-7 points)
+  const BIG_LOSS_WEIGHT_SEVERE = 3.0;    // Weight boost for severe big loss (8+ points)
 
   /**
    * Calculate streak-based weight modifier for matchmaking.
@@ -1667,19 +1663,19 @@
     // Winner updates
     if (winnerChange !== 0 || (battleType === "performers" && freshWinnerObj && shouldTrackWinner)) {
       // Update rating if changed, or always update stats if active participant
-      updateItemRating(winnerId, newWinnerRating, shouldTrackWinner ? freshWinnerObj : null, shouldTrackWinner ? true : null);
+      updateItemRating(winnerId, newWinnerRating, shouldTrackWinner ? freshWinnerObj : null, shouldTrackWinner ? true : null, winnerChange);
     } else if (battleType === "performers" && freshWinnerObj && currentMode === "gauntlet") {
       // Defender in gauntlet mode only - track participation only
-      updateItemRating(winnerId, newWinnerRating, freshWinnerObj, null);
+      updateItemRating(winnerId, newWinnerRating, freshWinnerObj, null, 0);
     }
     
     // Loser updates
     if (loserChange !== 0 || (battleType === "performers" && freshLoserObj && shouldTrackLoser)) {
       // Update rating if changed, or always update stats if active participant
-      updateItemRating(loserId, newLoserRating, shouldTrackLoser ? freshLoserObj : null, shouldTrackLoser ? false : null);
+      updateItemRating(loserId, newLoserRating, shouldTrackLoser ? freshLoserObj : null, shouldTrackLoser ? false : null, loserChange);
     } else if (battleType === "performers" && freshLoserObj && currentMode === "gauntlet") {
       // Defender in gauntlet mode only - track participation only
-      updateItemRating(loserId, newLoserRating, freshLoserObj, null);
+      updateItemRating(loserId, newLoserRating, freshLoserObj, null, 0);
     }
     
     return { newWinnerRating, newLoserRating, winnerChange, loserChange };
@@ -1774,11 +1770,11 @@
     if (battleType === "performers") {
       // Update left item with draw stats
       if (leftChange !== 0 || freshLeftItem) {
-        await updateItemRating(leftItem.id, newLeftRating, freshLeftItem, "draw");
+        await updateItemRating(leftItem.id, newLeftRating, freshLeftItem, "draw", leftChange);
       }
       // Update right item with draw stats
       if (rightChange !== 0 || freshRightItem) {
-        await updateItemRating(rightItem.id, newRightRating, freshRightItem, "draw");
+        await updateItemRating(rightItem.id, newRightRating, freshRightItem, "draw", rightChange);
       }
     } else {
       // For images, only update if rating changed
@@ -1925,8 +1921,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   const shuffled = allPerformers.sort(() => Math.random() - 0.5);
   const performer1 = shuffled[0];
-  const sameGenderPool = filterSameGender(shuffled.slice(1), performer1.gender);
-  const performer2 = sameGenderPool[0];
+  const performer2 = shuffled[1];
   return [performer1, performer2];
 }
 
@@ -2027,9 +2022,27 @@ async function fetchPerformerCount(performerFilter = {}) {
     // Performers on streaks get a bonus to give opportunities for streak continuation/breaking
     const streakWeight = getStreakWeight(stats);
     
+    // Calculate big loss recovery weight component
+    // Performers who just had a big rating drop get a boost to come back into matches
+    // sooner, giving them a chance to recover their position
+    let bigLossRecoveryWeight = 1.0;
+    const lastChange = stats.last_rating_change || 0;
+    if (lastChange <= -BIG_LOSS_THRESHOLD) {
+      // Scale the boost based on how big the loss was
+      const lossSize = -lastChange;
+      if (lossSize >= 8) {
+        bigLossRecoveryWeight = BIG_LOSS_WEIGHT_SEVERE;
+      } else if (lossSize >= 6) {
+        bigLossRecoveryWeight = BIG_LOSS_WEIGHT_STRONG;
+      } else {
+        bigLossRecoveryWeight = BIG_LOSS_WEIGHT_MODERATE;
+      }
+    }
+    
     // Combine weights: multiply all factors together
-    // This ensures match count, recency, and streak all contribute to the final selection probability
-    return matchCountWeight * recencyWeight * streakWeight;
+    // This ensures match count, recency, streak, and big loss recovery all contribute
+    // to the final selection probability
+    return matchCountWeight * recencyWeight * streakWeight * bigLossRecoveryWeight;
   }
 
   /**
@@ -2135,10 +2148,8 @@ async function fetchPerformerCount(performerFilter = {}) {
     const isRandomSanityCheck = Math.random() < 0.10;
     
     if (isRandomSanityCheck) {
-      // Pick any random performer (excluding performer1), preferring same gender
+      // Pick any random performer (excluding performer1)
       let otherPerformers = performersWithWeights.filter(pw => pw.performer.id !== performer1.id);
-      const sameGenderOthers = otherPerformers.filter(pw => pw.performer.gender === performer1.gender);
-      if (sameGenderOthers.length > 0) otherPerformers = sameGenderOthers;
       if (otherPerformers.length > 0) {
         const randomOpponent = otherPerformers[Math.floor(Math.random() * otherPerformers.length)];
         console.log('[HotOrNot] Sanity check pairing: random matchup regardless of rating');
@@ -2181,12 +2192,6 @@ async function fetchPerformerCount(performerFilter = {}) {
       return Math.abs(rating - targetRating) <= matchWindow;
     });
 
-    // Prefer same-gender opponents within the rating window
-    if (performer1.gender) {
-      const sameGenderSimilar = similarPerformersWithWeights.filter(pw => pw.performer.gender === performer1.gender);
-      if (sameGenderSimilar.length > 0) similarPerformersWithWeights = sameGenderSimilar;
-    }
-
     let performer2;
     let performer2Index;
     if (similarPerformersWithWeights.length > 0) {
@@ -2207,12 +2212,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     } else {
       // No similar performers within window, pick closest to targetRating with recency weighting
       let otherPerformersWithWeights = performersWithWeights.filter(pw => pw.performer.id !== performer1.id);
-      
-      // Prefer same-gender opponents in fallback
-      if (performer1.gender) {
-        const sameGenderOthers = otherPerformersWithWeights.filter(pw => pw.performer.gender === performer1.gender);
-        if (sameGenderOthers.length > 0) otherPerformersWithWeights = sameGenderOthers;
-      }
 
       // Sort by rating similarity to targetRating (which may be streak-adjusted)
       otherPerformersWithWeights.sort((a, b) => {
@@ -2307,12 +2306,8 @@ async function fetchPerformerCount(performerFilter = {}) {
           placementRating: currentRating
         };
       } else {
-        // Get next opponent below, preferring same gender (first one, closest to falling performer)
+        // Get next opponent below (first one, closest to falling performer)
         let fallingPool = belowOpponents;
-        if (gauntletFallingItem.gender) {
-          const sameGenderBelow = belowOpponents.filter(s => s.gender === gauntletFallingItem.gender);
-          if (sameGenderBelow.length > 0) fallingPool = sameGenderBelow;
-        }
         const nextBelow = fallingPool[0];
         const nextBelowIndex = performers.findIndex(s => s.id === nextBelow.id);
         
@@ -2340,10 +2335,8 @@ async function fetchPerformerCount(performerFilter = {}) {
       const randomIndex = Math.floor(Math.random() * performers.length);
       const challenger = performers[randomIndex];
       
-      // Start at the bottom - find lowest rated performer that isn't the challenger, preferring same gender
+      // Start at the bottom - find lowest rated performer that isn't the challenger
       let lowestCandidates = performers.filter(s => s.id !== challenger.id);
-      const sameGenderLowestG = lowestCandidates.filter(s => s.gender === challenger.gender);
-      if (sameGenderLowestG.length > 0) lowestCandidates = sameGenderLowestG;
       const lowestRated = lowestCandidates
         .sort((a, b) => (a.rating100 || 0) - (b.rating100 || 0))[0];
       
@@ -2406,12 +2399,8 @@ async function fetchPerformerCount(performerFilter = {}) {
       };
     }
     
-    // Pick from higher ranked opponents, preferring same gender
+    // Pick from higher ranked opponents
     let opponentsPool = higherRankedOpponents;
-    if (gauntletChampion.gender) {
-      const sameGenderHigher = higherRankedOpponents.filter(s => s.gender === gauntletChampion.gender);
-      if (sameGenderHigher.length > 0) opponentsPool = sameGenderHigher;
-    }
     const nextOpponent = selectRandomOpponent(opponentsPool);
     const nextOpponentIndex = performerIndexMap.get(nextOpponent.id);
     
@@ -2462,10 +2451,8 @@ async function fetchPerformerCount(performerFilter = {}) {
       const randomIndex = Math.floor(Math.random() * performers.length);
       const challenger = performers[randomIndex];
       
-      // Start at the bottom - find lowest rated performer that isn't the challenger, preferring same gender
+      // Start at the bottom - find lowest rated performer that isn't the challenger
       let lowestCandidatesC = performers.filter(s => s.id !== challenger.id);
-      const sameGenderLowestC = lowestCandidatesC.filter(s => s.gender === challenger.gender);
-      if (sameGenderLowestC.length > 0) lowestCandidatesC = sameGenderLowestC;
       const lowestRated = lowestCandidatesC
         .sort((a, b) => (a.rating100 || 0) - (b.rating100 || 0))[0];
       
@@ -2523,12 +2510,8 @@ async function fetchPerformerCount(performerFilter = {}) {
       };
     }
     
-    // Pick from higher ranked opponents, preferring same gender
+    // Pick from higher ranked opponents
     let champOpponentsPool = higherRankedOpponents;
-    if (gauntletChampion.gender) {
-      const sameGenderHigherC = higherRankedOpponents.filter(s => s.gender === gauntletChampion.gender);
-      if (sameGenderHigherC.length > 0) champOpponentsPool = sameGenderHigherC;
-    }
     const nextOpponent = selectRandomOpponent(champOpponentsPool);
     const nextOpponentIndex = performerIndexMap.get(nextOpponent.id);
     
@@ -2720,9 +2703,9 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
   }
 
-  async function updateItemRating(itemId, newRating, itemObj = null, won = null) {
+  async function updateItemRating(itemId, newRating, itemObj = null, won = null, ratingChange = 0) {
     if (battleType === "performers") {
-      return await updatePerformerRating(itemId, newRating, itemObj, won);
+      return await updatePerformerRating(itemId, newRating, itemObj, won, ratingChange);
     } else {
       return await updateImageRating(itemId, newRating);
     }
