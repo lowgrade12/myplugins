@@ -29,7 +29,7 @@ jobs:
       with:
         fetch-depth: 0
     - name: Configure Pages
-      uses: actions/configure-pages@d56065795b1ecb9c3ce022bebb6510493aa89bdf # v5.0.0
+      uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
     - name: Build site
       run: |
         chmod +x build_site.sh
