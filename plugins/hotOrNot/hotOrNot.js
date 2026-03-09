@@ -1286,6 +1286,9 @@
   const STREAK_THRESHOLD_STRONG = 5;    // Streak length to trigger strong bonus
   const STREAK_RATING_MULTIPLIER = 2;   // Rating points adjustment per streak count
   const BIG_LOSS_THRESHOLD = 4;         // Rating point loss that triggers recovery matchmaking boost
+  const BIG_LOSS_WEIGHT_MODERATE = 2.0;  // Weight boost for moderate big loss (4-5 points)
+  const BIG_LOSS_WEIGHT_STRONG = 2.5;    // Weight boost for strong big loss (6-7 points)
+  const BIG_LOSS_WEIGHT_SEVERE = 3.0;    // Weight boost for severe big loss (8+ points)
 
   /**
    * Calculate streak-based weight modifier for matchmaking.
@@ -2024,18 +2027,15 @@ async function fetchPerformerCount(performerFilter = {}) {
     // sooner, giving them a chance to recover their position
     let bigLossRecoveryWeight = 1.0;
     const lastChange = stats.last_rating_change || 0;
-    if (lastChange < 0 && Math.abs(lastChange) >= BIG_LOSS_THRESHOLD) {
+    if (lastChange <= -BIG_LOSS_THRESHOLD) {
       // Scale the boost based on how big the loss was
-      // Loss of 4-5 points: 2.0x weight
-      // Loss of 6-7 points: 2.5x weight
-      // Loss of 8+ points: 3.0x weight
-      const lossSize = Math.abs(lastChange);
+      const lossSize = -lastChange;
       if (lossSize >= 8) {
-        bigLossRecoveryWeight = 3.0;
+        bigLossRecoveryWeight = BIG_LOSS_WEIGHT_SEVERE;
       } else if (lossSize >= 6) {
-        bigLossRecoveryWeight = 2.5;
+        bigLossRecoveryWeight = BIG_LOSS_WEIGHT_STRONG;
       } else {
-        bigLossRecoveryWeight = 2.0;
+        bigLossRecoveryWeight = BIG_LOSS_WEIGHT_MODERATE;
       }
     }
     
