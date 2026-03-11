@@ -452,6 +452,76 @@
   }
 
   /**
+   * Build a filter object for IS_NULL or NOT_NULL modifiers.
+   * These modifiers don't carry a value - the modifier alone defines the filter.
+   * GraphQL still requires the value field, so we supply appropriate defaults.
+   * @param {string} type - The criterion type (e.g., 'rating100', 'gender')
+   * @param {string} modifier - 'IS_NULL' or 'NOT_NULL'
+   * @returns {Object|null} GraphQL filter object or null if type is unknown
+   */
+  function buildNullModifierFilter(type, modifier) {
+    // Numeric criterion types -> IntCriterionInput (value: Int! required)
+    const NUMERIC_FIELDS = {
+      'rating': 'rating100',
+      'rating100': 'rating100',
+      'age': 'age',
+      'scene_count': 'scene_count',
+      'image_count': 'image_count',
+      'gallery_count': 'gallery_count',
+      'o_counter': 'o_counter'
+    };
+
+    // String / date criterion types -> StringCriterionInput (value: String! required)
+    const STRING_FIELDS = {
+      'ethnicity': 'ethnicity',
+      'country': 'country',
+      'hair_color': 'hair_color',
+      'eye_color': 'eye_color',
+      'name': 'name',
+      'alias': 'aliases',
+      'aliases': 'aliases',
+      'details': 'details',
+      'career_length': 'career_length',
+      'tattoos': 'tattoos',
+      'piercings': 'piercings',
+      'url': 'url',
+      'birthdate': 'birthdate',
+      'death_date': 'death_date',
+      'created_at': 'created_at',
+      'updated_at': 'updated_at'
+    };
+
+    if (NUMERIC_FIELDS[type]) {
+      return { [NUMERIC_FIELDS[type]]: { value: 0, modifier } };
+    }
+
+    if (STRING_FIELDS[type]) {
+      return { [STRING_FIELDS[type]]: { value: "", modifier } };
+    }
+
+    // GenderCriterionInput – value is optional in the schema
+    if (type === 'gender') {
+      return { gender: { modifier } };
+    }
+
+    // HierarchicalMultiCriterionInput – value is optional
+    if (type === 'tags') {
+      return { tags: { value: [], modifier, depth: 0 } };
+    }
+    if (type === 'studios') {
+      return { studios: { value: [], modifier, depth: 0 } };
+    }
+
+    // StashIDCriterionInput
+    if (type === 'stash_id' || type === 'stash_id_endpoint') {
+      return { stash_id_endpoint: { modifier } };
+    }
+
+    console.log(`[HotOrNot] Unknown criterion type for ${modifier} modifier: ${type}`);
+    return null;
+  }
+
+  /**
    * Convert a single criterion from URL format to GraphQL PerformerFilterType format
    * @param {Object} criterion - Single criterion object from URL
    * @returns {Object|null} GraphQL filter object or null if not applicable
@@ -463,6 +533,12 @@
 
     const { type, value, modifier } = criterion;
     
+    // Handle IS_NULL and NOT_NULL modifiers early - these don't require a value
+    // The modifier alone determines the filter behavior
+    if (modifier === 'IS_NULL' || modifier === 'NOT_NULL') {
+      return buildNullModifierFilter(type, modifier);
+    }
+
     // Map URL criterion types to GraphQL filter fields
     // The filter structure varies based on the criterion type
     switch (type) {
