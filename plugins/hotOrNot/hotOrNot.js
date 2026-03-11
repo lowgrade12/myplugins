@@ -3584,6 +3584,44 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
   }
 
+  /**
+   * Get the winner and loser items from the current pair based on the chosen winner ID.
+   * @param {string} winnerId - ID of the winner
+   * @returns {{ winnerItem: Object, loserItem: Object }} Winner and loser objects
+   */
+  function getWinnerLoserItems(winnerId) {
+    const isLeftWinner = winnerId === currentPair.left.id;
+    return {
+      winnerItem: isLeftWinner ? currentPair.left : currentPair.right,
+      loserItem: isLeftWinner ? currentPair.right : currentPair.left
+    };
+  }
+
+  /**
+   * Show winner/loser visual feedback, rating animation, and schedule next pair load.
+   * @param {HTMLElement} winnerCard - Winner card element
+   * @param {HTMLElement|null} loserCard - Loser card element (may be null)
+   * @param {number} winnerRating - Winner's old rating
+   * @param {number} newWinnerRating - Winner's new rating
+   * @param {number} winnerChange - Winner's rating change
+   * @param {number} loserRating - Loser's old rating
+   * @param {number} newLoserRating - Loser's new rating
+   * @param {number} loserChange - Loser's rating change
+   */
+  function showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange) {
+    winnerCard.classList.add("hon-winner");
+    if (loserCard) loserCard.classList.add("hon-loser");
+
+    showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
+    if (loserCard) {
+      showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
+    }
+
+    setTimeout(() => {
+      loadNewPair();
+    }, 1500);
+  }
+
   async function handleChooseItem(event) {
     if(disableChoice) return;
     disableChoice = true;
@@ -3603,33 +3641,18 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     // Images always use Swiss mode logic (no gauntlet/champion)
     if (battleType === "images") {
-      const winnerItem = winnerId === currentPair.left.id ? currentPair.left : currentPair.right;
-      const loserItem = loserId === currentPair.left.id ? currentPair.left : currentPair.right;
+      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
       const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
         winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
       );
 
-      // Visual feedback
-      winnerCard.classList.add("hon-winner");
-      if (loserCard) loserCard.classList.add("hon-loser");
-
-      // Show rating change animation
-      showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
-      if (loserCard) {
-        showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
-      }
-
-      // Load new pair after animation
-      setTimeout(() => {
-        loadNewPair();
-      }, 1500);
+      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
       return;
     }
 
     // Handle gauntlet mode (champion tracking) - only for performers
     if (currentMode === "gauntlet") {
-      const winnerItem = winnerId === currentPair.left.id ? currentPair.left : currentPair.right;
-      const loserItem = loserId === currentPair.left.id ? currentPair.left : currentPair.right;
+      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
       
       // Check if we're in falling mode (finding floor after a loss)
       if (gauntletFalling && gauntletFallingItem) {
@@ -3816,28 +3839,16 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
       
       // Visual feedback with animations
-      winnerCard.classList.add("hon-winner");
-      if (loserCard) loserCard.classList.add("hon-loser");
-      
-      showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
-      if (loserCard) {
-        // Use the falling item's actual new rating (which may have floor applied) for the animation
-        const actualLoserRating = gauntletFallingItem ? gauntletFallingItem.rating100 : newLoserRating;
-        const actualLoserChange = actualLoserRating - loserRating;
-        showRatingAnimation(loserCard, loserRating, actualLoserRating, actualLoserChange, false);
-      }
-      
-      // Load new pair after animation
-      setTimeout(() => {
-        loadNewPair();
-      }, 1500);
+      // Use the falling item's actual new rating (which may have floor applied) for the animation
+      const actualLoserRating = gauntletFallingItem ? gauntletFallingItem.rating100 : newLoserRating;
+      const actualLoserChange = actualLoserRating - loserRating;
+      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, actualLoserRating, actualLoserChange);
       return;
     }
 
     // Handle champion mode (like gauntlet but winner always takes over)
     if (currentMode === "champion") {
-      const winnerItem = winnerId === currentPair.left.id ? currentPair.left : currentPair.right;
-      const loserItem = loserId === currentPair.left.id ? currentPair.left : currentPair.right;
+      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
       
       // Calculate rating changes (pass loserRank for #1 dethrone)
       const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
@@ -3857,43 +3868,17 @@ async function fetchPerformerCount(performerFilter = {}) {
         gauntletWins = 1;
       }
       
-      // Visual feedback with animations
-      winnerCard.classList.add("hon-winner");
-      if (loserCard) loserCard.classList.add("hon-loser");
-      
-      showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
-      if (loserCard) {
-        showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
-      }
-      
-      // Load new pair after animation
-      setTimeout(() => {
-        loadNewPair();
-      }, 1500);
+      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
       return;
     }
 
     // For Swiss mode (performers only, images are handled above): Calculate and show rating changes
-    const winnerItem = winnerId === currentPair.left.id ? currentPair.left : currentPair.right;
-    const loserItem = loserId === currentPair.left.id ? currentPair.left : currentPair.right;
+    const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
     const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
       winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
     );
 
-    // Visual feedback
-    winnerCard.classList.add("hon-winner");
-    if (loserCard) loserCard.classList.add("hon-loser");
-
-    // Show rating change animation
-    showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
-    if (loserCard) {
-      showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
-    }
-
-    // Load new pair after animation
-    setTimeout(() => {
-      loadNewPair();
-    }, 1500);
+    showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
   }
 
   function showRatingAnimation(card, oldRating, newRating, change, isWinner) {
