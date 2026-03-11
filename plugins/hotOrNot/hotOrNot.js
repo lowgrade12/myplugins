@@ -517,7 +517,7 @@
       return { stash_id_endpoint: { modifier } };
     }
 
-    console.log(`[HotOrNot] Unknown criterion type for ${modifier} modifier: ${type}`);
+    console.warn(`[HotOrNot] Unknown criterion type for ${modifier} modifier: ${type}`);
     return null;
   }
 
