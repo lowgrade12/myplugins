@@ -2,6 +2,27 @@
    HOTORNOT PLUGIN STYLES
    ============================================ */
 
+/* --- CSS Custom Properties (shared color palette) --- */
+:root {
+  --hon-primary: #0d6efd;
+  --hon-primary-dark: #0a58ca;
+  --hon-success: #28a745;
+  --hon-danger: #dc3545;
+  --hon-warning: #ffc107;
+  --hon-white: #fff;
+  --hon-gray-light: #aaa;
+  --hon-gray: #888;
+  --hon-gray-mid: #666;
+  --hon-gray-dark: #444;
+  --hon-gray-darker: #333;
+  --hon-bg-card: #1a1a1a;
+  --hon-bg-input: #2a2a2a;
+  --hon-overlay-light: rgba(255, 255, 255, 0.05);
+  --hon-overlay-medium: rgba(255, 255, 255, 0.1);
+  --hon-overlay-dark: rgba(0, 0, 0, 0.8);
+  --hon-shadow-text: rgba(0, 0, 0, 0.3);
+}
+
 /* Container */
 .hon-container {
   max-width: 1600px;
@@ -20,12 +41,12 @@
   font-size: 2.5rem;
   font-weight: bold;
   margin-bottom: 10px;
-  color: #fff;
+  color: var(--hon-white);
 }
 
 .hon-subtitle {
   font-size: 1.1rem;
-  color: #888;
+  color: var(--hon-gray);
   margin-bottom: 20px;
 }
 
@@ -47,9 +68,9 @@
   min-width: 0;
   flex: 1;
   max-width: 150px;
-  border: 2px solid #444;
+  border: 2px solid var(--hon-gray-dark);
   background: transparent;
-  color: #aaa;
+  color: var(--hon-gray-light);
   border-radius: 10px;
   cursor: pointer;
   font-size: 1rem;
@@ -58,14 +79,14 @@
 }
 
 .hon-mode-btn:hover {
-  border-color: #666;
-  color: #fff;
+  border-color: var(--hon-gray-mid);
+  color: var(--hon-white);
 }
 
 .hon-mode-btn.active {
-  background: #0d6efd;
-  border-color: #0d6efd;
-  color: #fff;
+  background: var(--hon-primary);
+  border-color: var(--hon-primary);
+  color: var(--hon-white);
 }
 
 .hon-mode-desc {
@@ -100,8 +121,8 @@
 
 /* Scene Card - Fixed Height */
 .hon-scene-card {
-  background: #1a1a1a;
-  border: 2px solid #333;
+  background: var(--hon-bg-card);
+  border: 2px solid var(--hon-gray-darker);
   border-radius: 12px;
   overflow: hidden;
   transition: all 0.3s ease;
@@ -137,23 +158,23 @@
 .hon-vs-text {
   font-size: 3rem;
   font-weight: bold;
-  color: #dc3545;
+  color: var(--hon-danger);
   text-shadow: 0 0 20px rgba(220, 53, 69, 0.5);
 }
 
 .hon-scene-card:hover {
-  border-color: #0d6efd;
+  border-color: var(--hon-primary);
   transform: translateY(-5px);
   box-shadow: 0 10px 30px rgba(13, 110, 253, 0.2);
 }
 
 .hon-scene-card.hon-winner {
-  border-color: #28a745 !important;
+  border-color: var(--hon-success) !important;
   box-shadow: 0 0 30px rgba(40, 167, 69, 0.5);
 }
 
 .hon-scene-card.hon-loser {
-  border-color: #dc3545 !important;
+  border-color: var(--hon-danger) !important;
   opacity: 0.7;
 }
 
@@ -190,8 +211,8 @@
 .hon-rating-display {
   font-size: 3rem;
   font-weight: bold;
-  color: #fff;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  color: var(--hon-white);
+  text-shadow: 0 2px 10px var(--hon-shadow-text);
 }
 
 .hon-rating-change {
@@ -241,7 +262,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--hon-image-bg, #1a1a1a);
+  background: var(--hon-image-bg, var(--hon-bg-card));
 }
 
 .hon-scene-image {
@@ -261,14 +282,14 @@
   width: auto;
   height: auto;
   object-fit: contain;
-  background: #1a1a1a;
+  background: var(--hon-bg-card);
 }
 
 .hon-scene-image.hon-no-image {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1a1a1a;
+  background: var(--hon-bg-card);
   color: #555;
   font-size: 1rem;
 }
@@ -301,8 +322,8 @@
   position: absolute;
   bottom: 10px;
   right: 10px;
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
+  background: var(--hon-overlay-dark);
+  color: var(--hon-white);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 0.85rem;
@@ -334,7 +355,7 @@
 }
 
 .hon-image-rank-overlay .hon-image-rank {
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--hon-overlay-dark);
   padding: 6px 12px;
   border-radius: 20px;
   font-size: 0.9rem;
@@ -347,7 +368,7 @@
   bottom: 10px;
   left: 10px;
   background: rgba(0, 0, 0, 0.7);
-  color: #aaa;
+  color: var(--hon-gray-light);
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 0.75rem;
@@ -375,7 +396,7 @@
 }
 
 .hon-scene-body:hover .hon-choose-btn {
-  background: #0a58ca;
+  background: var(--hon-primary-dark);
 }
 
 .hon-scene-info {
@@ -387,7 +408,7 @@
   font-size: 1.2rem;
   margin-bottom: 10px;
   line-height: 1.3;
-  color: #fff;
+  color: var(--hon-white);
 }
 
 .hon-scene-title-row {
@@ -409,7 +430,7 @@
 .hon-scene-rank {
   font-size: 1.1rem;
   font-weight: bold;
-  color: #ffc107;
+  color: var(--hon-warning);
   white-space: nowrap;
 }
 
@@ -418,12 +439,12 @@
   flex-direction: column;
   gap: 5px;
   font-size: 0.9rem;
-  color: #aaa;
+  color: var(--hon-gray-light);
   margin-bottom: 10px;
 }
 
 .hon-meta-item strong {
-  color: #888;
+  color: var(--hon-gray);
 }
 
 /* Scene Tags */
@@ -440,7 +461,7 @@
 }
 
 .hon-tag {
-  background: #333;
+  background: var(--hon-gray-darker);
   color: #ccc;
   padding: 2px 8px;
   border-radius: 12px;
@@ -448,7 +469,7 @@
 }
 
 .hon-none {
-  color: #666;
+  color: var(--hon-gray-mid);
   font-style: italic;
 }
 
@@ -459,8 +480,8 @@
   font-size: 1.2rem;
   font-weight: bold;
   transition: all 0.2s ease;
-  background: #0d6efd;
-  color: #fff;
+  background: var(--hon-primary);
+  color: var(--hon-white);
   text-align: center;
 }
 
@@ -480,13 +501,13 @@
 
 .hon-keyboard-hint {
   font-size: 0.85rem;
-  color: #666;
+  color: var(--hon-gray-mid);
   padding-top: 10px;
 }
 
 .hon-keyboard-hint span {
-  color: #888;
-  background: #2a2a2a;
+  color: var(--hon-gray);
+  background: var(--hon-bg-input);
   padding: 2px 8px;
   border-radius: 4px;
   font-family: monospace;
@@ -504,7 +525,7 @@
   text-align: center;
   padding: 60px 20px;
   font-size: 1.2rem;
-  color: #888;
+  color: var(--hon-gray);
   width: 100%;
   min-height: 350px;
   display: flex;
@@ -513,7 +534,7 @@
 }
 
 .hon-error {
-  color: #dc3545;
+  color: var(--hon-danger);
 }
 
 /* Button overrides for Stash theme compatibility */
@@ -532,20 +553,20 @@
 }
 
 .hon-container .btn-primary {
-  background-color: #0d6efd;
-  border-color: #0d6efd;
-  color: #fff;
+  background-color: var(--hon-primary);
+  border-color: var(--hon-primary);
+  color: var(--hon-white);
 }
 
 .hon-container .btn-primary:hover {
-  background-color: #0a58ca;
-  border-color: #0a58ca;
+  background-color: var(--hon-primary-dark);
+  border-color: var(--hon-primary-dark);
 }
 
 .hon-container .btn-secondary {
   background-color: #6c757d;
   border-color: #6c757d;
-  color: #fff;
+  color: var(--hon-white);
 }
 
 .hon-container .btn-secondary:hover {
@@ -583,7 +604,7 @@
   overflow: auto;
   background: #121212;
   border-radius: 12px;
-  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 25px 80px var(--hon-overlay-dark);
 }
 
 @media (max-width: 1200px) {
@@ -599,7 +620,7 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #0d6efd, #0a58ca);
+  background: linear-gradient(135deg, var(--hon-primary), var(--hon-primary-dark));
   color: white;
   border: none;
   font-size: 24px;
@@ -620,7 +641,7 @@
 .hon-nav-btn {
   background: transparent;
   border: none;
-  color: #fff;
+  color: var(--hon-white);
   font-size: 1.3rem;
   line-height: 1;
   cursor: pointer;
@@ -651,7 +672,7 @@
   right: 20px;
   background: transparent;
   border: none;
-  color: #888;
+  color: var(--hon-gray);
   font-size: 1.8rem;
   cursor: pointer;
   z-index: 10;
@@ -659,7 +680,7 @@
 }
 
 .hon-modal-close:hover {
-  color: #fff;
+  color: var(--hon-white);
 }
 
 /* Scrollbar styling for modal */
@@ -668,11 +689,11 @@
 }
 
 .hon-modal-content::-webkit-scrollbar-track {
-  background: #1a1a1a;
+  background: var(--hon-bg-card);
 }
 
 .hon-modal-content::-webkit-scrollbar-thumb {
-  background: #444;
+  background: var(--hon-gray-dark);
   border-radius: 4px;
 }
 
@@ -714,7 +735,7 @@
 .hon-victory-title {
   font-size: 2.5rem;
   font-weight: bold;
-  color: #ffc107;
+  color: var(--hon-warning);
   margin: 10px 0;
   text-shadow: 0 0 20px rgba(255, 193, 7, 0.5);
 }
@@ -724,7 +745,7 @@
   max-width: 400px;
   border-radius: 12px;
   overflow: hidden;
-  border: 4px solid #ffc107;
+  border: 4px solid var(--hon-warning);
   box-shadow: 0 0 40px rgba(255, 193, 7, 0.3);
   margin: 15px 0;
 }
@@ -739,13 +760,13 @@
 
 .hon-victory-name {
   font-size: 1.3rem;
-  color: #fff;
+  color: var(--hon-white);
   margin: 8px 0;
 }
 
 .hon-victory-stats {
   font-size: 1rem;
-  color: #888;
+  color: var(--hon-gray);
   margin-bottom: 20px;
 }
 
@@ -780,7 +801,7 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: 8px;
-  background: var(--hon-card-bg, #fff);
+  background: var(--hon-card-bg, var(--hon-white));
   box-shadow: var(--hon-card-shadow, 0 2px 8px rgba(0,0,0,0.06));
 }
 
@@ -789,7 +810,7 @@
   right: 8px;
   bottom: 8px;
   font-size: 12px;
-  color: #fff;
+  color: var(--hon-white);
   background: rgba(0,0,0,0.55);
   padding: 3px 6px;
   border-radius: 6px;
@@ -815,13 +836,13 @@
 
 .hon-performer-rank {
   font-weight: 700;
-  color: var(--hon-rank-color, #333);
+  color: var(--hon-rank-color, var(--hon-gray-darker));
   margin-left: 8px;
 }
 
 /* Streak & choose button */
-.hon-streak-badge { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); color: #fff; padding: 4px 8px; border-radius: 12px; font-size: 12px; }
-.hon-choose-btn { margin-top: 8px; padding: 8px 10px; background: var(--hon-btn-bg, #0d6efd); color: #fff; border-radius: 6px; text-align: center; cursor: pointer; }
+.hon-streak-badge { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); color: var(--hon-white); padding: 4px 8px; border-radius: 12px; font-size: 12px; }
+.hon-choose-btn { margin-top: 8px; padding: 8px 10px; background: var(--hon-btn-bg, var(--hon-primary)); color: var(--hon-white); border-radius: 6px; text-align: center; cursor: pointer; }
 
 /* If JS already added paired hon-scene-* classes, let those rules take precedence.
    Keeping empty grouped selectors below ensures future scene rules that use
@@ -847,15 +868,15 @@
 .hon-performer-selection {
   margin-bottom: 30px;
   padding: 20px;
-  background: #1a1a1a;
-  border: 2px solid #333;
+  background: var(--hon-bg-card);
+  border: 2px solid var(--hon-gray-darker);
   border-radius: 12px;
 }
 
 .hon-selection-title {
   font-size: 1.3rem;
   font-weight: bold;
-  color: #fff;
+  color: var(--hon-white);
   margin-bottom: 20px;
   text-align: center;
 }
@@ -870,7 +891,7 @@
 
 .hon-selection-card {
   background: #252525;
-  border: 2px solid #444;
+  border: 2px solid var(--hon-gray-dark);
   border-radius: 10px;
   overflow: hidden;
   cursor: pointer;
@@ -880,7 +901,7 @@
 }
 
 .hon-selection-card:hover {
-  border-color: #0d6efd;
+  border-color: var(--hon-primary);
   transform: translateY(-5px);
   box-shadow: 0 8px 20px rgba(13, 110, 253, 0.3);
 }
@@ -889,7 +910,7 @@
   width: 100%;
   aspect-ratio: 2/3;
   overflow: hidden;
-  background: #333;
+  background: var(--hon-gray-darker);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -905,7 +926,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #888;
+  color: var(--hon-gray);
   font-size: 0.9rem;
 }
 
@@ -917,7 +938,7 @@
 .hon-selection-name {
   font-size: 0.95rem;
   font-weight: bold;
-  color: #fff;
+  color: var(--hon-white);
   margin-bottom: 5px;
   white-space: nowrap;
   overflow: hidden;
@@ -926,7 +947,7 @@
 
 .hon-selection-rating {
   font-size: 0.85rem;
-  color: #888;
+  color: var(--hon-gray);
 }
 
 @media (max-width: 768px) {
@@ -968,7 +989,7 @@
 
 .hon-stats-modal-dialog {
   position: relative;
-  background: #1a1a1a;
+  background: var(--hon-bg-card);
   border-radius: 12px;
   max-width: 95%;
   max-height: 90vh;
@@ -980,7 +1001,7 @@
 
 .hon-stats-title {
   font-size: 2rem;
-  color: #fff;
+  color: var(--hon-white);
   margin: 0 0 20px 0;
   text-align: center;
 }
@@ -991,7 +1012,7 @@
   gap: 15px;
   margin-bottom: 30px;
   padding: 20px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hon-overlay-light);
   border-radius: 8px;
 }
 
@@ -1004,14 +1025,14 @@
 
 .hon-stats-summary-label {
   font-size: 0.9rem;
-  color: #888;
+  color: var(--hon-gray);
   margin-bottom: 5px;
 }
 
 .hon-stats-summary-value {
   font-size: 1.5rem;
   font-weight: bold;
-  color: #0d6efd;
+  color: var(--hon-primary);
 }
 
 .hon-stats-table-container {
@@ -1025,7 +1046,7 @@
 }
 
 .hon-stats-table thead {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hon-overlay-medium);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -1035,27 +1056,27 @@
   padding: 12px 8px;
   text-align: left;
   font-weight: 600;
-  color: #fff;
-  border-bottom: 2px solid #444;
+  color: var(--hon-white);
+  border-bottom: 2px solid var(--hon-gray-dark);
 }
 
 .hon-stats-table td {
   padding: 10px 8px;
   color: #ccc;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--hon-gray-darker);
 }
 
 .hon-stats-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hon-overlay-light);
 }
 
 .hon-stats-rank {
   font-weight: bold;
-  color: #ffc107;
+  color: var(--hon-warning);
 }
 
 .hon-stats-name a {
-  color: #0d6efd;
+  color: var(--hon-primary);
   text-decoration: none;
 }
 
@@ -1065,15 +1086,15 @@
 
 .hon-stats-rating {
   font-weight: bold;
-  color: #28a745;
+  color: var(--hon-success);
 }
 
 .hon-stats-positive {
-  color: #28a745;
+  color: var(--hon-success);
 }
 
 .hon-stats-negative {
-  color: #dc3545;
+  color: var(--hon-danger);
 }
 
 .hon-stats-neutral {
@@ -1085,12 +1106,12 @@
 .hon-stats-error {
   padding: 40px;
   text-align: center;
-  color: #888;
+  color: var(--hon-gray);
   font-size: 1.1rem;
 }
 
 .hon-stats-error {
-  color: #dc3545;
+  color: var(--hon-danger);
 }
 
 /* Stats Tabs */
@@ -1098,7 +1119,7 @@
   display: flex;
   gap: 10px;
   margin-top: 20px;
-  border-bottom: 2px solid #444;
+  border-bottom: 2px solid var(--hon-gray-dark);
 }
 
 .hon-stats-tab {
@@ -1106,20 +1127,20 @@
   background: transparent;
   border: none;
   border-bottom: 3px solid transparent;
-  color: #888;
+  color: var(--hon-gray);
   cursor: pointer;
   font-size: 1rem;
   transition: all 0.2s ease;
 }
 
 .hon-stats-tab:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--hon-white);
+  background: var(--hon-overlay-light);
 }
 
 .hon-stats-tab.active {
-  color: #0d6efd;
-  border-bottom-color: #0d6efd;
+  color: var(--hon-primary);
+  border-bottom-color: var(--hon-primary);
 }
 
 .hon-stats-tab-content {
@@ -1142,13 +1163,13 @@
 /* Shared Group Toggle Styles */
 .hon-group-toggle {
   font-size: 0.9rem;
-  color: #888;
+  color: var(--hon-gray);
   min-width: 20px;
 }
 
 /* Bar Graph Group Styles */
 .hon-bar-group {
-  border: 1px solid #333;
+  border: 1px solid var(--hon-gray-darker);
   border-radius: 8px;
   margin-bottom: 10px;
   overflow: hidden;
@@ -1159,19 +1180,19 @@
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hon-overlay-light);
   cursor: pointer;
   user-select: none;
   transition: background 0.2s ease;
 }
 
 .hon-bar-group-header:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hon-overlay-medium);
 }
 
 .hon-bar-group-label {
   font-weight: 600;
-  color: #fff;
+  color: var(--hon-white);
   font-size: 0.95rem;
   min-width: 70px;
   flex-shrink: 0;
@@ -1188,7 +1209,7 @@
 }
 
 .hon-bar-group-bar {
-  background: linear-gradient(90deg, #0d6efd 0%, #0a58ca 100%);
+  background: linear-gradient(90deg, var(--hon-primary) 0%, var(--hon-primary-dark) 100%);
   height: 100%;
   border-radius: 4px;
   display: flex;
@@ -1200,27 +1221,27 @@
 }
 
 .hon-bar-group-bar-count {
-  color: #fff;
+  color: var(--hon-white);
   font-weight: 600;
   font-size: 0.85rem;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 1px 2px var(--hon-shadow-text);
 }
 
 /* Legacy styles for backward compatibility */
 .hon-bar-group-title {
   font-weight: 600;
-  color: #fff;
+  color: var(--hon-white);
   font-size: 1rem;
 }
 
 .hon-bar-group-count {
-  color: #888;
+  color: var(--hon-gray);
   font-size: 0.9rem;
   margin-left: auto;
 }
 
 .hon-bar-group-content {
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--hon-gray-darker);
   padding: 16px;
 }
 
@@ -1234,7 +1255,7 @@
 }
 
 .hon-rank-group {
-  border: 1px solid #333;
+  border: 1px solid var(--hon-gray-darker);
   border-radius: 8px;
   margin-bottom: 10px;
   overflow: hidden;
@@ -1245,30 +1266,30 @@
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hon-overlay-light);
   cursor: pointer;
   user-select: none;
   transition: background 0.2s ease;
 }
 
 .hon-rank-group-header:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hon-overlay-medium);
 }
 
 .hon-rank-group-title {
   font-weight: 600;
-  color: #fff;
+  color: var(--hon-white);
   font-size: 1rem;
 }
 
 .hon-rank-group-count {
-  color: #888;
+  color: var(--hon-gray);
   font-size: 0.9rem;
   margin-left: auto;
 }
 
 .hon-rank-group-content {
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--hon-gray-darker);
 }
 
 .hon-rank-group-content.collapsed {
@@ -1280,7 +1301,7 @@
 }
 
 .hon-rank-group-content .hon-stats-table td {
-  border-bottom: 1px solid #2a2a2a;
+  border-bottom: 1px solid var(--hon-bg-input);
 }
 
 .hon-rank-group-content .hon-stats-table tbody tr:last-child td {
@@ -1294,16 +1315,16 @@
 }
 
 .hon-stats-table-header thead {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hon-overlay-medium);
 }
 
 .hon-stats-table-header th {
-  border-bottom: 2px solid #444;
+  border-bottom: 2px solid var(--hon-gray-dark);
 }
 
 .hon-bar-graph-title {
   font-size: 1.3rem;
-  color: #fff;
+  color: var(--hon-white);
   margin-bottom: 20px;
   text-align: center;
 }
@@ -1325,13 +1346,13 @@
 
 .hon-bar-label {
   font-size: 0.95rem;
-  color: #aaa;
+  color: var(--hon-gray-light);
   text-align: right;
   font-weight: 500;
 }
 
 .hon-bar-wrapper {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hon-overlay-light);
   border-radius: 4px;
   height: 32px;
   position: relative;
@@ -1339,7 +1360,7 @@
 }
 
 .hon-bar {
-  background: linear-gradient(90deg, #0d6efd 0%, #0a58ca 100%);
+  background: linear-gradient(90deg, var(--hon-primary) 0%, var(--hon-primary-dark) 100%);
   height: 100%;
   border-radius: 4px;
   display: flex;
@@ -1351,10 +1372,10 @@
 }
 
 .hon-bar-count {
-  color: #fff;
+  color: var(--hon-white);
   font-weight: 600;
   font-size: 0.9rem;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 1px 2px var(--hon-shadow-text);
 }
 
 @media (max-width: 768px) {
@@ -1432,9 +1453,9 @@
   border-radius: 20px;
   font-size: 0.9rem;
   font-weight: 600;
-  background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
-  border: 1px solid #444;
-  color: #fff;
+  background: linear-gradient(135deg, var(--hon-bg-input), var(--hon-bg-card));
+  border: 1px solid var(--hon-gray-dark);
+  color: var(--hon-white);
   margin-left: 10px;
   vertical-align: middle;
   cursor: default;
@@ -1443,7 +1464,7 @@
 
 .hon-battle-rank-badge:hover {
   transform: scale(1.05);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px var(--hon-shadow-text);
 }
 
 .hon-rank-emoji {
@@ -1455,7 +1476,7 @@
 }
 
 .hon-rank-total {
-  color: #888;
+  color: var(--hon-gray);
   font-size: 0.85em;
 }
 
@@ -1561,19 +1582,19 @@
 
 /* Star States */
 .hon-star-filled {
-  color: #ffc107;
+  color: var(--hon-warning);
   text-shadow: 0 0 4px rgba(255, 193, 7, 0.5);
 }
 
 .hon-star-half {
-  color: #ffc107;
+  color: var(--hon-warning);
   text-shadow: 0 0 4px rgba(255, 193, 7, 0.5);
   opacity: 0.7;
 }
 
 .hon-star-empty {
   color: #39444f;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 3px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 3px var(--hon-shadow-text);
 }
 
 .hon-star-preview {
