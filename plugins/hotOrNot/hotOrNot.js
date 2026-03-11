@@ -623,7 +623,8 @@
     switch (type) {
       case 'tags':
       case 'studios': {
-        // Tags/Studios filter: value contains items (IDs or objects) and depth
+        // Tags/Studios share identical filter structure; `type` is used as the
+        // computed property key so the result is { tags: {...} } or { studios: {...} }.
         if (value && value.items && value.items.length > 0) {
           const ids = value.items.map(item =>
             (typeof item === 'object' && item !== null && 'id' in item) ? item.id : item
@@ -3586,6 +3587,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   /**
    * Get the winner and loser items from the current pair based on the chosen winner ID.
+   * Reads from the module-scoped `currentPair` state variable.
    * @param {string} winnerId - ID of the winner
    * @returns {{ winnerItem: Object, loserItem: Object }} Winner and loser objects
    */
