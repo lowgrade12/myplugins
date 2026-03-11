@@ -21,6 +21,20 @@
   let pluginConfigCache = null; // Cached plugin configuration from Stash settings
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
 
+  /**
+   * Reset all gauntlet/champion mode state to initial values.
+   * Call when starting a new run, switching modes, or after victory/placement.
+   */
+  function resetGauntletState() {
+    gauntletChampion = null;
+    gauntletWins = 0;
+    gauntletChampionRank = 0;
+    gauntletDefeated = [];
+    gauntletFalling = false;
+    gauntletFallingItem = null;
+    gauntletFallingTested = [];
+  }
+
   // All genders supported by Stash, with display labels
   const ALL_GENDERS = [
     { value: "FEMALE", label: "Female" },
@@ -254,6 +268,18 @@
     paths {
       thumbnail
       image
+    }
+  `;
+
+  // Reusable GraphQL query templates (avoids duplicating the same query 6+ times)
+  const FIND_PERFORMERS_QUERY = `
+    query FindPerformers($performer_filter: PerformerFilterType, $filter: FindFilterType) {
+      findPerformers(performer_filter: $performer_filter, filter: $filter) {
+        count
+        performers {
+          ${PERFORMER_FRAGMENT}
+        }
+      }
     }
   `;
 
@@ -539,52 +565,79 @@
       return buildNullModifierFilter(type, modifier);
     }
 
+    // ---- Lookup-table-driven filters ----
+    // String filters: type -> { field, defaultModifier }
+    const STRING_FILTERS = {
+      'ethnicity':     { field: 'ethnicity',     defaultModifier: 'EQUALS' },
+      'country':       { field: 'country',       defaultModifier: 'EQUALS' },
+      'hair_color':    { field: 'hair_color',    defaultModifier: 'EQUALS' },
+      'eye_color':     { field: 'eye_color',     defaultModifier: 'EQUALS' },
+      'name':          { field: 'name',          defaultModifier: 'INCLUDES' },
+      'alias':         { field: 'aliases',       defaultModifier: 'INCLUDES' },
+      'aliases':       { field: 'aliases',       defaultModifier: 'INCLUDES' },
+      'details':       { field: 'details',       defaultModifier: 'INCLUDES' },
+      'career_length': { field: 'career_length', defaultModifier: 'INCLUDES' },
+      'tattoos':       { field: 'tattoos',       defaultModifier: 'INCLUDES' },
+      'piercings':     { field: 'piercings',     defaultModifier: 'INCLUDES' },
+      'url':           { field: 'url',           defaultModifier: 'INCLUDES' },
+      'birthdate':     { field: 'birthdate',     defaultModifier: 'EQUALS' },
+      'death_date':    { field: 'death_date',    defaultModifier: 'EQUALS' },
+      'created_at':    { field: 'created_at',    defaultModifier: 'GREATER_THAN' },
+      'updated_at':    { field: 'updated_at',    defaultModifier: 'GREATER_THAN' }
+    };
+
+    // Numeric filters: type -> { field, defaultModifier }
+    const NUMERIC_FILTERS = {
+      'rating':        { field: 'rating100',     defaultModifier: 'GREATER_THAN' },
+      'rating100':     { field: 'rating100',     defaultModifier: 'GREATER_THAN' },
+      'age':           { field: 'age',           defaultModifier: 'EQUALS' },
+      'scene_count':   { field: 'scene_count',   defaultModifier: 'GREATER_THAN' },
+      'image_count':   { field: 'image_count',   defaultModifier: 'GREATER_THAN' },
+      'gallery_count': { field: 'gallery_count', defaultModifier: 'GREATER_THAN' },
+      'o_counter':     { field: 'o_counter',     defaultModifier: 'GREATER_THAN' }
+    };
+
+    // Handle string filters via lookup table
+    if (STRING_FILTERS[type]) {
+      if (value) {
+        const extracted = extractSimpleValue(value);
+        if (extracted) {
+          const { field, defaultModifier } = STRING_FILTERS[type];
+          return { [field]: { value: extracted, modifier: modifier || defaultModifier } };
+        }
+      }
+      return null;
+    }
+
+    // Handle numeric filters via lookup table
+    if (NUMERIC_FILTERS[type]) {
+      if (value != null) {
+        const { field, defaultModifier } = NUMERIC_FILTERS[type];
+        return { [field]: createNumericFilterObject(value, modifier, defaultModifier) };
+      }
+      return null;
+    }
+
     // Map URL criterion types to GraphQL filter fields
     // The filter structure varies based on the criterion type
     switch (type) {
       case 'tags':
-        // Tags filter: value contains items (tag IDs or tag objects) and depth
-        // Stash URL criteria may send items as objects like {id: "1", label: "JAV"}
-        // or just strings/numbers representing IDs
+      case 'studios': {
+        // Tags/Studios filter: value contains items (IDs or objects) and depth
         if (value && value.items && value.items.length > 0) {
-          // Extract IDs from items - handle both object format and direct ID format
-          const tagIds = value.items.map(item => {
-            if (typeof item === 'object' && item !== null && 'id' in item) {
-              return item.id;
-            }
-            return item;
-          });
+          const ids = value.items.map(item =>
+            (typeof item === 'object' && item !== null && 'id' in item) ? item.id : item
+          );
           return {
-            tags: {
-              value: tagIds,
+            [type]: {
+              value: ids,
               modifier: modifier || 'INCLUDES',
               depth: value.depth || 0
             }
           };
         }
         break;
-        
-      case 'studios':
-        // Studios filter
-        // Stash URL criteria may send items as objects like {id: "1", label: "Studio Name"}
-        // or just strings/numbers representing IDs
-        if (value && value.items && value.items.length > 0) {
-          // Extract IDs from items - handle both object format and direct ID format
-          const studioIds = value.items.map(item => {
-            if (typeof item === 'object' && item !== null && 'id' in item) {
-              return item.id;
-            }
-            return item;
-          });
-          return {
-            studios: {
-              value: studioIds,
-              modifier: modifier || 'INCLUDES',
-              depth: value.depth || 0
-            }
-          };
-        }
-        break;
+      }
         
       case 'gender':
         // Gender filter
@@ -632,125 +685,10 @@
       case 'favorite':
       case 'filter_favorites':
         // Favorite filter
-        if (value !== undefined && value !== null) {
+        if (value != null) {
           const favValue = extractSimpleValue(value);
           return {
             filter_favorites: favValue === true || favValue === 'true'
-          };
-        }
-        break;
-        
-      case 'rating':
-      case 'rating100':
-        // Rating filter
-        if (value !== undefined && value !== null) {
-          return {
-            rating100: createNumericFilterObject(value, modifier, 'GREATER_THAN')
-          };
-        }
-        break;
-        
-      case 'age':
-        // Age filter
-        if (value !== undefined && value !== null) {
-          return {
-            age: createNumericFilterObject(value, modifier, 'EQUALS')
-          };
-        }
-        break;
-        
-      case 'ethnicity':
-        // Ethnicity filter
-        if (value) {
-          const ethnicityValue = extractSimpleValue(value);
-          if (ethnicityValue) {
-            return {
-              ethnicity: {
-                value: ethnicityValue,
-                modifier: modifier || 'EQUALS'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'country':
-        // Country filter
-        if (value) {
-          const countryValue = extractSimpleValue(value);
-          if (countryValue) {
-            return {
-              country: {
-                value: countryValue,
-                modifier: modifier || 'EQUALS'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'hair_color':
-        // Hair color filter
-        if (value) {
-          const hairColorValue = extractSimpleValue(value);
-          if (hairColorValue) {
-            return {
-              hair_color: {
-                value: hairColorValue,
-                modifier: modifier || 'EQUALS'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'eye_color':
-        // Eye color filter
-        if (value) {
-          const eyeColorValue = extractSimpleValue(value);
-          if (eyeColorValue) {
-            return {
-              eye_color: {
-                value: eyeColorValue,
-                modifier: modifier || 'EQUALS'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'scene_count':
-        // Scene count filter
-        if (value !== undefined && value !== null) {
-          return {
-            scene_count: createNumericFilterObject(value, modifier, 'GREATER_THAN')
-          };
-        }
-        break;
-        
-      case 'image_count':
-        // Image count filter
-        if (value !== undefined && value !== null) {
-          return {
-            image_count: createNumericFilterObject(value, modifier, 'GREATER_THAN')
-          };
-        }
-        break;
-        
-      case 'gallery_count':
-        // Gallery count filter
-        if (value !== undefined && value !== null) {
-          return {
-            gallery_count: createNumericFilterObject(value, modifier, 'GREATER_THAN')
-          };
-        }
-        break;
-        
-      case 'o_counter':
-        // O-counter filter
-        if (value !== undefined && value !== null) {
-          return {
-            o_counter: createNumericFilterObject(value, modifier, 'GREATER_THAN')
           };
         }
         break;
@@ -760,7 +698,6 @@
         // Stash ID filter - performer has a stash ID at a specific endpoint
         // Note: This filter intentionally does NOT use extractSimpleValue() because
         // the value itself is expected to be an object with stash_id and/or endpoint properties
-        // The structure depends on what's in the value object
         if (value && typeof value === 'object') {
           const stashIdFilter = {};
           if (value.stash_id) {
@@ -785,172 +722,6 @@
           if (missingValue) {
             return {
               is_missing: missingValue
-            };
-          }
-        }
-        break;
-        
-      case 'name':
-        // Name filter (text search)
-        if (value) {
-          const nameValue = extractSimpleValue(value);
-          if (nameValue) {
-            return {
-              name: {
-                value: nameValue,
-                modifier: modifier || 'INCLUDES'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'alias':
-      case 'aliases':
-        // Alias filter
-        if (value) {
-          const aliasValue = extractSimpleValue(value);
-          if (aliasValue) {
-            return {
-              aliases: {
-                value: aliasValue,
-                modifier: modifier || 'INCLUDES'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'details':
-        // Details/bio filter
-        if (value) {
-          const detailsValue = extractSimpleValue(value);
-          if (detailsValue) {
-            return {
-              details: {
-                value: detailsValue,
-                modifier: modifier || 'INCLUDES'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'career_length':
-        // Career length filter
-        if (value) {
-          const careerValue = extractSimpleValue(value);
-          if (careerValue) {
-            return {
-              career_length: {
-                value: careerValue,
-                modifier: modifier || 'INCLUDES'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'tattoos':
-        // Tattoos filter
-        if (value) {
-          const tattoosValue = extractSimpleValue(value);
-          if (tattoosValue) {
-            return {
-              tattoos: {
-                value: tattoosValue,
-                modifier: modifier || 'INCLUDES'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'piercings':
-        // Piercings filter
-        if (value) {
-          const piercingsValue = extractSimpleValue(value);
-          if (piercingsValue) {
-            return {
-              piercings: {
-                value: piercingsValue,
-                modifier: modifier || 'INCLUDES'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'url':
-        // URL filter
-        if (value) {
-          const urlValue = extractSimpleValue(value);
-          if (urlValue) {
-            return {
-              url: {
-                value: urlValue,
-                modifier: modifier || 'INCLUDES'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'birthdate':
-        // Birthdate filter
-        if (value) {
-          const birthdateValue = extractSimpleValue(value);
-          if (birthdateValue) {
-            return {
-              birthdate: {
-                value: birthdateValue,
-                modifier: modifier || 'EQUALS'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'death_date':
-        // Death date filter
-        if (value) {
-          const deathDateValue = extractSimpleValue(value);
-          if (deathDateValue) {
-            return {
-              death_date: {
-                value: deathDateValue,
-                modifier: modifier || 'EQUALS'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'created_at':
-        // Created at filter
-        if (value) {
-          const createdValue = extractSimpleValue(value);
-          if (createdValue) {
-            return {
-              created_at: {
-                value: createdValue,
-                modifier: modifier || 'GREATER_THAN'
-              }
-            };
-          }
-        }
-        break;
-        
-      case 'updated_at':
-        // Updated at filter
-        if (value) {
-          const updatedValue = extractSimpleValue(value);
-          if (updatedValue) {
-            return {
-              updated_at: {
-                value: updatedValue,
-                modifier: modifier || 'GREATER_THAN'
-              }
             };
           }
         }
@@ -1066,12 +837,7 @@
     if (actionsEl) actionsEl.style.display = "none";
     
     // Reset state
-    gauntletFalling = false;
-    gauntletFallingItem = null;
-    gauntletFallingTested = [];
-    gauntletChampion = null;
-    gauntletWins = 0;
-    gauntletDefeated = [];
+    resetGauntletState();
     
     // Attach button handler
     const newBtn = comparisonArea.querySelector("#hon-new-gauntlet");
@@ -1144,24 +910,33 @@
   }
 
   /**
+   * Create a default (empty) stats object.
+   * @param {number} [totalMatches=0] - Override for total_matches
+   * @returns {Object} Default stats with all fields initialised
+   */
+  function defaultStats(totalMatches = 0) {
+    return {
+      total_matches: totalMatches,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      current_streak: 0,
+      best_streak: 0,
+      worst_streak: 0,
+      last_match: null,
+      recent_results: 0,
+      last_rating_change: 0
+    };
+  }
+
+  /**
    * Parse ELO match data from performer custom_fields
    * @param {Object} performer - Performer object from GraphQL
    * @returns {Object} stats - ELO statistics object with matches, wins, losses, etc.
    */
   function parsePerformerEloData(performer) {
     if (!performer || !performer.custom_fields) {
-      return {
-        total_matches: 0,
-        wins: 0,
-        losses: 0,
-        draws: 0,
-        current_streak: 0,
-        best_streak: 0,
-        worst_streak: 0,
-        last_match: null,
-        recent_results: 0,
-        last_rating_change: 0
-      };
+      return defaultStats();
     }
     
     // Check for Approach 2 stats (comprehensive tracking)
@@ -1189,33 +964,10 @@
     const eloMatches = performer.custom_fields.elo_matches;
     if (eloMatches) {
       const matches = parseInt(eloMatches, 10);
-      return {
-        total_matches: isNaN(matches) ? 0 : matches,
-        wins: 0,
-        losses: 0,
-        draws: 0,
-        current_streak: 0,
-        best_streak: 0,
-        worst_streak: 0,
-        last_match: null,
-        recent_results: 0,
-        last_rating_change: 0
-      };
+      return defaultStats(isNaN(matches) ? 0 : matches);
     }
     
-    // No data - return empty stats
-    return {
-      total_matches: 0,
-      wins: 0,
-      losses: 0,
-      draws: 0,
-      current_streak: 0,
-      best_streak: 0,
-      worst_streak: 0,
-      last_match: null,
-      recent_results: 0,
-      last_rating_change: 0
-    };
+    return defaultStats();
   }
 
   /**
@@ -1971,17 +1723,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     throw new Error("Not enough performers for comparison. You need at least 2 non-male performers.");
   }
 
-  const performerQuery = `
-    query FindRandomPerformers($performer_filter: PerformerFilterType, $filter: FindFilterType) {
-      findPerformers(performer_filter: $performer_filter, filter: $filter) {
-        performers {
-          ${PERFORMER_FRAGMENT}
-        }
-      }
-    }
-  `;
-
-  const result = await graphqlQuery(performerQuery, {
+  const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
     performer_filter: performerFilter,
     filter: {
       per_page: Math.min(100, totalPerformers),
@@ -2169,19 +1911,9 @@ async function fetchPerformerCount(performerFilter = {}) {
   // Swiss mode: fetch two performers with similar ratings
   async function fetchSwissPairPerformers() {
     const performerFilter = getPerformerFilter();
-    
-    const performersQuery = `
-      query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
-        findPerformers(performer_filter: $performer_filter, filter: $filter) {
-          performers {
-            ${PERFORMER_FRAGMENT}
-          }
-        }
-      }
-    `;
 
     // Get all performers for accurate ranking
-    const result = await graphqlQuery(performersQuery, {
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
       performer_filter: performerFilter,
       filter: {
         per_page: -1,
@@ -2322,22 +2054,12 @@ async function fetchPerformerCount(performerFilter = {}) {
   // Gauntlet mode: champion vs next challenger
   async function fetchGauntletPairPerformers() {
     const performerFilter = getPerformerFilter();
-    const performersQuery = `
-      query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
-        findPerformers(performer_filter: $performer_filter, filter: $filter) {
-          count
-          performers {
-            ${PERFORMER_FRAGMENT}
-          }
-        }
-      }
-    `;
 
     // Get ALL performers sorted by rating descending (highest first)
-    const result = await graphqlQuery(performersQuery, {
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
       performer_filter: performerFilter,
       filter: {
-        per_page: -1, // Get all
+        per_page: -1,
         sort: "rating",
         direction: "DESC"
       }
@@ -2491,19 +2213,9 @@ async function fetchPerformerCount(performerFilter = {}) {
   // Champion mode: like gauntlet but winner stays on (no falling)
   async function fetchChampionPairPerformers() {
     const performerFilter = getPerformerFilter();
-    const performersQuery = `
-      query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
-        findPerformers(performer_filter: $performer_filter, filter: $filter) {
-          count
-          performers {
-            ${PERFORMER_FRAGMENT}
-          }
-        }
-      }
-    `;
 
     // Get ALL performers sorted by rating descending (highest first)
-    const result = await graphqlQuery(performersQuery, {
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
       performer_filter: performerFilter,
       filter: {
         per_page: -1,
@@ -2946,17 +2658,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       count = totalPerformers;
     }
 
-    const performerQuery = `
-      query FindRandomPerformers($performer_filter: PerformerFilterType, $filter: FindFilterType) {
-        findPerformers(performer_filter: $performer_filter, filter: $filter) {
-          performers {
-            ${PERFORMER_FRAGMENT}
-          }
-        }
-      }
-    `;
-
-    const result = await graphqlQuery(performerQuery, {
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
       performer_filter: performerFilter,
       filter: {
         per_page: Math.min(100, totalPerformers),
@@ -3024,12 +2726,8 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   function startGauntletWithPerformer(performer) {
     // Set the selected performer as the gauntlet champion
+    resetGauntletState();
     gauntletChampion = performer;
-    gauntletWins = 0;
-    gauntletDefeated = [];
-    gauntletFalling = false;
-    gauntletFallingItem = null;
-    gauntletFallingTested = [];
     
     // Hide the selection UI
     const selectionContainer = document.getElementById("hon-performer-selection");
@@ -3105,17 +2803,8 @@ async function fetchPerformerCount(performerFilter = {}) {
    */
   async function fetchAllPerformerStats() {
     const performerFilter = getPerformerFilter();
-    const performersQuery = `
-      query FindAllPerformers($performer_filter: PerformerFilterType, $filter: FindFilterType) {
-        findPerformers(performer_filter: $performer_filter, filter: $filter) {
-          performers {
-            ${PERFORMER_FRAGMENT}
-          }
-        }
-      }
-    `;
 
-    const result = await graphqlQuery(performersQuery, {
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
       performer_filter: performerFilter,
       filter: {
         per_page: -1,
@@ -3579,13 +3268,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           const newGauntletBtn = comparisonArea.querySelector("#hon-new-gauntlet");
           if (newGauntletBtn) {
             newGauntletBtn.addEventListener("click", () => {
-              gauntletChampion = null;
-              gauntletWins = 0;
-              gauntletChampionRank = 0;
-              gauntletDefeated = [];
-              gauntletFalling = false;
-              gauntletFallingItem = null;
-              gauntletFallingTested = [];
+              resetGauntletState();
               // Show the actions again
               if (actionsEl) actionsEl.style.display = "";
               loadNewPair();
@@ -3618,10 +3301,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           const newGauntletBtn = comparisonArea.querySelector("#hon-new-gauntlet");
           if (newGauntletBtn) {
             newGauntletBtn.addEventListener("click", () => {
-              gauntletChampion = null;
-              gauntletWins = 0;
-              gauntletChampionRank = 0;
-              gauntletDefeated = [];
+              resetGauntletState();
               if (actionsEl) actionsEl.style.display = "";
               loadNewPair();
             });
@@ -4690,12 +4370,7 @@ function addFloatingButton() {
           currentMode = newMode;
           
           // Reset gauntlet state when switching modes
-          gauntletChampion = null;
-          gauntletWins = 0;
-          gauntletDefeated = [];
-          gauntletFalling = false;
-          gauntletFallingItem = null;
-          gauntletFallingTested = [];
+          resetGauntletState();
           // Clear undo state on mode change (previous battle is no longer valid)
           previousBattle = null;
           
@@ -4731,12 +4406,7 @@ function addFloatingButton() {
         disableChoice = true;
         // Reset state on skip (only for performers)
         if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion")) {
-          gauntletChampion = null;
-          gauntletWins = 0;
-          gauntletDefeated = [];
-          gauntletFalling = false;
-          gauntletFallingItem = null;
-          gauntletFallingTested = [];
+          resetGauntletState();
         }
         // Apply ELO draw rating changes for skips in Swiss mode
         if (currentMode === "swiss" && currentPair.left && currentPair.right) {
@@ -4816,12 +4486,7 @@ function addFloatingButton() {
           if(disableChoice) return;
           disableChoice = true;
           if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion")) {
-            gauntletChampion = null;
-            gauntletWins = 0;
-            gauntletDefeated = [];
-            gauntletFalling = false;
-            gauntletFallingItem = null;
-            gauntletFallingTested = [];
+            resetGauntletState();
           }
           // Apply ELO draw rating changes for skips in Swiss mode
           if (currentMode === "swiss" && currentPair.left && currentPair.right) {
