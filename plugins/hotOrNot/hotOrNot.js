@@ -727,7 +727,33 @@
           }
         }
         break;
-        
+
+      case 'custom_fields': {
+        // Custom fields filter - supports filtering by any free-form custom field
+        // URL format: {"type":"custom_fields","value":[{"field":"hotornot_stats","modifier":"IS_NULL"}]}
+        // GraphQL expects: { custom_fields: [{ field: "...", modifier: "...", value: [...] }] }
+        if (value && Array.isArray(value) && value.length > 0) {
+          const customFieldCriteria = value
+            .filter(item => item && item.field)
+            .map(item => {
+              const criterion = {
+                field: item.field,
+                modifier: item.modifier || 'EQUALS'
+              };
+              // Only include value if present (IS_NULL/NOT_NULL don't need values)
+              if (item.value !== undefined && item.value !== null) {
+                criterion.value = Array.isArray(item.value) ? item.value : [item.value];
+              }
+              return criterion;
+            });
+
+          if (customFieldCriteria.length > 0) {
+            return { custom_fields: customFieldCriteria };
+          }
+        }
+        break;
+      }
+
       default:
         console.log(`[HotOrNot] Unknown criterion type: ${type}`);
         return null;
@@ -751,8 +777,14 @@
       if (filterPart) {
         console.log('[HotOrNot] Converted criterion:', criterion, 'to filter part:', filterPart);
         // Merge the filter part into the main filter
-        // Handle nested AND/OR logic if needed
-        Object.assign(filter, filterPart);
+        // Concatenate array-valued fields (e.g., custom_fields) instead of overwriting
+        for (const [key, val] of Object.entries(filterPart)) {
+          if (Array.isArray(val) && Array.isArray(filter[key])) {
+            filter[key] = filter[key].concat(val);
+          } else {
+            filter[key] = val;
+          }
+        }
       } else {
         console.log('[HotOrNot] Could not convert criterion:', criterion);
       }
