@@ -83,6 +83,7 @@ let pathChangeInitialized = false;
  * Register a callback to be invoked on any path change
  * (pushState, replaceState, or popstate).
  * History methods are only wrapped once regardless of how many callbacks are registered.
+ * @param {Function} callback - Function to invoke whenever the URL path changes.
  */
 function onPathChange(callback) {
   pathChangeCallbacks.push(callback);

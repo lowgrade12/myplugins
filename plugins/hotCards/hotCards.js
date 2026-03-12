@@ -12,7 +12,10 @@ const STYLES = {
   gold: getGoldStylePreset(),
   holo: getHoloStylePreset(),
 };
-// URL patterns for each card type
+/**
+ * URL regex patterns for each card type.
+ * Maps card type keys to the routes where that card type should be processed.
+ */
 const CARD_PATTERNS = {
   gallery: /^\/(galleries|(performers|studios|tags)\/\d+\/galleries|scenes\/\d+)$/,
   image: /^\/(images|(performers|studios|tags)\/\d+\/images|galleries\/\d+)$/,
