@@ -299,10 +299,11 @@ class StashFile:
             log.error(f"Failed to rename directory from {old_directory} to {new_directory_path}: {error}")
 
     def delete_empty_directory(self, old_path: pathlib.Path, new_path: pathlib.Path, dry_run: bool):
-        """Delete the original directory if it is empty after renaming.
+        """Delete empty directories left behind after renaming.
         
-        Note: This only deletes the immediate parent directory of the old file path
-        if it is empty. It does not recursively delete parent directories.
+        Walks up from the immediate parent directory of the old file path,
+        deleting each empty directory until a non-empty directory or the
+        filesystem root is reached.
         """
         if not self.config.delete_empty_directory:
             return
@@ -315,32 +316,43 @@ class StashFile:
             log.debug("File was renamed within the same directory, skipping empty directory check.")
             return
 
-        if not old_directory.exists():
-            log.debug(f"Directory {old_directory} does not exist, nothing to delete.")
-            return
+        current_directory = old_directory
 
-        # Check if the directory is empty
-        try:
-            directory_contents = list(old_directory.iterdir())
-        except OSError as error:
-            log.error(f"Failed to list contents of directory {old_directory}: {error}")
-            return
+        while True:
+            # Stop at the filesystem root
+            if current_directory == current_directory.parent:
+                break
 
-        if directory_contents:
-            log.debug(f"Directory {old_directory} is not empty, not deleting.")
-            return
+            if not current_directory.exists():
+                log.debug(f"Directory {current_directory} does not exist, nothing to delete.")
+                break
 
-        log.info(f"Deleting empty directory: {old_directory}")
+            # Check if the directory is empty
+            try:
+                directory_contents = list(current_directory.iterdir())
+            except OSError as error:
+                log.error(f"Failed to list contents of directory {current_directory}: {error}")
+                break
 
-        if dry_run:
-            log.info("Dry run enabled, not actually deleting the directory.")
-            return
+            if directory_contents:
+                log.debug(f"Directory {current_directory} is not empty, not deleting.")
+                break
 
-        try:
-            old_directory.rmdir()
-            log.info(f"Empty directory deleted successfully: {old_directory}")
-        except OSError as error:
-            log.error(f"Failed to delete empty directory {old_directory}: {error}")
+            log.info(f"Deleting empty directory: {current_directory}")
+
+            if dry_run:
+                log.info("Dry run enabled, not actually deleting the directory.")
+                current_directory = current_directory.parent
+                continue
+
+            try:
+                current_directory.rmdir()
+                log.info(f"Empty directory deleted successfully: {current_directory}")
+            except OSError as error:
+                log.error(f"Failed to delete empty directory {current_directory}: {error}")
+                break
+
+            current_directory = current_directory.parent
 
     def rename_file(self):
         old_path = self.get_old_file_path()
