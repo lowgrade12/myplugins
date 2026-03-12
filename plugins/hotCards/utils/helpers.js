@@ -76,39 +76,47 @@ function isCardInitialized(element, type) {
 
 /** History */
 
-function overrideHistoryMethods(callback) {
+const pathChangeCallbacks = [];
+let pathChangeInitialized = false;
+
+/**
+ * Register a callback to be invoked on any path change
+ * (pushState, replaceState, or popstate).
+ * History methods are only wrapped once regardless of how many callbacks are registered.
+ * @param {Function} callback - Function to invoke whenever the URL path changes.
+ */
+function onPathChange(callback) {
+  pathChangeCallbacks.push(callback);
+
+  if (pathChangeInitialized) return;
+  pathChangeInitialized = true;
+
   ["pushState", "replaceState"].forEach((method) => {
     const original = history[method];
     history[method] = function () {
       const result = original.apply(this, arguments);
-      callback();
+      pathChangeCallbacks.forEach((cb) => cb());
       return result;
     };
   });
 
   window.addEventListener("popstate", function () {
-    callback();
+    pathChangeCallbacks.forEach((cb) => cb());
   });
 }
 
 /** Path Change Listener */
 
 function registerPathChangeListener(pattern, callback) {
-  const regex = new RegExp(pattern);
+  const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern);
 
   function checkURL() {
-    const currentPathName = window.location.pathname;
-
     checkConfigurationRefresh().then(() => {
-      if (regex.test(currentPathName)) callback();
+      if (regex.test(window.location.pathname)) callback();
     });
   }
 
-  // Listen to popstate event for back/forward navigation
-  window.addEventListener("popstate", checkURL);
-
-  // Hijack pushState and replaceState methods
-  overrideHistoryMethods(checkURL);
+  onPathChange(checkURL);
 
   // Initial check
   checkURL();

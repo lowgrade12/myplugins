@@ -12,6 +12,18 @@ const STYLES = {
   gold: getGoldStylePreset(),
   holo: getHoloStylePreset(),
 };
+/**
+ * URL regex patterns for each card type.
+ * Maps card type keys to the routes where that card type should be processed.
+ */
+const CARD_PATTERNS = {
+  gallery: /^\/(galleries|(performers|studios|tags)\/\d+\/galleries|scenes\/\d+)$/,
+  image: /^\/(images|(performers|studios|tags)\/\d+\/images|galleries\/\d+)$/,
+  group: /^\/(groups|(groups\/\d+\/subgroups)|(performers|studios|tags)\/\d+\/groups|scenes\/\d+)$/,
+  performer: /^\/(performers(?:\/\d+\/appearswith)?|(performers|studios|tags)\/\d+\/performers|(scenes|galleries|images)\/\d+)$/,
+  scene: /^\/(scenes|(performers|studios|tags|groups)\/\d+\/scenes|(groups|galleries)\/\d+)$/,
+  studio: /^\/(studios|(studios\/\d+\/childstudios)|(tags\/\d+\/studios))$/,
+};
 // Element to inject custom CSS styles.
 const STYLE_ELEMENT = document.createElement("style");
 document.head.appendChild(STYLE_ELEMENT);
@@ -32,22 +44,14 @@ let holoElements = [];
 async function hotCardsSetup() {
   await setConfiguration();
 
-  // Mapping of configuration keys to functions
-  const hotCardsHandlers = {
-    gallery: handleGalleriesHotCards,
-    image: handleImagesHotCards,
-    group: handleGroupsHotCards,
-    performer: handlePerformersHotCards,
-    scene: handleScenesHotCards,
-    studio: handleStudiosHotCards,
-  };
-
   // Handle home hot cards separately
   if (CONFIG.settings.home && CONFIG.is.tagOrRatingBased) handleHomeHotCards();
 
   for (const [key, card] of Object.entries(CARDS)) {
-    if (card.enabled && hotCardsHandlers[key] && CONFIG.is.tagOrRatingBased) {
-      hotCardsHandlers[key](card.type);
+    if (card.enabled && CARD_PATTERNS[key] && CONFIG.is.tagOrRatingBased) {
+      registerPathChangeListener(CARD_PATTERNS[key], () => {
+        handleHotCards(card.type);
+      });
     }
   }
 
@@ -61,7 +65,6 @@ async function hotCardsSetup() {
    * Because of how the internal content of some divs are updated when navigating.
    *
    * This restores the card back to the original DOM structure to prevent that.
-   * -
    */
   function restoreCards() {
     backupCardElements.forEach((backupCard, i) => {
@@ -83,7 +86,7 @@ async function hotCardsSetup() {
     holoElements.length = 0;
   }
 
-  overrideHistoryMethods(restoreCards);
+  onPathChange(restoreCards);
 }
 
 /**
@@ -142,112 +145,8 @@ function processCard(type, observer) {
   }
 }
 
-/**
- * Adds gallery hot cards to specific paths in the application.
- *
- * The supported paths are:
- * - /galleries
- * - /performers/{id}/galleries
- * - /studios/{id}/galleries
- * - /tags/{id}/galleries
- * - /scenes/{id}
- */
-function handleGalleriesHotCards(type) {
-  const pattern =
-    /^\/(galleries|(performers|studios|tags)\/\d+\/galleries|scenes\/\d+)$/;
-  addHotCards(pattern, type);
-}
-
-/**
- * Adds image hot cards to specific paths in the application.
- *
- * The supported paths are:
- * - /images
- * - /performers/{id}/images
- * - /studios/{id}/images
- * - /tags/{id}/images
- * - /galleries/{id}
- */
-function handleImagesHotCards(type) {
-  const pattern =
-    /^\/(images|(performers|studios|tags)\/\d+\/images|galleries\/\d+)$/;
-  addHotCards(pattern, type);
-}
-
-/**
- * Adds group hot cards to specific paths in the application.
- *
- * The supported paths are:
- * - /groups
- * - /groups/{id}/subgroups
- * - /performers/{id}/groups
- * - /studios/{id}/groups
- * - /tags/{id}/groups
- * - /scenes/{id}
- */
-function handleGroupsHotCards(type) {
-  const pattern =
-    /^\/(groups|(groups\/\d+\/subgroups)|(performers|studios|tags)\/\d+\/groups|scenes\/\d+)$/;
-  addHotCards(pattern, type);
-}
-
-/**
- * Adds performer hot cards to specific paths in the application.
- *
- * The supported paths are:
- * - /performers
- * - /performers/{id}/appearswith
- * - /studios/{id}/performers
- * - /tags/{id}/performers
- * - /scenes/{id}
- * - /galleries/{id}
- * - /images/{id}
- */
-function handlePerformersHotCards(type) {
-  const pattern =
-    /^\/(performers(?:\/\d+\/appearswith)?|(performers|studios|tags)\/\d+\/performers|(scenes|galleries|images)\/\d+)$/;
-  addHotCards(pattern, type);
-}
-
-/**
- * Adds scene hot cards to specific paths in the application.
- *
- * The supported paths are:
- * - /scenes
- * - /performers/{id}/scenes
- * - /studios/{id}/scenes
- * - /tags/{id}/scenes
- * - /groups/{id}
- * - /galleries/{id}
- */
-function handleScenesHotCards(type) {
-  const pattern =
-    /^\/(scenes|(performers|studios|tags|groups)\/\d+\/scenes|(groups|galleries)\/\d+)$/;
-  addHotCards(pattern, type);
-}
-
-/**
- * Adds studio hot cards to specific paths in the application.
- *
- * The supported paths are:
- * - /studios
- * - /studios/{id}/childstudios
- * - /tags/{id}/studios
- */
-function handleStudiosHotCards(type) {
-  const pattern =
-    /^\/(studios|(studios\/\d+\/childstudios)|(tags\/\d+\/studios))$/;
-  addHotCards(pattern, type);
-}
-
-function addHotCards(pattern, type) {
-  registerPathChangeListener(pattern, () => {
-    handleHotCards(type);
-  });
-}
-
 function handleHotCards(type, isHome = false) {
-  let card = CARDS[type];
+  const card = CARDS[type];
   waitForClass(card.class, () => {
     createAndInsertHotCards(card.data, card.class, card.config, isHome);
     setHotCardStyling(card);
@@ -289,10 +188,10 @@ function createAndInsertHotCards(stashData, cardClass, config, isHome) {
   const cards = document.querySelectorAll(`.${cardClass}`);
   const isCriterionTagOrEmpty =
     CONFIG.is.tagBased &&
-    (criterion === CRITERIA.tag || (criterion && criterion.length === 0));
+    (criterion === CRITERIA.tag || !criterion);
   const isCriterionRatingOrEmpty =
     CONFIG.is.ratingBased &&
-    (criterion === CRITERIA.rating || (criterion && criterion.length === 0));
+    (criterion === CRITERIA.rating || !criterion);
 
   // Skip processing if the card type is already active
   if (activeHotCardTypes.includes(cardClass)) return;
@@ -599,9 +498,7 @@ function getHotCardPseudoElementString(
     hoverOptions.animation === "none"
       ? `box-shadow: none; animation: none;`
       : `animation: pulse ${hoverOptions.animation};`;
-  const additionalAttrStr = cardOptions.additional
-    ? cardOptions.additional
-    : "";
+  const additionalAttrStr = cardOptions.additional || "";
   const fillStr = fill
     ? `background-color: rgba(0, 0, 0, ${opacity}) !important;`
     : "box-shadow: none;";
@@ -633,7 +530,7 @@ function getHotCardPseudoElementString(
 }
 
 function checkHoloCardAndAttachToDOM(hotCardEl, cardClass, style, cardOptions) {
-  if (STYLES[style] !== STYLES.holo) return;
+  if (style !== "holo") return;
 
   const animateCard = /true/i.test(cardOptions.animate);
   const cardClasses = ["image-card", "scene-card", "studio-card"];
@@ -808,7 +705,7 @@ function getHotStylePreset() {
       "hsl(0, 70%, 31.4%)",
     ],
     "20s linear infinite"
-  ); // 'blur(2.0rem)'
+  );
 }
 
 function getBronzeStylePreset() {
