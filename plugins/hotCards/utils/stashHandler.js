@@ -7,16 +7,16 @@ const stash = {
   studios: {},
 };
 
-stashListener.addEventListener("response", (event) => {
-  const dataProcessors = {
-    galleries: processData("findGalleries", "galleries"),
-    images: processData("findImages", "images"),
-    groups: processData("findGroups", "groups"),
-    performers: processData("findPerformers", "performers"),
-    scenes: processData("findScenes", "scenes"),
-    studios: processData("findStudios", "studios"),
-  };
+const dataProcessors = {
+  galleries: processData("findGalleries", "galleries"),
+  images: processData("findImages", "images"),
+  groups: processData("findGroups", "groups"),
+  performers: processData("findPerformers", "performers"),
+  scenes: processData("findScenes", "scenes"),
+  studios: processData("findStudios", "studios"),
+};
 
+stashListener.addEventListener("response", (event) => {
   for (const key in dataProcessors) {
     dataProcessors[key](event.detail);
   }
