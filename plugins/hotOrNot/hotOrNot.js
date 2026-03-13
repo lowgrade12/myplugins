@@ -1222,6 +1222,33 @@
   }
 
   /**
+   * Adjust rating difference based on scene count ratio between two performers.
+   * When the loser has more scenes, the effective rating gap is increased, making
+   * the win a bigger "upset" and worth more points. When the winner has more scenes,
+   * the gap shrinks (expected result against a less-proven performer).
+   * Each doubling of the scene count ratio adjusts the effective diff by up to 2 points,
+   * capped at ±6 to prevent extreme swings.
+   * @param {number} baseDiff - Raw rating difference (loserRating - winnerRating)
+   * @param {number|null} winnerSceneCount - Winner's scene count (null if unavailable)
+   * @param {number|null} loserSceneCount - Loser's scene count (null if unavailable)
+   * @returns {number} Adjusted rating difference
+   */
+  function getSceneAdjustedDiff(baseDiff, winnerSceneCount, loserSceneCount) {
+    if (!winnerSceneCount && !loserSceneCount) return baseDiff;
+
+    const winScenes = Math.max(1, winnerSceneCount || 1);
+    const losScenes = Math.max(1, loserSceneCount || 1);
+
+    // Positive when loser has more scenes (upset against proven performer)
+    const sceneRatio = Math.log2(losScenes / winScenes);
+
+    // Cap adjustment at ±6 rating points to keep changes reasonable
+    const adjustment = Math.max(-6, Math.min(6, sceneRatio * 2));
+
+    return baseDiff + adjustment;
+  }
+
+  /**
    * Calculate K-factor based on match count (experience), scene count, and mode
    * @param {number} currentRating - Current ELO rating
    * @param {number} matchCount - Number of matches played
@@ -1271,21 +1298,21 @@
       let sceneMultiplier = 1.0;
       
       if (sceneCount >= 100) {
-        // Very prolific performers: 50% K-factor (very stable)
-        sceneMultiplier = 0.5;
+        // Very prolific performers: 60% K-factor (stable but still meaningful)
+        sceneMultiplier = 0.6;
       } else if (sceneCount >= 50) {
-        // Prolific performers: 65% K-factor
-        sceneMultiplier = 0.65;
+        // Prolific performers: 70% K-factor
+        sceneMultiplier = 0.7;
       } else if (sceneCount >= 20) {
-        // Established performers: 80% K-factor
-        sceneMultiplier = 0.8;
+        // Established performers: 85% K-factor
+        sceneMultiplier = 0.85;
       } else if (sceneCount >= 10) {
         // Moderately established: 90% K-factor
         sceneMultiplier = 0.9;
       }
       // Performers with < 10 scenes: full K-factor (no reduction)
       
-      baseKFactor = Math.max(2, Math.round(baseKFactor * sceneMultiplier));
+      baseKFactor = Math.max(4, Math.round(baseKFactor * sceneMultiplier));
     }
     
     // Apply mode-specific multiplier
@@ -1418,6 +1445,10 @@
       loserSceneCount = freshLoserObj.scene_count || null;
     }
     
+    // Adjust rating diff using scene counts so that beating a more "proven"
+    // performer (higher scene count) is treated as a bigger upset and worth more
+    const adjustedRatingDiff = getSceneAdjustedDiff(ratingDiff, winnerSceneCount, loserSceneCount);
+    
     let winnerGain = 0, loserLoss = 0;
     
     if (currentMode === "gauntlet") {
@@ -1430,7 +1461,7 @@
       const isChampionLoser = gauntletChampion && loserId === gauntletChampion.id;
       const isFallingLoser = gauntletFalling && gauntletFallingItem && loserId === gauntletFallingItem.id;
       
-      const expectedWinner = 1 / (1 + Math.pow(10, ratingDiff / 40));
+      const expectedWinner = 1 / (1 + Math.pow(10, adjustedRatingDiff / 40));
       const kFactor = getKFactor(winnerRating, winnerMatchCount, "gauntlet", winnerSceneCount);
       
       // Only the active item (champion or falling) gets rating changes
@@ -1455,7 +1486,7 @@
     } else if (currentMode === "champion") {
       // Champion mode: Both performers get rating updates, but at a reduced rate (50% of Swiss mode)
       // This allows rankings to evolve while still maintaining the "winner stays on" feel
-      const expectedWinner = 1 / (1 + Math.pow(10, ratingDiff / 40));
+      const expectedWinner = 1 / (1 + Math.pow(10, adjustedRatingDiff / 40));
       
       // Use individual K-factors for each performer with champion mode multiplier
       const winnerK = getKFactor(winnerRating, winnerMatchCount, "champion", winnerSceneCount);
@@ -1469,7 +1500,7 @@
     } else {
       // Swiss mode: True ELO with zero-sum property
       // Both performers change by the same amount to maintain rating pool integrity
-      const expectedWinner = 1 / (1 + Math.pow(10, ratingDiff / 40));
+      const expectedWinner = 1 / (1 + Math.pow(10, adjustedRatingDiff / 40));
       
       // Use individual K-factors but average them for the match
       // This maintains fairness while preserving zero-sum property
@@ -1592,7 +1623,11 @@
     
     // Calculate expected scores for both items
     // Rating diff from left's perspective: (rightRating - leftRating)
-    const ratingDiffLeft = rightRating - leftRating;
+    // Adjust for scene counts so draws between performers with different scene
+    // counts still reflect the "proven-ness" of each performer
+    const ratingDiffLeft = getSceneAdjustedDiff(
+      rightRating - leftRating, leftSceneCount, rightSceneCount
+    );
     const expectedLeft = 1 / (1 + Math.pow(10, ratingDiffLeft / 40));
     const expectedRight = 1 - expectedLeft;
     
