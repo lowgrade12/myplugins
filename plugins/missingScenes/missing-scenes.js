@@ -813,16 +813,35 @@
   }
 
   /**
+   * Check if current page is a performer, studio, or tag detail page
+   */
+  function isRelevantPage() {
+    return /\/(performers|studios|tags)\/\d+/.test(window.location.pathname);
+  }
+
+  /**
    * Wait for page to be ready and add button
    */
   function waitForPage() {
     // Check immediately
     addSearchButton();
 
-    // Also observe for SPA navigation
+    // Track URL changes for SPA navigation so we only do work
+    // when navigating to a relevant page or when React re-renders
+    // a relevant page (which may remove the button)
+    let lastUrl = window.location.href;
+
     const observer = new MutationObserver(() => {
-      // Small delay to let React finish rendering
-      setTimeout(addSearchButton, 100);
+      const currentUrl = window.location.href;
+      if (currentUrl !== lastUrl) {
+        // URL changed - check if we navigated to a relevant page
+        lastUrl = currentUrl;
+        setTimeout(addSearchButton, 100);
+      } else if (isRelevantPage()) {
+        // Same relevant page but DOM changed - button may have been
+        // removed by React re-render, so re-add if needed
+        setTimeout(addSearchButton, 100);
+      }
     });
 
     observer.observe(document.body, {
@@ -830,9 +849,12 @@
       subtree: true,
     });
 
-    // Also listen to popstate for SPA navigation
+    // Also listen to popstate for browser back/forward navigation
     window.addEventListener("popstate", () => {
-      setTimeout(addSearchButton, 100);
+      lastUrl = window.location.href;
+      if (isRelevantPage()) {
+        setTimeout(addSearchButton, 100);
+      }
     });
   }
 

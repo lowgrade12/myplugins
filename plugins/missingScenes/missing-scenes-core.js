@@ -360,5 +360,5 @@
     createSceneCard,
   };
 
-  console.log("[MissingScenes] Core module loaded");
+  console.debug("[MissingScenes] Core module loaded");
 })();

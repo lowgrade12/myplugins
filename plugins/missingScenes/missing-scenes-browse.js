@@ -398,11 +398,11 @@
    */
   function registerRoute() {
     PluginApi.register.route(BROWSE_PATH, MissingScenesBrowsePage);
-    console.log('[MissingScenes] Route registered:', BROWSE_PATH);
+    console.debug('[MissingScenes] Route registered:', BROWSE_PATH);
   }
 
   // Initialize
   registerRoute();
   setupNavButtonInjection();
-  console.log('[MissingScenes] Browse plugin loaded');
+  console.debug('[MissingScenes] Browse plugin loaded');
 })();
