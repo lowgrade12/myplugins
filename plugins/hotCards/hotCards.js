@@ -615,6 +615,8 @@ function animateHoloCards(holoEl, seedX, seedY) {
   let add = increment;
 
   function animate() {
+    // Stop animation loop if the element has been removed from the DOM
+    if (!document.contains(holoEl)) return;
     posX += add;
     posY += add;
 

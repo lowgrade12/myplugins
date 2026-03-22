@@ -26,7 +26,7 @@ stashListener.addEventListener("response", (event) => {
 
 function processData(findKey, dataKey) {
   return function (data) {
-    if (data.data[findKey]?.[dataKey]) {
+    if (data?.data?.[findKey]?.[dataKey]) {
       for (const item of data.data[findKey][dataKey]) {
         stash[dataKey][item.id] = item;
       }
@@ -35,6 +35,7 @@ function processData(findKey, dataKey) {
 }
 
 function processOtherData(data) {
+  if (!data?.data) return;
   const otherDataMappings = [
     { findKey: "findScene", key: "groups", nested: true },
     { findKey: "findScene", key: "galleries", nested: false },

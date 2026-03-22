@@ -12,11 +12,18 @@ function getFixedBackgroundOpacity(opacity) {
 
 function waitForClass(className, callback) {
   const checkInterval = 100; // ms
-  const maxRetries = 30; // Timeout after 3 seconds
+  const maxRetries = 100; // Timeout after 10 seconds
   let retryCount = 0;
   let intervalId;
+  // Capture pathname at start so we can cancel if SPA navigation occurs via pushState/replaceState
+  const startPathname = window.location.pathname;
 
   function checkElements() {
+    // Cancel if the URL path changed (SPA navigation that bypasses popstate)
+    if (window.location.pathname !== startPathname) {
+      clearAll();
+      return;
+    }
     const elements = document.getElementsByClassName(className);
     if (elements.length > 0) {
       clearAll();
@@ -59,9 +66,11 @@ function waitForClass(className, callback) {
   addEventListeners();
 }
 
-function waitForImageLoad(imageEl, callback) {
+function waitForImageLoad(imageEl, callback, retries = 0) {
+  const maxRetries = 50; // Give up after 5 seconds to prevent infinite recursion
   if (imageEl.complete) return callback(imageEl);
-  setTimeout(waitForImageLoad, 100, imageEl, callback);
+  if (retries >= maxRetries) return;
+  setTimeout(waitForImageLoad, 100, imageEl, callback, retries + 1);
 }
 
 function createElementFromHTML(htmlString) {
