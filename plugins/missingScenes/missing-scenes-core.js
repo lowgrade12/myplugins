@@ -357,23 +357,31 @@
     if (!pathChangeInitialized) {
       pathChangeInitialized = true;
 
+      function invokeCallbacks() {
+        pathChangeCallbacks.forEach((cb) => {
+          try {
+            cb();
+          } catch (e) {
+            console.error("[MissingScenes] Path change callback error:", e);
+          }
+        });
+      }
+
       const origPushState = history.pushState;
       history.pushState = function () {
         const result = origPushState.apply(this, arguments);
-        pathChangeCallbacks.forEach((cb) => cb());
+        invokeCallbacks();
         return result;
       };
 
       const origReplaceState = history.replaceState;
       history.replaceState = function () {
         const result = origReplaceState.apply(this, arguments);
-        pathChangeCallbacks.forEach((cb) => cb());
+        invokeCallbacks();
         return result;
       };
 
-      window.addEventListener("popstate", () => {
-        pathChangeCallbacks.forEach((cb) => cb());
-      });
+      window.addEventListener("popstate", invokeCallbacks);
     }
   }
 
