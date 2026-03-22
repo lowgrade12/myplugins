@@ -34,8 +34,10 @@ let backupCardElements = [];
 let hotCardElements = [];
 // Current hot card classes
 let hotCardClasses = [];
-// Current active hot card types
-let activeHotCardTypes = [];
+// Home page observer for detecting late-loading recommendation rows
+let homeObserver = null;
+let homeDebounceTimer = null;
+let homeDisconnectTimer = null;
 // Backup img elements for holo cards
 let backupImgElements = [];
 // Current holo elements
@@ -67,6 +69,7 @@ async function hotCardsSetup() {
    * This restores the card back to the original DOM structure to prevent that.
    */
   function restoreCards() {
+    cleanupHomeObserver();
     backupCardElements.forEach((backupCard, i) => {
       if (hotCardElements[i] && hotCardElements[i].parentNode) {
         hotCardElements[i].before(backupCard);
@@ -81,7 +84,6 @@ async function hotCardsSetup() {
     });
     backupCardElements.length = 0;
     hotCardElements.length = 0;
-    activeHotCardTypes.length = 0;
     backupImgElements.length = 0;
     holoElements.length = 0;
   }
@@ -92,57 +94,61 @@ async function hotCardsSetup() {
 /**
  * Add hot cards to the home page.
  *
- * Waits for the recommendation rows of each card type to be initialized.
- * Once all slides of a card type are initialized, it adds hot cards to them.
+ * Uses a MutationObserver on the document body to detect recommendation rows
+ * and cards as they load asynchronously. Processes each card type's unprocessed
+ * cards with debouncing to handle rows that appear at different times.
  */
 function handleHomeHotCards() {
   const pattern = /^\/$/;
   registerPathChangeListener(pattern, () => {
-    Object.values(CARD_KEYS).forEach((type) => {
-      setupObserverAndProcessCard(type);
-    });
+    setupHomePageObserver();
   });
 }
 
-function setupObserverAndProcessCard(type) {
-  const observer = new MutationObserver((mutationsList) => {
-    if (
-      mutationsList.some((mutation) => isCardInitialized(mutation.target, type))
-    ) {
-      processCard(type, observer);
+function cleanupHomeObserver() {
+  if (homeObserver) {
+    homeObserver.disconnect();
+    homeObserver = null;
+  }
+  clearTimeout(homeDebounceTimer);
+  homeDebounceTimer = null;
+  clearTimeout(homeDisconnectTimer);
+  homeDisconnectTimer = null;
+}
+
+/**
+ * Process all enabled card types on the home page.
+ * Only triggers handleHotCards for types that have unprocessed cards
+ * (cards not yet wrapped with the hot-border class).
+ */
+function processHomeCards() {
+  Object.values(CARD_KEYS).forEach((type) => {
+    if (!CARDS[type].enabled) return;
+    const cardClass = CARDS[type].class;
+    const hasUnprocessedCards = document.querySelector(
+      `.recommendation-row .${cardClass}:not(.hot-border)`
+    );
+    if (hasUnprocessedCards) {
+      handleHotCards(type, true);
     }
   });
-
-  // Initial check
-  processCard(type, observer);
 }
 
-function areAllCardsLoaded(type, observer) {
-  const recommendationRows = document.querySelectorAll(
-    `.recommendation-row.${type}-recommendations`
-  );
-  const observerConfig = { childList: true, subtree: true };
-  return Array.from(recommendationRows).every((row) => {
-    const slickSlider = row.querySelector(".slick-slider");
-    return (
-      slickSlider &&
-      Array.from(slickSlider.querySelectorAll(".slick-slide")).every(
-        (slide) => {
-          if (isCardInitialized(slide, type)) return true;
-          observer.observe(slide, observerConfig);
-          return false;
-        }
-      )
-    );
+function setupHomePageObserver() {
+  cleanupHomeObserver();
+
+  homeObserver = new MutationObserver(() => {
+    clearTimeout(homeDebounceTimer);
+    homeDebounceTimer = setTimeout(processHomeCards, 250);
   });
-}
 
-function processCard(type, observer) {
-  if (areAllCardsLoaded(type, observer)) {
-    observer.disconnect();
-    // All elements of this card type are initialized
-    if (CARDS[type].enabled) handleHotCards(type, true);
-  }
+  homeObserver.observe(document.body, { childList: true, subtree: true });
+
+  // Initial processing for cards already in the DOM
+  processHomeCards();
+
+  // Auto-disconnect after 30 seconds to avoid indefinite observation
+  homeDisconnectTimer = setTimeout(() => cleanupHomeObserver(), 30000);
 }
 
 function handleHotCards(type, isHome = false) {
@@ -193,10 +199,10 @@ function createAndInsertHotCards(stashData, cardClass, config, isHome) {
     CONFIG.is.ratingBased &&
     (criterion === CRITERIA.rating || !criterion);
 
-  // Skip processing if the card type is already active
-  if (activeHotCardTypes.includes(cardClass)) return;
-
   cards.forEach((card) => {
+    // Skip cards that are already wrapped in a hot card element
+    if (card.classList.contains("hot-border")) return;
+
     // FIX: Some card layouts may not have a thumbnail-section link element,
     // skip processing for cards without proper structure
     const link = card.querySelector(".thumbnail-section > a");
@@ -233,7 +239,6 @@ function createAndInsertHotCards(stashData, cardClass, config, isHome) {
       );
     }
   });
-  activeHotCardTypes.push(cardClass);
 }
 
 function findMatchingValueSegment(
