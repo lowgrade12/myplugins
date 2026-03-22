@@ -813,26 +813,35 @@
   }
 
   /**
+   * Check if current page is a performer, studio, or tag detail page
+   */
+  function isRelevantPage() {
+    return /\/(performers|studios|tags)\/\d+/.test(window.location.pathname);
+  }
+
+  /**
+   * Try to add button with retries for DOM readiness
+   */
+  function tryAddButton() {
+    addSearchButton();
+    setTimeout(addSearchButton, 300);
+    setTimeout(addSearchButton, 1000);
+  }
+
+  /**
    * Wait for page to be ready and add button
    */
   function waitForPage() {
-    // Check immediately
-    addSearchButton();
+    // Check immediately on current page
+    if (isRelevantPage()) {
+      tryAddButton();
+    }
 
-    // Also observe for SPA navigation
-    const observer = new MutationObserver(() => {
-      // Small delay to let React finish rendering
-      setTimeout(addSearchButton, 100);
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-
-    // Also listen to popstate for SPA navigation
-    window.addEventListener("popstate", () => {
-      setTimeout(addSearchButton, 100);
+    // Listen for SPA navigation via efficient path change detection
+    Core.onPathChange(() => {
+      if (isRelevantPage()) {
+        tryAddButton();
+      }
     });
   }
 
