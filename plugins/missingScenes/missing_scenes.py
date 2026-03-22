@@ -291,14 +291,16 @@ def get_local_tag(tag_id):
 
 
 def get_local_scene_stash_ids(endpoint):
-    """Get all stash_ids for scenes that are linked to a specific stash-box endpoint."""
-    # Get all scenes with stash_ids
+    """Get all stash_ids for scenes that are linked to a specific stash-box endpoint.
+
+    Uses server-side stash_id_endpoint filtering to only fetch scenes
+    linked to the specified endpoint, reducing data transfer.
+    """
     query = """
-    query FindScenes($filter: FindFilterType) {
-        findScenes(filter: $filter) {
+    query FindScenes($filter: FindFilterType, $scene_filter: SceneFilterType) {
+        findScenes(filter: $filter, scene_filter: $scene_filter) {
             count
             scenes {
-                id
                 stash_ids {
                     endpoint
                     stash_id
@@ -310,13 +312,19 @@ def get_local_scene_stash_ids(endpoint):
 
     all_stash_ids = set()
     page = 1
-    per_page = 100
+    per_page = 1000
 
     while True:
         data = stash_graphql(query, {
             "filter": {
                 "page": page,
                 "per_page": per_page
+            },
+            "scene_filter": {
+                "stash_id_endpoint": {
+                    "endpoint": endpoint,
+                    "modifier": "NOT_NULL"
+                }
             }
         })
 
@@ -990,7 +998,7 @@ def get_or_build_cache(endpoint: str) -> set[str]:
 
     stash_ids = set()
     page = 1
-    per_page = 100
+    per_page = 1000
 
     while True:
         result = stash_graphql("""
@@ -1406,9 +1414,9 @@ def find_missing_scenes(entity_type, entity_id, plugin_settings, endpoint_overri
             "missing_scenes": []
         }
 
-    # Get all local scene stash_ids
+    # Get all local scene stash_ids (uses cached, filtered query for efficiency)
     log.LogDebug("[find_missing] Getting local scene stash_ids...")
-    local_stash_ids = get_local_scene_stash_ids(stashdb_url)
+    local_stash_ids = get_or_build_cache(stashdb_url)
     log.LogDebug(f"[find_missing] Got {len(local_stash_ids)} local scene IDs")
 
     # Also check Whisparr if configured - get full status map
@@ -2349,8 +2357,8 @@ def task_cleanup_whisparr(plugin_settings):
     whisparr_scenes = whisparr_get_all_scenes(whisparr_url, whisparr_api_key)
     log.LogInfo(f"Found {len(whisparr_scenes)} scenes in Whisparr")
 
-    # Get all local scenes with StashDB IDs
-    local_stash_ids = get_local_scene_stash_ids(target_endpoint)
+    # Get all local scenes with StashDB IDs (uses cached, filtered query for efficiency)
+    local_stash_ids = get_or_build_cache(target_endpoint)
     log.LogInfo(f"Found {len(local_stash_ids)} local scenes tagged with {target_endpoint}")
 
     # Find and cleanup scenes that are in both
