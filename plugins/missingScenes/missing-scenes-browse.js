@@ -372,19 +372,13 @@
     // Try to inject immediately
     addScenesPageButton();
 
-    // Watch for URL changes (SPA navigation)
-    let lastUrl = window.location.href;
-    const observer = new MutationObserver(() => {
-      if (window.location.href !== lastUrl) {
-        lastUrl = window.location.href;
-        // Wait a bit for DOM to update after navigation
-        setTimeout(addScenesPageButton, 100);
-        setTimeout(addScenesPageButton, 500);
-        setTimeout(addScenesPageButton, 1000);
-      }
+    // Listen for SPA navigation via efficient path change detection
+    Core.onPathChange(() => {
+      // Wait for DOM to update after navigation
+      setTimeout(addScenesPageButton, 100);
+      setTimeout(addScenesPageButton, 500);
+      setTimeout(addScenesPageButton, 1000);
     });
-
-    observer.observe(document.body, { childList: true, subtree: true });
 
     // Also try on initial load with delays (for refresh on Scenes page)
     setTimeout(addScenesPageButton, 100);

@@ -820,40 +820,27 @@
   }
 
   /**
+   * Try to add button with retries for DOM readiness
+   */
+  function tryAddButton() {
+    addSearchButton();
+    setTimeout(addSearchButton, 300);
+    setTimeout(addSearchButton, 1000);
+  }
+
+  /**
    * Wait for page to be ready and add button
    */
   function waitForPage() {
-    // Check immediately
-    addSearchButton();
+    // Check immediately on current page
+    if (isRelevantPage()) {
+      tryAddButton();
+    }
 
-    // Track URL changes for SPA navigation so we only do work
-    // when navigating to a relevant page or when React re-renders
-    // a relevant page (which may remove the button)
-    let lastUrl = window.location.href;
-
-    const observer = new MutationObserver(() => {
-      const currentUrl = window.location.href;
-      if (currentUrl !== lastUrl) {
-        // URL changed - check if we navigated to a relevant page
-        lastUrl = currentUrl;
-        setTimeout(addSearchButton, 100);
-      } else if (isRelevantPage()) {
-        // Same relevant page but DOM changed - button may have been
-        // removed by React re-render, so re-add if needed
-        setTimeout(addSearchButton, 100);
-      }
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-
-    // Also listen to popstate for browser back/forward navigation
-    window.addEventListener("popstate", () => {
-      lastUrl = window.location.href;
+    // Listen for SPA navigation via efficient path change detection
+    Core.onPathChange(() => {
       if (isRelevantPage()) {
-        setTimeout(addSearchButton, 100);
+        tryAddButton();
       }
     });
   }

@@ -342,6 +342,41 @@
     return card;
   }
 
+  // Path change detection for SPA navigation
+  const pathChangeCallbacks = [];
+  let pathChangeInitialized = false;
+
+  /**
+   * Register a callback for SPA navigation (URL changes).
+   * Efficiently wraps history.pushState/replaceState and listens for popstate.
+   * @param {Function} callback - Called when the URL changes
+   */
+  function onPathChange(callback) {
+    pathChangeCallbacks.push(callback);
+
+    if (!pathChangeInitialized) {
+      pathChangeInitialized = true;
+
+      const origPushState = history.pushState;
+      history.pushState = function () {
+        const result = origPushState.apply(this, arguments);
+        pathChangeCallbacks.forEach((cb) => cb());
+        return result;
+      };
+
+      const origReplaceState = history.replaceState;
+      history.replaceState = function () {
+        const result = origReplaceState.apply(this, arguments);
+        pathChangeCallbacks.forEach((cb) => cb());
+        return result;
+      };
+
+      window.addEventListener("popstate", () => {
+        pathChangeCallbacks.forEach((cb) => cb());
+      });
+    }
+  }
+
   // Expose API on window
   window.MissingScenesCore = {
     // Utilities
@@ -351,6 +386,9 @@
     escapeHtml,
     formatDate,
     formatDuration,
+
+    // Navigation
+    onPathChange,
 
     // Whisparr
     addToWhisparr,
