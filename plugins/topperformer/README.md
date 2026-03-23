@@ -70,13 +70,11 @@ The plugin detects studio cards using:
 - Cards with `/studios/` links
 
 ### Page Filtering
-The plugin is **disabled** on:
-- `/scenes` - Scene listing pages
-- `/scenes/{id}` - Individual scene pages
-- `/studios/{id}/scenes` - Studio scene listings
-- `/performers/{id}/scenes` - Performer scene listings
+The plugin is **enabled** only on:
+- `/studios` - Studio listing page
+- `/` - Home page (if studio cards are displayed)
 
-This prevents showing the widget on studio cards that appear in scene-related contexts.
+This allowlist approach prevents the widget from appearing on unrelated pages (scenes, performers, tags, etc.) where studio links may exist in other contexts.
 
 ### Performance
 - **Parallel processing** for all studios on the page
