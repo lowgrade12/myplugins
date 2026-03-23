@@ -17,10 +17,10 @@ const STYLES = {
  * Maps card type keys to the routes where that card type should be processed.
  */
 const CARD_PATTERNS = {
-  gallery: /^\/(galleries|(performers|studios|tags)\/\d+\/galleries|scenes\/\d+)$/,
+  gallery: /^\/(galleries|(performers|studios|tags)\/\d+\/galleries)$/,
   image: /^\/(images|(performers|studios|tags)\/\d+\/images|galleries\/\d+)$/,
-  group: /^\/(groups|(groups\/\d+\/subgroups)|(performers|studios|tags)\/\d+\/groups|scenes\/\d+)$/,
-  performer: /^\/(performers(?:\/\d+\/appearswith)?|(performers|studios|tags)\/\d+\/performers|(scenes|galleries|images)\/\d+)$/,
+  group: /^\/(groups|(groups\/\d+\/subgroups)|(performers|studios|tags)\/\d+\/groups)$/,
+  performer: /^\/(performers(?:\/\d+\/appearswith)?|(performers|studios|tags)\/\d+\/performers)$/,
   scene: /^\/(scenes|(performers|studios|tags|groups)\/\d+\/scenes|(groups|galleries)\/\d+)$/,
   studio: /^\/(studios|(studios\/\d+\/childstudios)|(tags\/\d+\/studios))$/,
 };
