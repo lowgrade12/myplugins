@@ -383,87 +383,24 @@
   // ============================================
 
   /**
-   * Check if we're on a scene-related page where the top performer widget should not appear
-   * This includes individual scene pages and scene listing pages
-   * @returns {boolean} True if on a scene-related page
-   */
-  function isSceneRelatedPage() {
-    const path = window.location.pathname;
-    // Match /scenes - main scenes listing page (with or without query params)
-    if (path === "/scenes" || path === "/scenes/") {
-      return true;
-    }
-    // Match /scenes/123 or /scenes/123/... patterns (scene ID followed by slash or end of path)
-    if (/^\/scenes\/\d+(?:\/|$)/.test(path)) {
-      return true;
-    }
-    // Match /studios/{id}/scenes - scene listing page for a specific studio
-    if (/^\/studios\/\d+\/scenes(?:\/|$|\?)/.test(path)) {
-      return true;
-    }
-    // Match /performers/{id}/scenes - scene listing page for a specific performer
-    if (/^\/performers\/\d+\/scenes(?:\/|$|\?)/.test(path)) {
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Check if we're on a page that may have studio cards
-   * This includes the studios page and the main/home page
-   * @returns {boolean} True if on a page that may show studios
-   */
-  function isPageWithPotentialStudios() {
-    const path = window.location.pathname;
-    // Studios page
-    if (path === "/studios" || path === "/studios/" || path.startsWith("/studios?")) {
-      return true;
-    }
-    // Main/home page - may show studios
-    if (path === "/" || path === "") {
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Check if studio cards are present on the page
-   * @returns {boolean} True if studio cards are detected
-   */
-  function hasStudioCardsOnPage() {
-    // Various selectors for studio cards in Stash UI
-    // Use querySelector (returns first match) instead of querySelectorAll for efficiency
-    const cardSelectors = [
-      ".studio-card",
-      "[class*='StudioCard']",
-      ".card.studio",
-      ".grid-item.studio"
-    ];
-
-    for (const selector of cardSelectors) {
-      if (document.querySelector(selector)) {
-        return true;
-      }
-    }
-
-    // Check for cards that have studio links using a more specific selector
-    if (document.querySelector(".card a[href*='/studios/']")) {
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Check if we should process studio cards on this page
+   * Check if we're on a page where studio cards are expected.
+   * Uses an allowlist approach to prevent the plugin from appearing on unrelated pages.
    * @returns {boolean} True if we should process studio cards
    */
   function shouldProcessStudios() {
-    // Never show on scene-related pages
-    if (isSceneRelatedPage()) {
-      return false;
+    const path = window.location.pathname;
+
+    // Studios listing page (pathname doesn't include query params)
+    if (path === "/studios" || path === "/studios/") {
+      return true;
     }
-    return isPageWithPotentialStudios() || hasStudioCardsOnPage();
+
+    // Home page - may show studio cards in recommendations
+    if (path === "/" || path === "") {
+      return true;
+    }
+
+    return false;
   }
 
   // ============================================
@@ -489,7 +426,7 @@
 
     // Watch for DOM changes (SPA navigation, lazy loading, etc.)
     const observer = new MutationObserver((mutations) => {
-      // Check if we should process - either on studios/main page OR if studio cards exist
+      // Only process on allowed pages (studios listing or home page)
       if (!shouldProcessStudios()) {
         return;
       }
