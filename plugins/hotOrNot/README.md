@@ -33,16 +33,23 @@ The plugin offers five distinct comparison modes:
 - Good for fine-tuning existing rankings
 
 #### 📐 Calibration Mode
-- **Smart ranking via binary search** - Intelligently finds each performer's true rating with minimal comparisons
-- Automatically identifies the least confident performers (fewest matches, most uncertain)
-- Uses a binary-search approach to narrow down a performer's true position:
-  - If the uncertain performer wins, the search moves higher
-  - If the uncertain performer loses, the search moves lower
-  - Each match tests the midpoint between the current bounds
-- Anchors are selected from well-established performers near the search midpoint
-- Coverage dashboard shows total performers, rated count, average confidence, and confidence distribution
-- Confidence formula: `1 - (1 / √(matches + 1))` — 0 matches = 0%, 3 matches ≈ 50%, 15 matches ≈ 75%
-- Best for accurately ranking large performer pools with minimal effort
+- **Smart ranking via binary search** — Finds each performer's true rating with minimal comparisons
+- The system picks the performer whose rating it is **least confident** about (fewest matches) and focuses on them
+- It then uses a binary-search approach to zero in on their correct position:
+  - The performer is compared against well-established "anchor" performers near the midpoint of their estimated rating range
+  - If the target performer **wins**, the lower bound of their rating range moves up (they're at least this good)
+  - If the target performer **loses**, the upper bound moves down (they're no better than this)
+  - Each match narrows the range until the rating converges
+- **Step counter (e.g. "Step 3/10")**: Shows how many comparisons have been made for the current target performer, up to a maximum of 10
+- **Early convergence**: A performer can finish **before** reaching step 10 if their rating range narrows to within ±5 points — meaning the system has already found their position accurately. This is why you may see a performer finish at step 5 and a new one begin
+- **Confidence percentage**: Represents how reliable a performer's current rating is, based on how many matches they've played:
+  - 0 matches = 0% confidence (completely unknown)
+  - 3 matches ≈ 50% confidence (partially established)
+  - 15 matches ≈ 75% confidence (well-established)
+  - Confidence increases with more matches but never reaches 100%
+  - Performers below 75% confidence are prioritized for calibration
+- **Coverage dashboard** shows overall progress: total performers, how many have been rated, average confidence across all performers, and how many still need more matches
+- Best for accurately ranking large performer pools with minimal effort — each comparison is chosen to be maximally informative
 
 #### 🏟️ Tournament Mode
 - **Single-elimination bracket competition** - Classic tournament format with seeded brackets
@@ -137,7 +144,7 @@ When viewing a single performer's page, a badge displays their battle rank:
 - **First run**: Swiss mode with many comparisons builds a solid ranking foundation
 - **Quick ranking**: Gauntlet mode rapidly places a specific performer in the rankings
 - **Fine-tuning**: Champion mode adjusts rankings with smaller changes
-- **Accuracy**: Calibration mode efficiently finds each performer's true position using smart binary search
+- **Accuracy**: Calibration mode efficiently finds each performer's true position — watch the step counter and dashboard to track progress. Performers may finish early if their rating converges before step 10
 - **Fun**: Tournament mode creates a bracket competition to crown a champion
 - **Skip strategically**: Use skip when you can't decide - it affects both performers' ratings based on ELO draw mechanics
 

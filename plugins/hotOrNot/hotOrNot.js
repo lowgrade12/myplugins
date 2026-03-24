@@ -19,6 +19,7 @@
   let calibrationLow = 1; // Binary search lower bound rating
   let calibrationHigh = 100; // Binary search upper bound rating
   let calibrationStep = 0; // Number of calibration matches for current target
+  let calibrationLastResult = ""; // Reason why the previous target finished (for dashboard display)
   const CALIBRATION_MAX_STEPS = 10; // Max binary search steps before moving to next target
   const CALIBRATION_CONVERGENCE_THRESHOLD = 5; // Rating range (high - low) at which target is considered converged
   const CALIBRATION_HIGH_CONFIDENCE = 0.75; // Confidence level at which a performer is considered well-established
@@ -65,6 +66,7 @@
     calibrationLow = 1;
     calibrationHigh = 100;
     calibrationStep = 0;
+    calibrationLastResult = "";
   }
 
   /**
@@ -3618,7 +3620,7 @@ async function fetchPerformerCount(performerFilter = {}) {
               <span class="hon-mode-title">Champion</span>
               <span class="hon-mode-desc">Winner stays on</span>
             </button>
-            <button class="hon-mode-btn ${currentMode === 'calibration' ? 'active' : ''}" data-mode="calibration">
+            <button class="hon-mode-btn ${currentMode === 'calibration' ? 'active' : ''}" data-mode="calibration" title="Finds each performer's true rating using binary search. Focuses on the least-confident performers first and narrows their rating range in up to 10 steps.">
               <span class="hon-mode-icon">📐</span>
               <span class="hon-mode-title">Calibration</span>
               <span class="hon-mode-desc">Smart ranking</span>
@@ -3833,35 +3835,46 @@ async function fetchPerformerCount(performerFilter = {}) {
     if (calibrationTarget) {
       const targetStats = parsePerformerEloData(calibrationTarget);
       const conf = getConfidence(targetStats.total_matches);
+      const safeName = escapeHtml(calibrationTarget.name);
+      const rangeInfo = calibrationStep > 0
+        ? ` · Rating range: ${calibrationLow}–${calibrationHigh}`
+        : "";
       targetInfo = `
         <div class="hon-cal-target">
           <span class="hon-cal-target-label">Calibrating:</span>
-          <strong>${calibrationTarget.name}</strong>
-          <span class="hon-cal-target-conf">${formatConfidence(conf)}</span>
-          <span class="hon-cal-step">Step ${calibrationStep + 1}/${CALIBRATION_MAX_STEPS}</span>
+          <strong>${safeName}</strong>
+          <span class="hon-cal-target-conf" title="Confidence reflects how reliable this performer's rating is based on matches played. Higher = more reliable.">${formatConfidence(conf)}</span>
+          <span class="hon-cal-step" title="Each step is one comparison to narrow the rating range. May finish early if the range converges to within ±5 points.">Step ${calibrationStep + 1}/${CALIBRATION_MAX_STEPS}${rangeInfo}</span>
         </div>
       `;
     }
 
+    // Show last convergence result if available
+    let lastResultInfo = "";
+    if (calibrationLastResult) {
+      lastResultInfo = `<div class="hon-cal-last-result">${calibrationLastResult}</div>`;
+    }
+
     dashboard.innerHTML = `
       <div class="hon-cal-stats">
-        <div class="hon-cal-stat">
+        <div class="hon-cal-stat" title="Number of performers who have at least one match recorded.">
           <span class="hon-cal-stat-value">${coverageInfo.rated}/${coverageInfo.total}</span>
           <span class="hon-cal-stat-label">Rated (${ratedPct}%)</span>
         </div>
-        <div class="hon-cal-stat">
+        <div class="hon-cal-stat" title="Average confidence across all performers. Based on match count: more matches = higher confidence. 75%+ is well-established.">
           <span class="hon-cal-stat-value">${pct}%</span>
           <span class="hon-cal-stat-label">Avg Confidence</span>
         </div>
-        <div class="hon-cal-stat">
+        <div class="hon-cal-stat" title="Performers with 75%+ confidence (roughly 15+ matches). These have reliable ratings.">
           <span class="hon-cal-stat-value">${coverageInfo.highConfidence}</span>
           <span class="hon-cal-stat-label">High Confidence</span>
         </div>
-        <div class="hon-cal-stat">
+        <div class="hon-cal-stat" title="Performers below 50% confidence (fewer than ~3 matches). These are prioritized for calibration.">
           <span class="hon-cal-stat-value">${coverageInfo.lowConfidence}</span>
           <span class="hon-cal-stat-label">Need Rating</span>
         </div>
       </div>
+      ${lastResultInfo}
       ${targetInfo}
     `;
   }
@@ -4731,6 +4744,12 @@ async function fetchPerformerCount(performerFilter = {}) {
 
         // Check if calibration is done (converged or max steps reached)
         if (calibrationStep >= CALIBRATION_MAX_STEPS || (calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
+          const targetName = escapeHtml(calibrationTarget.name);
+          if ((calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
+            calibrationLastResult = `✅ ${targetName} converged at step ${calibrationStep}/${CALIBRATION_MAX_STEPS} — rating narrowed to ${calibrationLow}–${calibrationHigh}`;
+          } else {
+            calibrationLastResult = `✅ ${targetName} finished all ${CALIBRATION_MAX_STEPS} steps`;
+          }
           // Reset target — next loadNewPair will pick a new performer to calibrate
           calibrationTarget = null;
           calibrationStep = 0;
