@@ -4,7 +4,7 @@
   // Current comparison pair and mode
   let currentPair = { left: null, right: null };
   let currentRanks = { left: null, right: null };
-  let currentMode = "swiss"; // "swiss", "gauntlet", "champion", "calibration", "tournament", or "division"
+  let currentMode = "swiss"; // "swiss", "gauntlet", "champion", "calibration", or "tournament"
   let gauntletChampion = null; // The item currently on a winning streak
   let gauntletWins = 0; // Current win streak
   let gauntletChampionRank = 0; // Current rank position (1 = top)
@@ -35,13 +35,6 @@
   let tournamentPerformers = []; // All tournament participants
   let tournamentSetupDone = false; // Whether bracket has been seeded
 
-  // Division mode state
-  let divisions = []; // Array of { id, name, performerCount, rated, totalMatches }
-  let currentDivision = null; // Currently selected division { id, name }
-  let divisionPhase = "selection"; // "selection", "ranking", "playoffs"
-  let divisionPerformers = []; // Performers in the current division
-  let divisionMatchCount = 0; // Matches completed in current division
-  let divisionPlayoffChampions = []; // Top performers from completed divisions for playoffs
   let disableChoice = false; // Track when inputs should be disabled to prevent multiple events
   let battleType = "performers"; // HotOrNot is performers-only
   let cachedUrlFilter = null; // Cache the URL filter when modal is opened
@@ -87,25 +80,12 @@
   }
 
   /**
-   * Reset division mode state.
-   */
-  function resetDivisionState() {
-    divisions = [];
-    currentDivision = null;
-    divisionPhase = "selection";
-    divisionPerformers = [];
-    divisionMatchCount = 0;
-    divisionPlayoffChampions = [];
-  }
-
-  /**
    * Reset all mode-specific state (called when switching modes).
    */
   function resetAllModeState() {
     resetGauntletState();
     resetCalibrationState();
     resetTournamentState();
-    resetDivisionState();
   }
 
   // All genders supported by Stash, with display labels
@@ -1442,8 +1422,8 @@
    * @returns {boolean} True if performer's stats should be tracked
    */
   function isActiveParticipant(performerId, performerRank) {
-    // In Swiss, Calibration, Tournament, and Division modes, all participants are active
-    if (currentMode === "swiss" || currentMode === "calibration" || currentMode === "tournament" || currentMode === "division") {
+    // In Swiss, Calibration, and Tournament modes, all participants are active
+    if (currentMode === "swiss" || currentMode === "calibration" || currentMode === "tournament") {
       return true;
     }
     
@@ -2944,197 +2924,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     return await fetchTournamentPairPerformers();
   }
 
-  // ============================================
-  // DIVISION MODE — Studios as divisions/conferences
-  // ============================================
-
-  /**
-   * Fetch all studios with their performer counts.
-   * Uses Stash's findStudios query to get studio list with performer stats.
-   * @returns {Array} Array of { id, name, performerCount }
-   */
-  async function fetchDivisions() {
-    const performerFilter = getPerformerFilter();
-
-    // First get all performers to count per-studio
-    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
-      performer_filter: performerFilter,
-      filter: { per_page: -1, sort: "rating", direction: "DESC" }
-    });
-
-    const performers = result.findPerformers.performers || [];
-
-    // We need studio info — fetch studios from Stash
-    const studiosQuery = `
-      query FindStudios {
-        findStudios(filter: { per_page: -1, sort: "name", direction: ASC }) {
-          count
-          studios {
-            id
-            name
-            image_path
-          }
-        }
-      }
-    `;
-
-    const studiosResult = await graphqlQuery(studiosQuery);
-    const allStudios = studiosResult.findStudios?.studios || [];
-
-    // For each studio, count performers who have scenes with that studio
-    // We need to fetch performer counts per studio using performer filter
-    const divisionList = [];
-
-    for (const studio of allStudios) {
-      // Count performers in this studio by querying with studio filter
-      const studioFilter = {
-        ...performerFilter,
-        studios: {
-          value: [studio.id],
-          modifier: "INCLUDES",
-          depth: -1
-        }
-      };
-
-      const countResult = await graphqlQuery(FIND_PERFORMERS_QUERY, {
-        performer_filter: studioFilter,
-        filter: { per_page: 0 }
-      });
-
-      const performerCount = countResult.findPerformers?.count || 0;
-
-      if (performerCount >= 2) {
-        // Count rated performers (those with any matches)
-        divisionList.push({
-          id: studio.id,
-          name: studio.name,
-          image_path: studio.image_path,
-          performerCount: performerCount,
-          rated: 0, // Will be populated when division is selected
-          totalMatches: 0
-        });
-      }
-    }
-
-    // Sort by performer count descending (largest divisions first)
-    divisionList.sort((a, b) => b.performerCount - a.performerCount);
-
-    return divisionList;
-  }
-
-  /**
-   * Fetch performers for a specific division (studio).
-   * @param {string} studioId - Studio ID to filter by
-   * @returns {Array} Array of performer objects
-   */
-  async function fetchDivisionPerformers(studioId) {
-    const performerFilter = getPerformerFilter();
-    const divisionFilter = {
-      ...performerFilter,
-      studios: {
-        value: [studioId],
-        modifier: "INCLUDES",
-        depth: -1
-      }
-    };
-
-    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
-      performer_filter: divisionFilter,
-      filter: { per_page: -1, sort: "rating", direction: "DESC" }
-    });
-
-    return result.findPerformers?.performers || [];
-  }
-
-  /**
-   * Fetch a pair for division mode.
-   * Pairs performers within the same division (studio) using Swiss-style logic.
-   * @returns {Object} { performers, ranks, divisionInfo }
-   */
-  async function fetchDivisionPairPerformers() {
-    if (!currentDivision || divisionPerformers.length < 2) {
-      return { performers: [], ranks: [null, null], divisionInfo: null };
-    }
-
-    // Re-fetch division performers to get fresh ratings
-    const freshPerformers = await fetchDivisionPerformers(currentDivision.id);
-    divisionPerformers = freshPerformers;
-
-    if (freshPerformers.length < 2) {
-      return { performers: [], ranks: [null, null], divisionInfo: null };
-    }
-
-    // Use Swiss-style pairing within the division
-    const withWeights = freshPerformers.map((p, idx) => ({
-      performer: p,
-      weight: getRecencyWeight(p),
-      index: idx
-    }));
-
-    // Pick first performer weighted by recency
-    const weights1 = withWeights.map(pw => pw.weight);
-    const selected1 = weightedRandomSelect(withWeights, weights1);
-
-    if (!selected1) {
-      return {
-        performers: [freshPerformers[0], freshPerformers[1]],
-        ranks: [1, 2],
-        divisionInfo: buildDivisionInfo()
-      };
-    }
-
-    const performer1 = selected1.performer;
-    const rating1 = performer1.rating100 || 50;
-
-    // Find opponent within adaptive window (like Swiss)
-    const matchWindow = freshPerformers.length > 20 ? 10 : 20;
-    let candidates = withWeights.filter(pw => {
-      if (pw.performer.id === performer1.id) return false;
-      const rating = pw.performer.rating100 || 50;
-      return Math.abs(rating - rating1) <= matchWindow;
-    });
-
-    if (candidates.length === 0) {
-      candidates = withWeights.filter(pw => pw.performer.id !== performer1.id);
-    }
-
-    const weights2 = candidates.map(pw => pw.weight);
-    const selected2 = weightedRandomSelect(candidates, weights2);
-
-    const performer2 = selected2 ? selected2.performer : candidates[0].performer;
-    const idx2 = selected2 ? selected2.index : candidates[0].index;
-
-    return {
-      performers: [performer1, performer2],
-      ranks: [selected1.index + 1, idx2 + 1],
-      divisionInfo: buildDivisionInfo()
-    };
-  }
-
-  /**
-   * Build division info for display.
-   * @returns {Object} Division metadata for UI display
-   */
-  function buildDivisionInfo() {
-    if (!currentDivision) return null;
-    const rated = divisionPerformers.filter(p => {
-      const stats = parsePerformerEloData(p);
-      return stats.total_matches > 0;
-    }).length;
-
-    return {
-      name: currentDivision.name,
-      total: divisionPerformers.length,
-      rated: rated,
-      matches: divisionMatchCount,
-      phase: divisionPhase
-    };
-  }
-
-  async function fetchDivisionPair() {
-    return await fetchDivisionPairPerformers();
-  }
-
   async function updateItemRating(itemId, newRating, itemObj = null, won = null, ratingChange = 0) {
     if (battleType === "performers") {
       return await updatePerformerRating(itemId, newRating, itemObj, won, ratingChange);
@@ -3831,11 +3620,6 @@ async function fetchPerformerCount(performerFilter = {}) {
               <span class="hon-mode-title">Tournament</span>
               <span class="hon-mode-desc">Bracket battle</span>
             </button>
-            <button class="hon-mode-btn ${currentMode === 'division' ? 'active' : ''}" data-mode="division">
-              <span class="hon-mode-icon">🏠</span>
-              <span class="hon-mode-title">Division</span>
-              <span class="hon-mode-desc">Studio conferences</span>
-            </button>
           </div>
     ` : '';
 
@@ -3881,19 +3665,9 @@ async function fetchPerformerCount(performerFilter = {}) {
           </div>
         </div>
 
-        <div id="hon-division-selection" class="hon-performer-selection" style="display: none;">
-          <h3 class="hon-selection-title">🏠 Pick a Division</h3>
-          <p class="hon-selection-subtitle">Each studio is a division — rank performers within their conference</p>
-          <div id="hon-division-list" class="hon-division-list">
-            <div class="hon-loading">Loading studios...</div>
-          </div>
-        </div>
-
         <div id="hon-calibration-dashboard" class="hon-calibration-dashboard" style="display: none;"></div>
 
         <div id="hon-tournament-bracket-display" class="hon-bracket-display" style="display: none;"></div>
-
-        <div id="hon-division-standings" class="hon-division-standings" style="display: none;"></div>
 
         <div class="hon-content">
           <div id="hon-comparison-area" class="hon-comparison-area">
@@ -3933,7 +3707,6 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     // Hide other mode-specific panels
     hidePerformerSelection();
-    hideDivisionSelection();
     hideCalibrationDashboard();
 
     // Attach size button handlers
@@ -4004,96 +3777,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
   }
 
-  /**
-   * Show division (studio) selection UI.
-   */
-  async function showDivisionSelection() {
-    const divisionContainer = document.getElementById("hon-division-selection");
-    const comparisonArea = document.getElementById("hon-comparison-area");
-    const actionsEl = document.querySelector(".hon-actions");
-    const standingsEl = document.getElementById("hon-division-standings");
-
-    if (divisionContainer) divisionContainer.style.display = "block";
-    if (comparisonArea) comparisonArea.style.display = "none";
-    if (actionsEl) actionsEl.style.display = "none";
-    if (standingsEl) standingsEl.style.display = "none";
-
-    // Hide other mode-specific panels
-    hidePerformerSelection();
-    hideTournamentSetup();
-    hideCalibrationDashboard();
-
-    const divisionList = document.getElementById("hon-division-list");
-    if (!divisionList) return;
-
-    divisionList.innerHTML = '<div class="hon-loading">Loading studios...</div>';
-
-    try {
-      divisions = await fetchDivisions();
-
-      if (divisions.length === 0) {
-        divisionList.innerHTML = '<div class="hon-error">No studios found with 2+ performers. Studios are used as divisions.</div>';
-        return;
-      }
-
-      divisionList.innerHTML = divisions.map(div => `
-        <div class="hon-division-card" data-studio-id="${div.id}">
-          <div class="hon-division-card-header">
-            ${div.image_path ? `<img class="hon-division-logo" src="${div.image_path}" alt="${div.name}" />` : '<div class="hon-division-logo hon-no-image">🏠</div>'}
-            <div class="hon-division-card-info">
-              <h4 class="hon-division-name">${div.name}</h4>
-              <span class="hon-division-count">${div.performerCount} performer${div.performerCount !== 1 ? 's' : ''}</span>
-            </div>
-          </div>
-        </div>
-      `).join('');
-
-      // Attach click handlers
-      divisionList.querySelectorAll(".hon-division-card").forEach((card) => {
-        card.addEventListener("click", async () => {
-          const studioId = card.dataset.studioId;
-          const division = divisions.find(d => d.id === studioId);
-          if (division) {
-            await selectDivision(division);
-          }
-        });
-      });
-    } catch (error) {
-      console.error("[HotOrNot] Error loading divisions:", error);
-      divisionList.innerHTML = `<div class="hon-error">Error loading studios: ${error.message}</div>`;
-    }
-  }
-
-  /**
-   * Select a division and start ranking within it.
-   * @param {Object} division - Division object { id, name, performerCount }
-   */
-  async function selectDivision(division) {
-    currentDivision = { id: division.id, name: division.name };
-    divisionPhase = "ranking";
-    divisionMatchCount = 0;
-
-    // Fetch performers for this division
-    divisionPerformers = await fetchDivisionPerformers(division.id);
-
-    if (divisionPerformers.length < 2) {
-      const comparisonArea = document.getElementById("hon-comparison-area");
-      if (comparisonArea) {
-        comparisonArea.innerHTML = '<div class="hon-error">Not enough performers in this division.</div>';
-        comparisonArea.style.display = "";
-      }
-      return;
-    }
-
-    // Hide division selection, show comparison area
-    hideDivisionSelection();
-    const comparisonArea = document.getElementById("hon-comparison-area");
-    const actionsEl = document.querySelector(".hon-actions");
-    if (comparisonArea) comparisonArea.style.display = "";
-    if (actionsEl) actionsEl.style.display = "";
-
-    loadNewPair();
-  }
 
   /**
    * Update the calibration coverage dashboard.
@@ -4260,69 +3943,10 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   /**
-   * Update division standings display.
-   * @param {Object} divisionInfo - { name, total, rated, matches, phase }
-   */
-  function updateDivisionStandings(divisionInfo) {
-    const standingsEl = document.getElementById("hon-division-standings");
-    if (!standingsEl || !divisionInfo) return;
-
-    standingsEl.style.display = "block";
-
-    const ratedPct = divisionInfo.total > 0 ? Math.round((divisionInfo.rated / divisionInfo.total) * 100) : 0;
-
-    // Build mini leaderboard from divisionPerformers
-    const sorted = [...divisionPerformers].sort((a, b) => (b.rating100 || 50) - (a.rating100 || 50));
-    const topPerformers = sorted.slice(0, 5);
-
-    let leaderboardHTML = topPerformers.map((p, idx) => {
-      const stats = parsePerformerEloData(p);
-      const conf = getConfidence(stats.total_matches);
-      return `<div class="hon-div-standing-row">
-        <span class="hon-div-rank">#${idx + 1}</span>
-        <span class="hon-div-name">${p.name}</span>
-        <span class="hon-div-rating">${((p.rating100 || 50) / 10).toFixed(1)}</span>
-        <span class="hon-div-conf">${formatConfidence(conf)}</span>
-      </div>`;
-    }).join('');
-
-    standingsEl.innerHTML = `
-      <div class="hon-div-header">
-        <span class="hon-div-title">🏠 ${divisionInfo.name}</span>
-        <button id="hon-change-division" class="btn btn-sm btn-secondary">Change Division</button>
-      </div>
-      <div class="hon-div-stats">
-        <span>${divisionInfo.rated}/${divisionInfo.total} rated (${ratedPct}%)</span>
-        <span>•</span>
-        <span>${divisionInfo.matches} match${divisionInfo.matches !== 1 ? 'es' : ''} this session</span>
-      </div>
-      <div class="hon-div-leaderboard">
-        ${leaderboardHTML}
-      </div>
-    `;
-
-    // Attach change division button
-    const changeBtn = standingsEl.querySelector("#hon-change-division");
-    if (changeBtn) {
-      changeBtn.addEventListener("click", () => {
-        currentDivision = null;
-        divisionPhase = "selection";
-        divisionMatchCount = 0;
-        loadNewPair();
-      });
-    }
-  }
-
-  /**
    * Hide mode-specific UI panels.
    */
   function hideTournamentSetup() {
     const el = document.getElementById("hon-tournament-setup");
-    if (el) el.style.display = "none";
-  }
-
-  function hideDivisionSelection() {
-    const el = document.getElementById("hon-division-selection");
     if (el) el.style.display = "none";
   }
 
@@ -4333,11 +3957,6 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   function hideTournamentBracket() {
     const el = document.getElementById("hon-tournament-bracket-display");
-    if (el) el.style.display = "none";
-  }
-
-  function hideDivisionStandings() {
-    const el = document.getElementById("hon-division-standings");
     if (el) el.style.display = "none";
   }
 
@@ -4359,12 +3978,6 @@ async function fetchPerformerCount(performerFilter = {}) {
       return;
     }
 
-    // Division mode: show division selection if no division chosen
-    if (currentMode === "division" && !currentDivision) {
-      showDivisionSelection();
-      return;
-    }
-
     // Only show loading on first load (when empty or already showing loading)
     if (!comparisonArea.querySelector('.hon-vs-container')) {
       comparisonArea.innerHTML = '<div class="hon-loading">Loading...</div>';
@@ -4373,10 +3986,8 @@ async function fetchPerformerCount(performerFilter = {}) {
     // Hide mode-specific panels that aren't relevant to the current mode
     if (currentMode !== "calibration") hideCalibrationDashboard();
     if (currentMode !== "tournament") hideTournamentBracket();
-    if (currentMode !== "division") hideDivisionStandings();
     if (currentMode !== "gauntlet") hidePerformerSelection();
     if (currentMode !== "tournament" || tournamentSetupDone) hideTournamentSetup();
-    if (currentMode !== "division" || currentDivision) hideDivisionSelection();
 
     try {
       let items;
@@ -4473,21 +4084,6 @@ async function fetchPerformerCount(performerFilter = {}) {
         // Update bracket display
         if (tournamentResult.tournamentInfo) {
           updateTournamentBracketDisplay(tournamentResult.tournamentInfo);
-        }
-      } else if (currentMode === "division") {
-        const divisionResult = await fetchDivisionPair();
-
-        if (!divisionResult.performers || divisionResult.performers.length < 2) {
-          comparisonArea.innerHTML = '<div class="hon-error">Not enough performers in this division for comparison.</div>';
-          return;
-        }
-
-        items = divisionResult.performers;
-        ranks = divisionResult.ranks;
-
-        // Update division standings
-        if (divisionResult.divisionInfo) {
-          updateDivisionStandings(divisionResult.divisionInfo);
         }
       }
       
@@ -4624,8 +4220,6 @@ async function fetchPerformerCount(performerFilter = {}) {
       tournamentBracket: tournamentBracket ? structuredClone(tournamentBracket) : null,
       tournamentRound: tournamentRound,
       tournamentMatchIndex: tournamentMatchIndex,
-      // Division state
-      divisionMatchCount: divisionMatchCount,
     };
   }
 
@@ -4718,11 +4312,6 @@ async function fetchPerformerCount(performerFilter = {}) {
         tournamentBracket = undo.tournamentBracket;
         tournamentRound = undo.tournamentRound;
         tournamentMatchIndex = undo.tournamentMatchIndex;
-      }
-
-      // Restore division state
-      if (undo.divisionMatchCount !== undefined) {
-        divisionMatchCount = undo.divisionMatchCount;
       }
 
       // Restore the pair objects (with original ratings)
@@ -5133,19 +4722,6 @@ async function fetchPerformerCount(performerFilter = {}) {
           tournamentMatchIndex++;
         }
       }
-
-      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
-      return;
-    }
-
-    // Handle division mode — track match count for the division
-    if (currentMode === "division") {
-      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
-      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
-        winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
-      );
-
-      divisionMatchCount++;
 
       showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
       return;
@@ -5650,10 +5226,8 @@ function addFloatingButton() {
           // Hide all mode-specific panels
           hidePerformerSelection();
           hideTournamentSetup();
-          hideDivisionSelection();
           hideCalibrationDashboard();
           hideTournamentBracket();
-          hideDivisionStandings();
           
           // Load new pair in new mode
           loadNewPair();
@@ -5679,10 +5253,9 @@ function addFloatingButton() {
         if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion")) {
           resetGauntletState();
         }
-        // Apply ELO draw rating changes for skips in Swiss, calibration, and division modes
-        if ((currentMode === "swiss" || currentMode === "calibration" || currentMode === "division") && currentPair.left && currentPair.right) {
+        // Apply ELO draw rating changes for skips in Swiss and calibration modes
+        if ((currentMode === "swiss" || currentMode === "calibration") && currentPair.left && currentPair.right) {
           await handleSkip(currentPair.left, currentPair.right);
-          if (currentMode === "division") divisionMatchCount++;
         }
         loadNewPair();
       });
@@ -5764,10 +5337,9 @@ function addFloatingButton() {
           if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion")) {
             resetGauntletState();
           }
-          // Apply ELO draw rating changes for skips in Swiss, calibration, and division modes
-          if ((currentMode === "swiss" || currentMode === "calibration" || currentMode === "division") && currentPair.left && currentPair.right) {
+          // Apply ELO draw rating changes for skips in Swiss and calibration modes
+          if ((currentMode === "swiss" || currentMode === "calibration") && currentPair.left && currentPair.right) {
             await handleSkip(currentPair.left, currentPair.right);
-            if (currentMode === "division") divisionMatchCount++;
           }
           loadNewPair();
         }
