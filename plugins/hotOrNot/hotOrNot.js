@@ -4,7 +4,7 @@
   // Current comparison pair and mode
   let currentPair = { left: null, right: null };
   let currentRanks = { left: null, right: null };
-  let currentMode = "swiss"; // "swiss", "gauntlet", or "champion"
+  let currentMode = "swiss"; // "swiss", "gauntlet", "champion", "calibration", "tournament", or "division"
   let gauntletChampion = null; // The item currently on a winning streak
   let gauntletWins = 0; // Current win streak
   let gauntletChampionRank = 0; // Current rank position (1 = top)
@@ -13,6 +13,35 @@
   let gauntletFallingItem = null; // The item that's falling to find its position
   let gauntletFallingTested = []; // IDs of items already tested during falling phase (to avoid repeats)
   let totalItemsCount = 0; // Total items for position display
+
+  // Calibration mode state
+  let calibrationTarget = null; // The performer being calibrated (least confident)
+  let calibrationLow = 1; // Binary search lower bound rating
+  let calibrationHigh = 100; // Binary search upper bound rating
+  let calibrationStep = 0; // Number of calibration matches for current target
+  const CALIBRATION_MAX_STEPS = 10; // Max binary search steps before moving to next target
+  const CALIBRATION_CONVERGENCE_THRESHOLD = 5; // Rating range (high - low) at which target is considered converged
+  const CALIBRATION_HIGH_CONFIDENCE = 0.75; // Confidence level at which a performer is considered well-established
+  const CALIBRATION_LOW_CONFIDENCE = 0.5; // Confidence level below which a performer needs more rating
+  const CALIBRATION_MIN_WEIGHT = 0.1; // Minimum weight to prevent zero weights for max-confidence performers
+  const CALIBRATION_CONFIDENCE_WEIGHT = 10; // Weight of confidence vs rating proximity in anchor selection
+  const CALIBRATION_TOP_CANDIDATES = 3; // Number of top anchor candidates to randomly select from
+
+  // Tournament mode state
+  let tournamentBracket = null; // Array of rounds, each with match slots
+  let tournamentRound = 0; // Current round index
+  let tournamentMatchIndex = 0; // Current match within the round
+  let tournamentSize = 0; // Number of participants (8, 16, 32)
+  let tournamentPerformers = []; // All tournament participants
+  let tournamentSetupDone = false; // Whether bracket has been seeded
+
+  // Division mode state
+  let divisions = []; // Array of { id, name, performerCount, rated, totalMatches }
+  let currentDivision = null; // Currently selected division { id, name }
+  let divisionPhase = "selection"; // "selection", "ranking", "playoffs"
+  let divisionPerformers = []; // Performers in the current division
+  let divisionMatchCount = 0; // Matches completed in current division
+  let divisionPlayoffChampions = []; // Top performers from completed divisions for playoffs
   let disableChoice = false; // Track when inputs should be disabled to prevent multiple events
   let battleType = "performers"; // HotOrNot is performers-only
   let cachedUrlFilter = null; // Cache the URL filter when modal is opened
@@ -33,6 +62,50 @@
     gauntletFalling = false;
     gauntletFallingItem = null;
     gauntletFallingTested = [];
+  }
+
+  /**
+   * Reset calibration mode state.
+   */
+  function resetCalibrationState() {
+    calibrationTarget = null;
+    calibrationLow = 1;
+    calibrationHigh = 100;
+    calibrationStep = 0;
+  }
+
+  /**
+   * Reset tournament mode state.
+   */
+  function resetTournamentState() {
+    tournamentBracket = null;
+    tournamentRound = 0;
+    tournamentMatchIndex = 0;
+    tournamentSize = 0;
+    tournamentPerformers = [];
+    tournamentSetupDone = false;
+  }
+
+  /**
+   * Reset division mode state.
+   */
+  function resetDivisionState() {
+    divisions = [];
+    currentDivision = null;
+    divisionPhase = "selection";
+    divisionPerformers = [];
+    divisionMatchCount = 0;
+    divisionPlayoffChampions = [];
+  }
+
+  /**
+   * Reset all mode-specific state (called when switching modes).
+   */
+  function resetAllModeState() {
+    resetGauntletState();
+    resetCalibrationState();
+    resetTournamentState();
+    resetDivisionState();
   }
 
   // All genders supported by Stash, with display labels
@@ -1369,8 +1442,8 @@
    * @returns {boolean} True if performer's stats should be tracked
    */
   function isActiveParticipant(performerId, performerRank) {
-    // In Swiss mode, all participants are active
-    if (currentMode === "swiss") {
+    // In Swiss, Calibration, Tournament, and Division modes, all participants are active
+    if (currentMode === "swiss" || currentMode === "calibration" || currentMode === "tournament" || currentMode === "division") {
       return true;
     }
     
@@ -2559,6 +2632,509 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
   }
 
+  // ============================================
+  // CALIBRATION MODE — Binary-search placement against anchors
+  // ============================================
+
+  /**
+   * Calculate confidence for a performer based on match count.
+   * confidence = 1 - (1 / sqrt(matches + 1))
+   * At 0 matches = 0.0, 3 matches ≈ 0.5, 15 matches ≈ 0.75, approaches 1.0 asymptotically
+   * @param {number} matchCount - Number of matches played
+   * @returns {number} Confidence value between 0 and 1
+   */
+  function getConfidence(matchCount) {
+    return 1 - (1 / Math.sqrt((matchCount || 0) + 1));
+  }
+
+  /**
+   * Format confidence as a percentage string with emoji indicator.
+   * @param {number} confidence - Confidence value between 0 and 1
+   * @returns {string} Formatted confidence like "📊 42%" or "💎 95%"
+   */
+  function formatConfidence(confidence) {
+    const pct = Math.round(confidence * 100);
+    if (pct >= 90) return `💎 ${pct}%`;
+    if (pct >= 70) return `📈 ${pct}%`;
+    if (pct >= 50) return `📊 ${pct}%`;
+    return `🔍 ${pct}%`;
+  }
+
+  /**
+   * Fetch a pair for calibration mode.
+   * Picks the least-confident performer as the "target" and finds an anchor
+   * performer near the binary-search midpoint of the target's estimated range.
+   * @returns {Object} { performers, ranks, coverageInfo }
+   */
+  async function fetchCalibrationPairPerformers() {
+    const performerFilter = getPerformerFilter();
+
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
+      performer_filter: performerFilter,
+      filter: { per_page: -1, sort: "rating", direction: "DESC" }
+    });
+
+    const performers = result.findPerformers.performers || [];
+    totalItemsCount = performers.length;
+
+    if (performers.length < 2) {
+      return { performers: await fetchRandomPerformers(2), ranks: [null, null], coverageInfo: null };
+    }
+
+    // Parse stats for all performers and compute confidence
+    const withStats = performers.map((p, idx) => {
+      const stats = parsePerformerEloData(p);
+      return {
+        performer: p,
+        index: idx,
+        matchCount: stats.total_matches,
+        confidence: getConfidence(stats.total_matches),
+        rating: p.rating100 || 50
+      };
+    });
+
+    // If we have a current calibration target and haven't exceeded max steps, continue with it
+    if (calibrationTarget && calibrationStep < CALIBRATION_MAX_STEPS) {
+      const targetEntry = withStats.find(ws => ws.performer.id === calibrationTarget.id);
+      if (targetEntry) {
+        // Find an anchor near the binary-search midpoint
+        const midpoint = Math.round((calibrationLow + calibrationHigh) / 2);
+        const anchor = findAnchorNearRating(withStats, midpoint, calibrationTarget.id);
+        if (anchor) {
+          return {
+            performers: [targetEntry.performer, anchor.performer],
+            ranks: [targetEntry.index + 1, anchor.index + 1],
+            coverageInfo: buildCoverageInfo(withStats)
+          };
+        }
+      }
+    }
+
+    // Pick the least confident performer as the new calibration target
+    // Among those with confidence < 0.75, pick randomly (weighted by low confidence)
+    const uncertain = withStats.filter(ws => ws.confidence < CALIBRATION_HIGH_CONFIDENCE);
+    let target;
+
+    if (uncertain.length > 0) {
+      // Weight by inverse confidence — less confident = more likely to be picked
+      const weights = uncertain.map(ws => 1 - ws.confidence + CALIBRATION_MIN_WEIGHT);
+      target = weightedRandomSelect(uncertain, weights);
+    } else {
+      // All performers are reasonably confident — pick one at random for maintenance
+      target = withStats[Math.floor(Math.random() * withStats.length)];
+    }
+
+    calibrationTarget = target.performer;
+    calibrationLow = 1;
+    calibrationHigh = 100;
+    calibrationStep = 0;
+
+    // Find an anchor near the target's current rating (starting point of binary search)
+    const midpoint = target.rating;
+    const anchor = findAnchorNearRating(withStats, midpoint, target.performer.id);
+
+    if (!anchor) {
+      // Fallback: just pick any other performer
+      const others = withStats.filter(ws => ws.performer.id !== target.performer.id);
+      const fallback = others[Math.floor(Math.random() * others.length)];
+      return {
+        performers: [target.performer, fallback.performer],
+        ranks: [target.index + 1, fallback.index + 1],
+        coverageInfo: buildCoverageInfo(withStats)
+      };
+    }
+
+    return {
+      performers: [target.performer, anchor.performer],
+      ranks: [target.index + 1, anchor.index + 1],
+      coverageInfo: buildCoverageInfo(withStats)
+    };
+  }
+
+  /**
+   * Find an anchor performer near a given target rating.
+   * Prefers well-established performers (high confidence) as anchors.
+   * @param {Array} withStats - Array of { performer, confidence, rating, ... }
+   * @param {number} targetRating - Rating to search near
+   * @param {string} excludeId - ID to exclude (the calibration target)
+   * @returns {Object|null} Best anchor entry
+   */
+  function findAnchorNearRating(withStats, targetRating, excludeId) {
+    // Find performers near the target rating, preferring high-confidence ones
+    const candidates = withStats
+      .filter(ws => ws.performer.id !== excludeId)
+      .map(ws => ({
+        ...ws,
+        distance: Math.abs(ws.rating - targetRating),
+        anchorScore: ws.confidence * CALIBRATION_CONFIDENCE_WEIGHT - Math.abs(ws.rating - targetRating)
+      }))
+      .sort((a, b) => b.anchorScore - a.anchorScore);
+
+    // From top candidates, pick randomly among the best 3
+    const topCandidates = candidates.slice(0, Math.min(CALIBRATION_TOP_CANDIDATES, candidates.length));
+    if (topCandidates.length === 0) return null;
+    return topCandidates[Math.floor(Math.random() * topCandidates.length)];
+  }
+
+  /**
+   * Build coverage information for the calibration dashboard.
+   * @param {Array} withStats - Array of performer stats
+   * @returns {Object} { total, rated, avgConfidence, highConfidence, lowConfidence }
+   */
+  function buildCoverageInfo(withStats) {
+    const total = withStats.length;
+    const rated = withStats.filter(ws => ws.matchCount > 0).length;
+    const avgConfidence = total > 0
+      ? withStats.reduce((sum, ws) => sum + ws.confidence, 0) / total
+      : 0;
+    const highConfidence = withStats.filter(ws => ws.confidence >= CALIBRATION_HIGH_CONFIDENCE).length;
+    const lowConfidence = withStats.filter(ws => ws.confidence < CALIBRATION_LOW_CONFIDENCE).length;
+    return { total, rated, avgConfidence, highConfidence, lowConfidence };
+  }
+
+  async function fetchCalibrationPair() {
+    return await fetchCalibrationPairPerformers();
+  }
+
+  // ============================================
+  // TOURNAMENT MODE — Bracket-based single elimination
+  // ============================================
+
+  /**
+   * Generate a seeded single-elimination bracket.
+   * Performers are seeded by current rating (highest = seed 1).
+   * @param {Array} performers - Array of performer objects sorted by rating DESC
+   * @returns {Array} Array of rounds, each round is an array of matches
+   *   Match: { seed1: performerObj, seed2: performerObj, winner: null }
+   */
+  function generateBracket(performers) {
+    const n = performers.length;
+    const rounds = Math.ceil(Math.log2(n));
+    const bracket = [];
+
+    // First round: pair seed 1 vs last, seed 2 vs second-last, etc.
+    const firstRound = [];
+    for (let i = 0; i < Math.floor(n / 2); i++) {
+      firstRound.push({
+        seed1: performers[i],
+        seed2: performers[n - 1 - i],
+        winner: null
+      });
+    }
+    // Handle bye if odd number (shouldn't happen with 8/16/32 but be safe)
+    if (n % 2 !== 0) {
+      firstRound.push({
+        seed1: performers[Math.floor(n / 2)],
+        seed2: null, // bye
+        winner: performers[Math.floor(n / 2)] // auto-advance
+      });
+    }
+    bracket.push(firstRound);
+
+    // Generate empty subsequent rounds
+    let matchesInRound = Math.ceil(firstRound.length / 2);
+    for (let r = 1; r < rounds; r++) {
+      const round = [];
+      for (let m = 0; m < matchesInRound; m++) {
+        round.push({ seed1: null, seed2: null, winner: null });
+      }
+      bracket.push(round);
+      matchesInRound = Math.ceil(matchesInRound / 2);
+    }
+
+    return bracket;
+  }
+
+  /**
+   * Advance a tournament winner to the next round's bracket slot.
+   * @param {Object} winner - The winning performer
+   * @param {number} roundIdx - Current round index
+   * @param {number} matchIdx - Current match index within the round
+   */
+  function advanceTournamentWinner(winner, roundIdx, matchIdx) {
+    const nextRound = roundIdx + 1;
+    if (nextRound >= tournamentBracket.length) return; // Final already
+
+    const nextMatchIdx = Math.floor(matchIdx / 2);
+    const isTopSlot = matchIdx % 2 === 0;
+
+    if (isTopSlot) {
+      tournamentBracket[nextRound][nextMatchIdx].seed1 = winner;
+    } else {
+      tournamentBracket[nextRound][nextMatchIdx].seed2 = winner;
+    }
+  }
+
+  /**
+   * Fetch the next pair for tournament mode.
+   * Returns the current match in the bracket, or signals tournament completion.
+   * @returns {Object} { performers, ranks, isVictory, tournamentInfo }
+   */
+  async function fetchTournamentPairPerformers() {
+    if (!tournamentBracket || tournamentRound >= tournamentBracket.length) {
+      return { performers: [], ranks: [null, null], isVictory: true, tournamentInfo: null };
+    }
+
+    const currentRoundMatches = tournamentBracket[tournamentRound];
+
+    // Skip matches that already have a winner (byes) and advance to next unplayed
+    while (tournamentMatchIndex < currentRoundMatches.length) {
+      const match = currentRoundMatches[tournamentMatchIndex];
+      if (match.winner) {
+        // Auto-advance bye winners
+        advanceTournamentWinner(match.winner, tournamentRound, tournamentMatchIndex);
+        tournamentMatchIndex++;
+        continue;
+      }
+      if (match.seed1 && match.seed2) {
+        // Found a playable match
+        const totalRounds = tournamentBracket.length;
+        const roundNames = [];
+        for (let r = 0; r < totalRounds; r++) {
+          if (r === totalRounds - 1) roundNames.push("Final");
+          else if (r === totalRounds - 2) roundNames.push("Semifinal");
+          else if (r === totalRounds - 3) roundNames.push("Quarterfinal");
+          else roundNames.push(`Round ${r + 1}`);
+        }
+
+        return {
+          performers: [match.seed1, match.seed2],
+          ranks: [null, null],
+          isVictory: false,
+          tournamentInfo: {
+            round: tournamentRound,
+            roundName: roundNames[tournamentRound] || `Round ${tournamentRound + 1}`,
+            matchIndex: tournamentMatchIndex,
+            matchesInRound: currentRoundMatches.length,
+            totalRounds: totalRounds,
+            bracket: tournamentBracket,
+            size: tournamentSize
+          }
+        };
+      }
+      tournamentMatchIndex++;
+    }
+
+    // All matches in this round are done — advance to next round
+    tournamentRound++;
+    tournamentMatchIndex = 0;
+
+    // Check if tournament is complete
+    if (tournamentRound >= tournamentBracket.length) {
+      // Tournament complete — find the champion (winner of the last match)
+      const finalRound = tournamentBracket[tournamentBracket.length - 1];
+      const champion = finalRound[0]?.winner;
+      return {
+        performers: champion ? [champion] : [],
+        ranks: [1],
+        isVictory: true,
+        tournamentInfo: {
+          bracket: tournamentBracket,
+          champion: champion,
+          size: tournamentSize
+        }
+      };
+    }
+
+    // Recurse to find the next playable match in the new round
+    return await fetchTournamentPairPerformers();
+  }
+
+  async function fetchTournamentPair() {
+    return await fetchTournamentPairPerformers();
+  }
+
+  // ============================================
+  // DIVISION MODE — Studios as divisions/conferences
+  // ============================================
+
+  /**
+   * Fetch all studios with their performer counts.
+   * Uses Stash's findStudios query to get studio list with performer stats.
+   * @returns {Array} Array of { id, name, performerCount }
+   */
+  async function fetchDivisions() {
+    const performerFilter = getPerformerFilter();
+
+    // First get all performers to count per-studio
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
+      performer_filter: performerFilter,
+      filter: { per_page: -1, sort: "rating", direction: "DESC" }
+    });
+
+    const performers = result.findPerformers.performers || [];
+
+    // We need studio info — fetch studios from Stash
+    const studiosQuery = `
+      query FindStudios {
+        findStudios(filter: { per_page: -1, sort: "name", direction: "ASC" }) {
+          count
+          studios {
+            id
+            name
+            image_path
+          }
+        }
+      }
+    `;
+
+    const studiosResult = await graphqlQuery(studiosQuery);
+    const allStudios = studiosResult.findStudios?.studios || [];
+
+    // For each studio, count performers who have scenes with that studio
+    // We need to fetch performer counts per studio using performer filter
+    const divisionList = [];
+
+    for (const studio of allStudios) {
+      // Count performers in this studio by querying with studio filter
+      const studioFilter = {
+        ...performerFilter,
+        studios: {
+          value: [studio.id],
+          modifier: "INCLUDES",
+          depth: -1
+        }
+      };
+
+      const countResult = await graphqlQuery(FIND_PERFORMERS_QUERY, {
+        performer_filter: studioFilter,
+        filter: { per_page: 0 }
+      });
+
+      const performerCount = countResult.findPerformers?.count || 0;
+
+      if (performerCount >= 2) {
+        // Count rated performers (those with any matches)
+        divisionList.push({
+          id: studio.id,
+          name: studio.name,
+          image_path: studio.image_path,
+          performerCount: performerCount,
+          rated: 0, // Will be populated when division is selected
+          totalMatches: 0
+        });
+      }
+    }
+
+    // Sort by performer count descending (largest divisions first)
+    divisionList.sort((a, b) => b.performerCount - a.performerCount);
+
+    return divisionList;
+  }
+
+  /**
+   * Fetch performers for a specific division (studio).
+   * @param {string} studioId - Studio ID to filter by
+   * @returns {Array} Array of performer objects
+   */
+  async function fetchDivisionPerformers(studioId) {
+    const performerFilter = getPerformerFilter();
+    const divisionFilter = {
+      ...performerFilter,
+      studios: {
+        value: [studioId],
+        modifier: "INCLUDES",
+        depth: -1
+      }
+    };
+
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
+      performer_filter: divisionFilter,
+      filter: { per_page: -1, sort: "rating", direction: "DESC" }
+    });
+
+    return result.findPerformers?.performers || [];
+  }
+
+  /**
+   * Fetch a pair for division mode.
+   * Pairs performers within the same division (studio) using Swiss-style logic.
+   * @returns {Object} { performers, ranks, divisionInfo }
+   */
+  async function fetchDivisionPairPerformers() {
+    if (!currentDivision || divisionPerformers.length < 2) {
+      return { performers: [], ranks: [null, null], divisionInfo: null };
+    }
+
+    // Re-fetch division performers to get fresh ratings
+    const freshPerformers = await fetchDivisionPerformers(currentDivision.id);
+    divisionPerformers = freshPerformers;
+
+    if (freshPerformers.length < 2) {
+      return { performers: [], ranks: [null, null], divisionInfo: null };
+    }
+
+    // Use Swiss-style pairing within the division
+    const withWeights = freshPerformers.map((p, idx) => ({
+      performer: p,
+      weight: getRecencyWeight(p),
+      index: idx
+    }));
+
+    // Pick first performer weighted by recency
+    const weights1 = withWeights.map(pw => pw.weight);
+    const selected1 = weightedRandomSelect(withWeights, weights1);
+
+    if (!selected1) {
+      return {
+        performers: [freshPerformers[0], freshPerformers[1]],
+        ranks: [1, 2],
+        divisionInfo: buildDivisionInfo()
+      };
+    }
+
+    const performer1 = selected1.performer;
+    const rating1 = performer1.rating100 || 50;
+
+    // Find opponent within adaptive window (like Swiss)
+    const matchWindow = freshPerformers.length > 20 ? 10 : 20;
+    let candidates = withWeights.filter(pw => {
+      if (pw.performer.id === performer1.id) return false;
+      const rating = pw.performer.rating100 || 50;
+      return Math.abs(rating - rating1) <= matchWindow;
+    });
+
+    if (candidates.length === 0) {
+      candidates = withWeights.filter(pw => pw.performer.id !== performer1.id);
+    }
+
+    const weights2 = candidates.map(pw => pw.weight);
+    const selected2 = weightedRandomSelect(candidates, weights2);
+
+    const performer2 = selected2 ? selected2.performer : candidates[0].performer;
+    const idx2 = selected2 ? selected2.index : candidates[0].index;
+
+    return {
+      performers: [performer1, performer2],
+      ranks: [selected1.index + 1, idx2 + 1],
+      divisionInfo: buildDivisionInfo()
+    };
+  }
+
+  /**
+   * Build division info for display.
+   * @returns {Object} Division metadata for UI display
+   */
+  function buildDivisionInfo() {
+    if (!currentDivision) return null;
+    const rated = divisionPerformers.filter(p => {
+      const stats = parsePerformerEloData(p);
+      return stats.total_matches > 0;
+    }).length;
+
+    return {
+      name: currentDivision.name,
+      total: divisionPerformers.length,
+      rated: rated,
+      matches: divisionMatchCount,
+      phase: divisionPhase
+    };
+  }
+
+  async function fetchDivisionPair() {
+    return await fetchDivisionPairPerformers();
+  }
+
   async function updateItemRating(itemId, newRating, itemObj = null, won = null, ratingChange = 0) {
     if (battleType === "performers") {
       return await updatePerformerRating(itemId, newRating, itemObj, won, ratingChange);
@@ -3245,6 +3821,21 @@ async function fetchPerformerCount(performerFilter = {}) {
               <span class="hon-mode-title">Champion</span>
               <span class="hon-mode-desc">Winner stays on</span>
             </button>
+            <button class="hon-mode-btn ${currentMode === 'calibration' ? 'active' : ''}" data-mode="calibration">
+              <span class="hon-mode-icon">📐</span>
+              <span class="hon-mode-title">Calibration</span>
+              <span class="hon-mode-desc">Smart ranking</span>
+            </button>
+            <button class="hon-mode-btn ${currentMode === 'tournament' ? 'active' : ''}" data-mode="tournament">
+              <span class="hon-mode-icon">🏟️</span>
+              <span class="hon-mode-title">Tournament</span>
+              <span class="hon-mode-desc">Bracket battle</span>
+            </button>
+            <button class="hon-mode-btn ${currentMode === 'division' ? 'active' : ''}" data-mode="division">
+              <span class="hon-mode-icon">🏠</span>
+              <span class="hon-mode-title">Division</span>
+              <span class="hon-mode-desc">Studio conferences</span>
+            </button>
           </div>
     ` : '';
 
@@ -3271,6 +3862,39 @@ async function fetchPerformerCount(performerFilter = {}) {
           </div>
         </div>
 
+        <div id="hon-tournament-setup" class="hon-performer-selection" style="display: none;">
+          <h3 class="hon-selection-title">🏟️ Set Up Tournament</h3>
+          <p class="hon-selection-subtitle">Choose bracket size — performers are seeded by current rating</p>
+          <div class="hon-tournament-sizes">
+            <button class="hon-tournament-size-btn" data-size="8">
+              <span class="hon-size-number">8</span>
+              <span class="hon-size-label">7 matches</span>
+            </button>
+            <button class="hon-tournament-size-btn" data-size="16">
+              <span class="hon-size-number">16</span>
+              <span class="hon-size-label">15 matches</span>
+            </button>
+            <button class="hon-tournament-size-btn" data-size="32">
+              <span class="hon-size-number">32</span>
+              <span class="hon-size-label">31 matches</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="hon-division-selection" class="hon-performer-selection" style="display: none;">
+          <h3 class="hon-selection-title">🏠 Pick a Division</h3>
+          <p class="hon-selection-subtitle">Each studio is a division — rank performers within their conference</p>
+          <div id="hon-division-list" class="hon-division-list">
+            <div class="hon-loading">Loading studios...</div>
+          </div>
+        </div>
+
+        <div id="hon-calibration-dashboard" class="hon-calibration-dashboard" style="display: none;"></div>
+
+        <div id="hon-tournament-bracket-display" class="hon-bracket-display" style="display: none;"></div>
+
+        <div id="hon-division-standings" class="hon-division-standings" style="display: none;"></div>
+
         <div class="hon-content">
           <div id="hon-comparison-area" class="hon-comparison-area">
             <div class="hon-loading">Loading...</div>
@@ -3290,8 +3914,432 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   // ============================================
-  // EVENT HANDLERS
+  // NEW MODE UI FUNCTIONS
   // ============================================
+
+  /**
+   * Show tournament size selection UI.
+   */
+  function showTournamentSetup() {
+    const setupContainer = document.getElementById("hon-tournament-setup");
+    const comparisonArea = document.getElementById("hon-comparison-area");
+    const actionsEl = document.querySelector(".hon-actions");
+    const bracketDisplay = document.getElementById("hon-tournament-bracket-display");
+
+    if (setupContainer) setupContainer.style.display = "block";
+    if (comparisonArea) comparisonArea.style.display = "none";
+    if (actionsEl) actionsEl.style.display = "none";
+    if (bracketDisplay) bracketDisplay.style.display = "none";
+
+    // Hide other mode-specific panels
+    hidePerformerSelection();
+    hideDivisionSelection();
+    hideCalibrationDashboard();
+
+    // Attach size button handlers
+    setupContainer.querySelectorAll(".hon-tournament-size-btn").forEach((btn) => {
+      // Remove old handlers by replacing element
+      const newBtn = btn.cloneNode(true);
+      btn.parentNode.replaceChild(newBtn, btn);
+      newBtn.addEventListener("click", async () => {
+        const size = parseInt(newBtn.dataset.size);
+        await initTournament(size);
+      });
+    });
+  }
+
+  /**
+   * Initialize a tournament with the given bracket size.
+   * @param {number} size - Number of performers (8, 16, or 32)
+   */
+  async function initTournament(size) {
+    const setupContainer = document.getElementById("hon-tournament-setup");
+    if (setupContainer) {
+      setupContainer.innerHTML = '<div class="hon-loading">Seeding bracket...</div>';
+    }
+
+    try {
+      const performerFilter = getPerformerFilter();
+      const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
+        performer_filter: performerFilter,
+        filter: { per_page: size, sort: "rating", direction: "DESC" }
+      });
+
+      let performers = result.findPerformers.performers || [];
+
+      if (performers.length < size) {
+        // If not enough top-rated, fetch additional random ones
+        if (performers.length < 4) {
+          if (setupContainer) {
+            setupContainer.innerHTML = '<div class="hon-error">Not enough performers for a tournament. Need at least 4.</div>';
+            setupContainer.style.display = "block";
+          }
+          return;
+        }
+        // Adjust to nearest power of 2
+        size = Math.pow(2, Math.floor(Math.log2(performers.length)));
+        performers = performers.slice(0, size);
+      }
+
+      tournamentSize = size;
+      tournamentPerformers = performers;
+      tournamentBracket = generateBracket(performers);
+      tournamentRound = 0;
+      tournamentMatchIndex = 0;
+      tournamentSetupDone = true;
+
+      // Hide setup, show comparison area
+      if (setupContainer) setupContainer.style.display = "none";
+      const comparisonArea = document.getElementById("hon-comparison-area");
+      const actionsEl = document.querySelector(".hon-actions");
+      if (comparisonArea) comparisonArea.style.display = "";
+      if (actionsEl) actionsEl.style.display = "";
+
+      loadNewPair();
+    } catch (error) {
+      console.error("[HotOrNot] Error initializing tournament:", error);
+      if (setupContainer) {
+        setupContainer.innerHTML = `<div class="hon-error">Error setting up tournament: ${error.message}</div>`;
+      }
+    }
+  }
+
+  /**
+   * Show division (studio) selection UI.
+   */
+  async function showDivisionSelection() {
+    const divisionContainer = document.getElementById("hon-division-selection");
+    const comparisonArea = document.getElementById("hon-comparison-area");
+    const actionsEl = document.querySelector(".hon-actions");
+    const standingsEl = document.getElementById("hon-division-standings");
+
+    if (divisionContainer) divisionContainer.style.display = "block";
+    if (comparisonArea) comparisonArea.style.display = "none";
+    if (actionsEl) actionsEl.style.display = "none";
+    if (standingsEl) standingsEl.style.display = "none";
+
+    // Hide other mode-specific panels
+    hidePerformerSelection();
+    hideTournamentSetup();
+    hideCalibrationDashboard();
+
+    const divisionList = document.getElementById("hon-division-list");
+    if (!divisionList) return;
+
+    divisionList.innerHTML = '<div class="hon-loading">Loading studios...</div>';
+
+    try {
+      divisions = await fetchDivisions();
+
+      if (divisions.length === 0) {
+        divisionList.innerHTML = '<div class="hon-error">No studios found with 2+ performers. Studios are used as divisions.</div>';
+        return;
+      }
+
+      divisionList.innerHTML = divisions.map(div => `
+        <div class="hon-division-card" data-studio-id="${div.id}">
+          <div class="hon-division-card-header">
+            ${div.image_path ? `<img class="hon-division-logo" src="${div.image_path}" alt="${div.name}" />` : '<div class="hon-division-logo hon-no-image">🏠</div>'}
+            <div class="hon-division-card-info">
+              <h4 class="hon-division-name">${div.name}</h4>
+              <span class="hon-division-count">${div.performerCount} performer${div.performerCount !== 1 ? 's' : ''}</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      // Attach click handlers
+      divisionList.querySelectorAll(".hon-division-card").forEach((card) => {
+        card.addEventListener("click", async () => {
+          const studioId = card.dataset.studioId;
+          const division = divisions.find(d => d.id === studioId);
+          if (division) {
+            await selectDivision(division);
+          }
+        });
+      });
+    } catch (error) {
+      console.error("[HotOrNot] Error loading divisions:", error);
+      divisionList.innerHTML = `<div class="hon-error">Error loading studios: ${error.message}</div>`;
+    }
+  }
+
+  /**
+   * Select a division and start ranking within it.
+   * @param {Object} division - Division object { id, name, performerCount }
+   */
+  async function selectDivision(division) {
+    currentDivision = { id: division.id, name: division.name };
+    divisionPhase = "ranking";
+    divisionMatchCount = 0;
+
+    // Fetch performers for this division
+    divisionPerformers = await fetchDivisionPerformers(division.id);
+
+    if (divisionPerformers.length < 2) {
+      const comparisonArea = document.getElementById("hon-comparison-area");
+      if (comparisonArea) {
+        comparisonArea.innerHTML = '<div class="hon-error">Not enough performers in this division.</div>';
+        comparisonArea.style.display = "";
+      }
+      return;
+    }
+
+    // Hide division selection, show comparison area
+    hideDivisionSelection();
+    const comparisonArea = document.getElementById("hon-comparison-area");
+    const actionsEl = document.querySelector(".hon-actions");
+    if (comparisonArea) comparisonArea.style.display = "";
+    if (actionsEl) actionsEl.style.display = "";
+
+    loadNewPair();
+  }
+
+  /**
+   * Update the calibration coverage dashboard.
+   * @param {Object} coverageInfo - { total, rated, avgConfidence, highConfidence, lowConfidence }
+   */
+  function updateCalibrationDashboard(coverageInfo) {
+    const dashboard = document.getElementById("hon-calibration-dashboard");
+    if (!dashboard || !coverageInfo) return;
+
+    dashboard.style.display = "block";
+    const pct = Math.round(coverageInfo.avgConfidence * 100);
+    const ratedPct = coverageInfo.total > 0 ? Math.round((coverageInfo.rated / coverageInfo.total) * 100) : 0;
+
+    // Determine calibration target info
+    let targetInfo = "";
+    if (calibrationTarget) {
+      const targetStats = parsePerformerEloData(calibrationTarget);
+      const conf = getConfidence(targetStats.total_matches);
+      targetInfo = `
+        <div class="hon-cal-target">
+          <span class="hon-cal-target-label">Calibrating:</span>
+          <strong>${calibrationTarget.name}</strong>
+          <span class="hon-cal-target-conf">${formatConfidence(conf)}</span>
+          <span class="hon-cal-step">Step ${calibrationStep + 1}/${CALIBRATION_MAX_STEPS}</span>
+        </div>
+      `;
+    }
+
+    dashboard.innerHTML = `
+      <div class="hon-cal-stats">
+        <div class="hon-cal-stat">
+          <span class="hon-cal-stat-value">${coverageInfo.rated}/${coverageInfo.total}</span>
+          <span class="hon-cal-stat-label">Rated (${ratedPct}%)</span>
+        </div>
+        <div class="hon-cal-stat">
+          <span class="hon-cal-stat-value">${pct}%</span>
+          <span class="hon-cal-stat-label">Avg Confidence</span>
+        </div>
+        <div class="hon-cal-stat">
+          <span class="hon-cal-stat-value">${coverageInfo.highConfidence}</span>
+          <span class="hon-cal-stat-label">High Confidence</span>
+        </div>
+        <div class="hon-cal-stat">
+          <span class="hon-cal-stat-value">${coverageInfo.lowConfidence}</span>
+          <span class="hon-cal-stat-label">Need Rating</span>
+        </div>
+      </div>
+      ${targetInfo}
+    `;
+  }
+
+  /**
+   * Update the tournament bracket display.
+   * @param {Object} tournamentInfo - Tournament state info
+   */
+  function updateTournamentBracketDisplay(tournamentInfo) {
+    const bracketDisplay = document.getElementById("hon-tournament-bracket-display");
+    if (!bracketDisplay || !tournamentInfo) return;
+
+    bracketDisplay.style.display = "block";
+
+    const { bracket, round, roundName, matchIndex, matchesInRound, totalRounds } = tournamentInfo;
+
+    // Build compact bracket visualization
+    let bracketHTML = `
+      <div class="hon-bracket-header">
+        <span class="hon-bracket-round">${roundName}</span>
+        <span class="hon-bracket-progress">Match ${matchIndex + 1} of ${matchesInRound}</span>
+      </div>
+      <div class="hon-bracket-rounds">
+    `;
+
+    for (let r = 0; r < bracket.length; r++) {
+      const roundMatches = bracket[r];
+      const isCurrentRound = r === round;
+      let roundLabel;
+      if (r === bracket.length - 1) roundLabel = "Final";
+      else if (r === bracket.length - 2) roundLabel = "Semi";
+      else if (r === bracket.length - 3) roundLabel = "Quarter";
+      else roundLabel = `R${r + 1}`;
+
+      bracketHTML += `<div class="hon-bracket-round-col ${isCurrentRound ? 'hon-bracket-current' : ''}">
+        <div class="hon-bracket-round-label">${roundLabel}</div>`;
+
+      for (let m = 0; m < roundMatches.length; m++) {
+        const match = roundMatches[m];
+        const isCurrentMatch = isCurrentRound && m === matchIndex;
+        const name1 = match.seed1 ? match.seed1.name : "—";
+        const name2 = match.seed2 ? (match.seed2.name || "BYE") : "—";
+        const winnerClass1 = match.winner && match.seed1 && match.winner.id === match.seed1.id ? "hon-bracket-winner" : "";
+        const winnerClass2 = match.winner && match.seed2 && match.winner.id === match.seed2.id ? "hon-bracket-winner" : "";
+        const loserClass1 = match.winner && match.seed1 && match.winner.id !== match.seed1.id ? "hon-bracket-loser" : "";
+        const loserClass2 = match.winner && match.seed2 && match.winner.id !== match.seed2.id ? "hon-bracket-loser" : "";
+
+        bracketHTML += `
+          <div class="hon-bracket-match ${isCurrentMatch ? 'hon-bracket-match-active' : ''}">
+            <div class="hon-bracket-slot ${winnerClass1} ${loserClass1}">${name1}</div>
+            <div class="hon-bracket-slot ${winnerClass2} ${loserClass2}">${name2}</div>
+          </div>
+        `;
+      }
+
+      bracketHTML += `</div>`;
+    }
+
+    bracketHTML += `</div>`;
+    bracketDisplay.innerHTML = bracketHTML;
+  }
+
+  /**
+   * Show tournament victory screen with final bracket.
+   * @param {Object} champion - The tournament winner
+   * @param {Object} tournamentInfo - Tournament metadata
+   */
+  function showTournamentVictory(champion, tournamentInfo) {
+    const comparisonArea = document.getElementById("hon-comparison-area");
+    const actionsEl = document.querySelector(".hon-actions");
+    if (actionsEl) actionsEl.style.display = "none";
+
+    if (!comparisonArea) return;
+
+    const name = champion ? champion.name : "Unknown";
+    const imagePath = champion ? champion.image_path : null;
+
+    comparisonArea.innerHTML = `
+      <div class="hon-victory-screen">
+        <div class="hon-victory-crown">🏟️</div>
+        <h2 class="hon-victory-title">TOURNAMENT CHAMPION!</h2>
+        <div class="hon-victory-scene">
+          ${imagePath
+            ? `<img class="hon-victory-image" src="${imagePath}" alt="${name}" />`
+            : `<div class="hon-victory-image hon-no-image">No Image</div>`
+          }
+        </div>
+        <h3 class="hon-victory-name">${name}</h3>
+        <p class="hon-victory-stats">
+          Won the ${tournamentInfo?.size || "?"}-performer tournament!
+        </p>
+        <button id="hon-new-tournament" class="btn btn-primary">New Tournament</button>
+      </div>
+    `;
+
+    // Update bracket display to show completed bracket
+    if (tournamentInfo) {
+      updateTournamentBracketDisplay({
+        bracket: tournamentInfo.bracket,
+        round: tournamentInfo.bracket.length,
+        roundName: "Complete",
+        matchIndex: 0,
+        matchesInRound: 0,
+        totalRounds: tournamentInfo.bracket.length
+      });
+    }
+
+    // Attach new tournament button
+    const newBtn = comparisonArea.querySelector("#hon-new-tournament");
+    if (newBtn) {
+      newBtn.addEventListener("click", () => {
+        resetTournamentState();
+        if (actionsEl) actionsEl.style.display = "";
+        loadNewPair();
+      });
+    }
+  }
+
+  /**
+   * Update division standings display.
+   * @param {Object} divisionInfo - { name, total, rated, matches, phase }
+   */
+  function updateDivisionStandings(divisionInfo) {
+    const standingsEl = document.getElementById("hon-division-standings");
+    if (!standingsEl || !divisionInfo) return;
+
+    standingsEl.style.display = "block";
+
+    const ratedPct = divisionInfo.total > 0 ? Math.round((divisionInfo.rated / divisionInfo.total) * 100) : 0;
+
+    // Build mini leaderboard from divisionPerformers
+    const sorted = [...divisionPerformers].sort((a, b) => (b.rating100 || 50) - (a.rating100 || 50));
+    const topPerformers = sorted.slice(0, 5);
+
+    let leaderboardHTML = topPerformers.map((p, idx) => {
+      const stats = parsePerformerEloData(p);
+      const conf = getConfidence(stats.total_matches);
+      return `<div class="hon-div-standing-row">
+        <span class="hon-div-rank">#${idx + 1}</span>
+        <span class="hon-div-name">${p.name}</span>
+        <span class="hon-div-rating">${((p.rating100 || 50) / 10).toFixed(1)}</span>
+        <span class="hon-div-conf">${formatConfidence(conf)}</span>
+      </div>`;
+    }).join('');
+
+    standingsEl.innerHTML = `
+      <div class="hon-div-header">
+        <span class="hon-div-title">🏠 ${divisionInfo.name}</span>
+        <button id="hon-change-division" class="btn btn-sm btn-secondary">Change Division</button>
+      </div>
+      <div class="hon-div-stats">
+        <span>${divisionInfo.rated}/${divisionInfo.total} rated (${ratedPct}%)</span>
+        <span>•</span>
+        <span>${divisionInfo.matches} match${divisionInfo.matches !== 1 ? 'es' : ''} this session</span>
+      </div>
+      <div class="hon-div-leaderboard">
+        ${leaderboardHTML}
+      </div>
+    `;
+
+    // Attach change division button
+    const changeBtn = standingsEl.querySelector("#hon-change-division");
+    if (changeBtn) {
+      changeBtn.addEventListener("click", () => {
+        currentDivision = null;
+        divisionPhase = "selection";
+        divisionMatchCount = 0;
+        loadNewPair();
+      });
+    }
+  }
+
+  /**
+   * Hide mode-specific UI panels.
+   */
+  function hideTournamentSetup() {
+    const el = document.getElementById("hon-tournament-setup");
+    if (el) el.style.display = "none";
+  }
+
+  function hideDivisionSelection() {
+    const el = document.getElementById("hon-division-selection");
+    if (el) el.style.display = "none";
+  }
+
+  function hideCalibrationDashboard() {
+    const el = document.getElementById("hon-calibration-dashboard");
+    if (el) el.style.display = "none";
+  }
+
+  function hideTournamentBracket() {
+    const el = document.getElementById("hon-tournament-bracket-display");
+    if (el) el.style.display = "none";
+  }
+
+  function hideDivisionStandings() {
+    const el = document.getElementById("hon-division-standings");
+    if (el) el.style.display = "none";
+  }
 
   async function loadNewPair(retryCount = 0) {
     disableChoice = false;
@@ -3305,10 +4353,30 @@ async function fetchPerformerCount(performerFilter = {}) {
       return;
     }
 
+    // Tournament mode: show setup if bracket not initialized
+    if (currentMode === "tournament" && !tournamentSetupDone) {
+      showTournamentSetup();
+      return;
+    }
+
+    // Division mode: show division selection if no division chosen
+    if (currentMode === "division" && !currentDivision) {
+      showDivisionSelection();
+      return;
+    }
+
     // Only show loading on first load (when empty or already showing loading)
     if (!comparisonArea.querySelector('.hon-vs-container')) {
       comparisonArea.innerHTML = '<div class="hon-loading">Loading...</div>';
     }
+
+    // Hide mode-specific panels that aren't relevant to the current mode
+    if (currentMode !== "calibration") hideCalibrationDashboard();
+    if (currentMode !== "tournament") hideTournamentBracket();
+    if (currentMode !== "division") hideDivisionStandings();
+    if (currentMode !== "gauntlet") hidePerformerSelection();
+    if (currentMode !== "tournament" || tournamentSetupDone) hideTournamentSetup();
+    if (currentMode !== "division" || currentDivision) hideDivisionSelection();
 
     try {
       let items;
@@ -3380,6 +4448,47 @@ async function fetchPerformerCount(performerFilter = {}) {
         
         items = championResult.performers || championResult.images;
         ranks = championResult.ranks;
+      } else if (currentMode === "calibration") {
+        const calibrationResult = await fetchCalibrationPair();
+        items = calibrationResult.performers;
+        ranks = calibrationResult.ranks;
+
+        // Update calibration dashboard
+        if (calibrationResult.coverageInfo) {
+          updateCalibrationDashboard(calibrationResult.coverageInfo);
+        }
+      } else if (currentMode === "tournament") {
+        const tournamentResult = await fetchTournamentPair();
+
+        // Check for tournament completion
+        if (tournamentResult.isVictory) {
+          const champion = tournamentResult.tournamentInfo?.champion;
+          showTournamentVictory(champion, tournamentResult.tournamentInfo);
+          return;
+        }
+
+        items = tournamentResult.performers;
+        ranks = tournamentResult.ranks;
+
+        // Update bracket display
+        if (tournamentResult.tournamentInfo) {
+          updateTournamentBracketDisplay(tournamentResult.tournamentInfo);
+        }
+      } else if (currentMode === "division") {
+        const divisionResult = await fetchDivisionPair();
+
+        if (!divisionResult.performers || divisionResult.performers.length < 2) {
+          comparisonArea.innerHTML = '<div class="hon-error">Not enough performers in this division for comparison.</div>';
+          return;
+        }
+
+        items = divisionResult.performers;
+        ranks = divisionResult.ranks;
+
+        // Update division standings
+        if (divisionResult.divisionInfo) {
+          updateDivisionStandings(divisionResult.divisionInfo);
+        }
       }
       
       if (items.length < 2) {
@@ -3456,7 +4565,9 @@ async function fetchPerformerCount(performerFilter = {}) {
       // Update skip button state (only disabled for performers in gauntlet/champion mode)
       const skipBtn = document.querySelector("#hon-skip-btn");
       if (skipBtn) {
-        const disableSkip = battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion;
+        const isActiveGauntletRun = battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion;
+        const isActiveTournament = currentMode === "tournament" && tournamentSetupDone;
+        const disableSkip = isActiveGauntletRun || isActiveTournament;
         skipBtn.disabled = disableSkip;
         skipBtn.style.opacity = disableSkip ? "0.5" : "1";
         skipBtn.style.cursor = disableSkip ? "not-allowed" : "pointer";
@@ -3504,6 +4615,17 @@ async function fetchPerformerCount(performerFilter = {}) {
       gauntletFalling: gauntletFalling,
       gauntletFallingItem: gauntletFallingItem ? structuredClone(gauntletFallingItem) : null,
       gauntletFallingTested: [...gauntletFallingTested],
+      // Calibration state
+      calibrationTarget: calibrationTarget ? structuredClone(calibrationTarget) : null,
+      calibrationLow: calibrationLow,
+      calibrationHigh: calibrationHigh,
+      calibrationStep: calibrationStep,
+      // Tournament state
+      tournamentBracket: tournamentBracket ? structuredClone(tournamentBracket) : null,
+      tournamentRound: tournamentRound,
+      tournamentMatchIndex: tournamentMatchIndex,
+      // Division state
+      divisionMatchCount: divisionMatchCount,
     };
   }
 
@@ -3582,6 +4704,26 @@ async function fetchPerformerCount(performerFilter = {}) {
       gauntletFalling = undo.gauntletFalling;
       gauntletFallingItem = undo.gauntletFallingItem;
       gauntletFallingTested = undo.gauntletFallingTested;
+
+      // Restore calibration state
+      if (undo.calibrationTarget !== undefined) {
+        calibrationTarget = undo.calibrationTarget;
+        calibrationLow = undo.calibrationLow;
+        calibrationHigh = undo.calibrationHigh;
+        calibrationStep = undo.calibrationStep;
+      }
+
+      // Restore tournament state
+      if (undo.tournamentBracket !== undefined) {
+        tournamentBracket = undo.tournamentBracket;
+        tournamentRound = undo.tournamentRound;
+        tournamentMatchIndex = undo.tournamentMatchIndex;
+      }
+
+      // Restore division state
+      if (undo.divisionMatchCount !== undefined) {
+        divisionMatchCount = undo.divisionMatchCount;
+      }
 
       // Restore the pair objects (with original ratings)
       currentPair.left = undo.left;
@@ -3937,6 +5079,74 @@ async function fetchPerformerCount(performerFilter = {}) {
         gauntletWins = 1;
       }
       
+      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
+      return;
+    }
+
+    // Handle calibration mode — update binary search bounds after each match
+    if (currentMode === "calibration") {
+      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
+      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
+        winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
+      );
+
+      // Update binary search bounds for the calibration target
+      if (calibrationTarget) {
+        const anchorRating = calibrationTarget.id === winnerId ? loserRating : winnerRating;
+        if (calibrationTarget.id === winnerId) {
+          // Target won — they're at least as good as the anchor, raise lower bound
+          calibrationLow = Math.max(calibrationLow, anchorRating);
+        } else {
+          // Target lost — they're below the anchor, lower upper bound
+          calibrationHigh = Math.min(calibrationHigh, anchorRating);
+        }
+        calibrationStep++;
+
+        // Check if calibration is done (converged or max steps reached)
+        if (calibrationStep >= CALIBRATION_MAX_STEPS || (calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
+          // Reset target — next loadNewPair will pick a new performer to calibrate
+          calibrationTarget = null;
+          calibrationStep = 0;
+          calibrationLow = 1;
+          calibrationHigh = 100;
+        }
+      }
+
+      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
+      return;
+    }
+
+    // Handle tournament mode — record winner in bracket and advance
+    if (currentMode === "tournament") {
+      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
+      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
+        winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
+      );
+
+      // Record winner in bracket
+      if (tournamentBracket && tournamentRound < tournamentBracket.length) {
+        const match = tournamentBracket[tournamentRound][tournamentMatchIndex];
+        if (match) {
+          match.winner = winnerItem;
+          // Advance winner to next round
+          advanceTournamentWinner(winnerItem, tournamentRound, tournamentMatchIndex);
+          tournamentMatchIndex++;
+        }
+      }
+
+      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
+      return;
+    }
+
+    // Handle division mode — track match count for the division
+    if (currentMode === "division") {
+      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
+      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
+        winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
+      );
+
+      divisionMatchCount++;
+
       showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
       return;
     }
@@ -4423,8 +5633,8 @@ function addFloatingButton() {
         if (newMode !== currentMode) {
           currentMode = newMode;
           
-          // Reset gauntlet state when switching modes
-          resetGauntletState();
+          // Reset all mode-specific state when switching modes
+          resetAllModeState();
           // Clear undo state on mode change (previous battle is no longer valid)
           previousBattle = null;
           
@@ -4437,10 +5647,13 @@ function addFloatingButton() {
           const actionsEl = document.querySelector(".hon-actions");
           if (actionsEl) actionsEl.style.display = "";
           
-          // Hide performer/image selection if not in gauntlet mode
-          if (currentMode !== "gauntlet") {
-            hidePerformerSelection();
-          }
+          // Hide all mode-specific panels
+          hidePerformerSelection();
+          hideTournamentSetup();
+          hideDivisionSelection();
+          hideCalibrationDashboard();
+          hideTournamentBracket();
+          hideDivisionStandings();
           
           // Load new pair in new mode
           loadNewPair();
@@ -4456,15 +5669,20 @@ function addFloatingButton() {
         if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion) {
           return;
         }
+        // In tournament mode, skip is disabled (must pick a winner)
+        if (currentMode === "tournament" && tournamentSetupDone) {
+          return;
+        }
         if(disableChoice) return
         disableChoice = true;
-        // Reset state on skip (only for performers)
+        // Reset state on skip (only for performers in gauntlet/champion)
         if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion")) {
           resetGauntletState();
         }
-        // Apply ELO draw rating changes for skips in Swiss mode
-        if (currentMode === "swiss" && currentPair.left && currentPair.right) {
+        // Apply ELO draw rating changes for skips in Swiss, calibration, and division modes
+        if ((currentMode === "swiss" || currentMode === "calibration" || currentMode === "division") && currentPair.left && currentPair.right) {
           await handleSkip(currentPair.left, currentPair.right);
+          if (currentMode === "division") divisionMatchCount++;
         }
         loadNewPair();
       });
@@ -4537,14 +5755,19 @@ function addFloatingButton() {
           if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion) {
             return;
           }
+          // Don't skip during tournament (must pick a winner)
+          if (currentMode === "tournament" && tournamentSetupDone) {
+            return;
+          }
           if(disableChoice) return;
           disableChoice = true;
           if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion")) {
             resetGauntletState();
           }
-          // Apply ELO draw rating changes for skips in Swiss mode
-          if (currentMode === "swiss" && currentPair.left && currentPair.right) {
+          // Apply ELO draw rating changes for skips in Swiss, calibration, and division modes
+          if ((currentMode === "swiss" || currentMode === "calibration" || currentMode === "division") && currentPair.left && currentPair.right) {
             await handleSkip(currentPair.left, currentPair.right);
+            if (currentMode === "division") divisionMatchCount++;
           }
           loadNewPair();
         }
@@ -4557,6 +5780,8 @@ function addFloatingButton() {
     if (modal) modal.remove();
     // Clear undo state when modal closes
     previousBattle = null;
+    // Reset all mode state
+    resetAllModeState();
   }
 
   // ============================================
