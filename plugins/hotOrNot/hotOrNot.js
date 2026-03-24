@@ -2859,6 +2859,28 @@ async function fetchPerformerCount(performerFilter = {}) {
   // ============================================
 
   /**
+   * Generate proper tournament seed order so that top seeds are placed on
+   * opposite halves of the bracket (e.g. seed 1 and seed 2 can only meet
+   * in the final). Uses standard recursive bracket seeding.
+   * @param {number} numPlayers - Number of players (should be a power of 2)
+   * @returns {Array} Array of seed numbers in bracket position order
+   */
+  function getProperSeedOrder(numPlayers) {
+    const rounds = Math.ceil(Math.log2(numPlayers));
+    let seeds = [1];
+    for (let round = 1; round <= rounds; round++) {
+      const newSeeds = [];
+      const roundSize = Math.pow(2, round);
+      for (let i = 0; i < seeds.length; i++) {
+        newSeeds.push(seeds[i]);
+        newSeeds.push(roundSize + 1 - seeds[i]);
+      }
+      seeds = newSeeds;
+    }
+    return seeds;
+  }
+
+  /**
    * Generate a seeded single-elimination bracket.
    * Performers are seeded by current rating (highest = seed 1).
    * @param {Array} performers - Array of performer objects sorted by rating DESC
@@ -2870,21 +2892,20 @@ async function fetchPerformerCount(performerFilter = {}) {
     const rounds = Math.ceil(Math.log2(n));
     const bracket = [];
 
-    // First round: pair seed 1 vs last, seed 2 vs second-last, etc.
+    // Generate proper seeding order for standard tournament bracket.
+    // This ensures seed 1 and seed 2 are on opposite halves and can
+    // only meet in the final (standard NCAA-style bracket seeding).
+    const seedOrder = getProperSeedOrder(n);
+
+    // First round: pair using proper seed order
     const firstRound = [];
-    for (let i = 0; i < Math.floor(n / 2); i++) {
+    for (let i = 0; i < seedOrder.length; i += 2) {
+      const idx1 = seedOrder[i] - 1;
+      const idx2 = seedOrder[i + 1] - 1;
       firstRound.push({
-        seed1: performers[i],
-        seed2: performers[n - 1 - i],
-        winner: null
-      });
-    }
-    // Handle bye if odd number (shouldn't happen with 8/16/32 but be safe)
-    if (n % 2 !== 0) {
-      firstRound.push({
-        seed1: performers[Math.floor(n / 2)],
-        seed2: null, // bye
-        winner: performers[Math.floor(n / 2)] // auto-advance
+        seed1: performers[idx1],
+        seed2: idx2 < n ? performers[idx2] : null,
+        winner: idx2 >= n ? performers[idx1] : null
       });
     }
     bracket.push(firstRound);
@@ -3705,7 +3726,7 @@ async function fetchPerformerCount(performerFilter = {}) {
               <span class="hon-mode-desc">Smart ranking</span>
             </button>
             <button class="hon-mode-btn ${currentMode === 'tournament' ? 'active' : ''}" data-mode="tournament">
-              <span class="hon-mode-icon">🏟️</span>
+              <span class="hon-mode-icon">⚔️</span>
               <span class="hon-mode-title">Tournament</span>
               <span class="hon-mode-desc">Bracket battle</span>
             </button>
@@ -3736,7 +3757,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         </div>
 
         <div id="hon-tournament-setup" class="hon-performer-selection" style="display: none;">
-          <h3 class="hon-selection-title">🏟️ Set Up Tournament</h3>
+          <h3 class="hon-selection-title">⚔️ Set Up Tournament</h3>
           <p class="hon-selection-subtitle">Choose bracket size — performers are randomly selected and seeded by rating</p>
           <div class="hon-tournament-sizes">
             <button class="hon-tournament-size-btn" data-size="8">
@@ -3786,7 +3807,7 @@ async function fetchPerformerCount(performerFilter = {}) {
    */
   function getTournamentSetupHTML() {
     return `
-      <h3 class="hon-selection-title">🏟️ Set Up Tournament</h3>
+      <h3 class="hon-selection-title">⚔️ Set Up Tournament</h3>
       <p class="hon-selection-subtitle">Choose bracket size — performers are randomly selected and seeded by rating</p>
       <div class="hon-tournament-sizes">
         <button class="hon-tournament-size-btn" data-size="8">
@@ -4043,8 +4064,15 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     if (!comparisonArea) return;
 
+    // Update local tournament wins count before rendering so badge shows correctly
+    if (champion) {
+      champion.tournamentWins = (champion.tournamentWins || 0) + 1;
+    }
+
     const name = champion ? champion.name : "Unknown";
     const imagePath = champion ? champion.image_path : null;
+    const totalWins = champion ? champion.tournamentWins : 0;
+    const winsText = totalWins > 0 ? ` (${totalWins} total win${totalWins > 1 ? "s" : ""})` : "";
 
     comparisonArea.innerHTML = `
       <div class="hon-victory-screen">
@@ -4058,7 +4086,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         </div>
         <h3 class="hon-victory-name">${name}</h3>
         <p class="hon-victory-stats">
-          Won the ${tournamentInfo?.size || "?"}-performer tournament!${champion && champion.tournamentWins > 0 ? ` (${champion.tournamentWins + 1} total wins)` : ""}
+          Won the ${tournamentInfo?.size || "?"}-performer tournament!${winsText}
         </p>
         <button id="hon-new-tournament" class="btn btn-primary">New Tournament</button>
       </div>
