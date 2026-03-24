@@ -2967,7 +2967,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     // We need studio info — fetch studios from Stash
     const studiosQuery = `
       query FindStudios {
-        findStudios(filter: { per_page: -1, sort: "name", direction: "ASC" }) {
+        findStudios(filter: { per_page: -1, sort: "name", direction: ASC }) {
           count
           studios {
             id
