@@ -19,7 +19,13 @@
   let calibrationLow = 1; // Binary search lower bound rating
   let calibrationHigh = 100; // Binary search upper bound rating
   let calibrationStep = 0; // Number of calibration matches for current target
-  const CALIBRATION_MAX_STEPS = 10; // Max binary search steps before auto-placing
+  const CALIBRATION_MAX_STEPS = 10; // Max binary search steps before moving to next target
+  const CALIBRATION_CONVERGENCE_THRESHOLD = 5; // Rating range (high - low) at which target is considered converged
+  const CALIBRATION_HIGH_CONFIDENCE = 0.75; // Confidence level at which a performer is considered well-established
+  const CALIBRATION_LOW_CONFIDENCE = 0.5; // Confidence level below which a performer needs more rating
+  const CALIBRATION_MIN_WEIGHT = 0.1; // Minimum weight to prevent zero weights for max-confidence performers
+  const CALIBRATION_CONFIDENCE_WEIGHT = 10; // Weight of confidence vs rating proximity in anchor selection
+  const CALIBRATION_TOP_CANDIDATES = 3; // Number of top anchor candidates to randomly select from
 
   // Tournament mode state
   let tournamentBracket = null; // Array of rounds, each with match slots
@@ -2706,12 +2712,12 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     // Pick the least confident performer as the new calibration target
     // Among those with confidence < 0.75, pick randomly (weighted by low confidence)
-    const uncertain = withStats.filter(ws => ws.confidence < 0.75);
+    const uncertain = withStats.filter(ws => ws.confidence < CALIBRATION_HIGH_CONFIDENCE);
     let target;
 
     if (uncertain.length > 0) {
       // Weight by inverse confidence — less confident = more likely to be picked
-      const weights = uncertain.map(ws => 1 - ws.confidence + 0.1);
+      const weights = uncertain.map(ws => 1 - ws.confidence + CALIBRATION_MIN_WEIGHT);
       target = weightedRandomSelect(uncertain, weights);
     } else {
       // All performers are reasonably confident — pick one at random for maintenance
@@ -2760,12 +2766,12 @@ async function fetchPerformerCount(performerFilter = {}) {
       .map(ws => ({
         ...ws,
         distance: Math.abs(ws.rating - targetRating),
-        anchorScore: ws.confidence * 10 - Math.abs(ws.rating - targetRating)
+        anchorScore: ws.confidence * CALIBRATION_CONFIDENCE_WEIGHT - Math.abs(ws.rating - targetRating)
       }))
       .sort((a, b) => b.anchorScore - a.anchorScore);
 
     // From top candidates, pick randomly among the best 3
-    const topCandidates = candidates.slice(0, Math.min(3, candidates.length));
+    const topCandidates = candidates.slice(0, Math.min(CALIBRATION_TOP_CANDIDATES, candidates.length));
     if (topCandidates.length === 0) return null;
     return topCandidates[Math.floor(Math.random() * topCandidates.length)];
   }
@@ -2781,8 +2787,8 @@ async function fetchPerformerCount(performerFilter = {}) {
     const avgConfidence = total > 0
       ? withStats.reduce((sum, ws) => sum + ws.confidence, 0) / total
       : 0;
-    const highConfidence = withStats.filter(ws => ws.confidence >= 0.75).length;
-    const lowConfidence = withStats.filter(ws => ws.confidence < 0.5).length;
+    const highConfidence = withStats.filter(ws => ws.confidence >= CALIBRATION_HIGH_CONFIDENCE).length;
+    const lowConfidence = withStats.filter(ws => ws.confidence < CALIBRATION_LOW_CONFIDENCE).length;
     return { total, rated, avgConfidence, highConfidence, lowConfidence };
   }
 
@@ -4559,7 +4565,9 @@ async function fetchPerformerCount(performerFilter = {}) {
       // Update skip button state (only disabled for performers in gauntlet/champion mode)
       const skipBtn = document.querySelector("#hon-skip-btn");
       if (skipBtn) {
-        const disableSkip = (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion) || (currentMode === "tournament" && tournamentSetupDone);
+        const isActiveGauntletRun = battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion;
+        const isActiveTournament = currentMode === "tournament" && tournamentSetupDone;
+        const disableSkip = isActiveGauntletRun || isActiveTournament;
         skipBtn.disabled = disableSkip;
         skipBtn.style.opacity = disableSkip ? "0.5" : "1";
         skipBtn.style.cursor = disableSkip ? "not-allowed" : "pointer";
@@ -5095,7 +5103,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         calibrationStep++;
 
         // Check if calibration is done (converged or max steps reached)
-        if (calibrationStep >= CALIBRATION_MAX_STEPS || (calibrationHigh - calibrationLow) <= 5) {
+        if (calibrationStep >= CALIBRATION_MAX_STEPS || (calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
           // Reset target — next loadNewPair will pick a new performer to calibrate
           calibrationTarget = null;
           calibrationStep = 0;
