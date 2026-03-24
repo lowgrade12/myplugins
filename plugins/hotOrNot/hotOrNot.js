@@ -3648,7 +3648,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
         <div id="hon-tournament-setup" class="hon-performer-selection" style="display: none;">
           <h3 class="hon-selection-title">🏟️ Set Up Tournament</h3>
-          <p class="hon-selection-subtitle">Choose bracket size — performers are seeded by current rating</p>
+          <p class="hon-selection-subtitle">Choose bracket size — performers are randomly selected and seeded by rating</p>
           <div class="hon-tournament-sizes">
             <button class="hon-tournament-size-btn" data-size="8">
               <span class="hon-size-number">8</span>
@@ -3692,6 +3692,31 @@ async function fetchPerformerCount(performerFilter = {}) {
   // ============================================
 
   /**
+   * Generate the tournament setup HTML with size selection buttons.
+   * @returns {string} HTML string for the tournament setup panel
+   */
+  function getTournamentSetupHTML() {
+    return `
+      <h3 class="hon-selection-title">🏟️ Set Up Tournament</h3>
+      <p class="hon-selection-subtitle">Choose bracket size — performers are randomly selected and seeded by rating</p>
+      <div class="hon-tournament-sizes">
+        <button class="hon-tournament-size-btn" data-size="8">
+          <span class="hon-size-number">8</span>
+          <span class="hon-size-label">7 matches</span>
+        </button>
+        <button class="hon-tournament-size-btn" data-size="16">
+          <span class="hon-size-number">16</span>
+          <span class="hon-size-label">15 matches</span>
+        </button>
+        <button class="hon-tournament-size-btn" data-size="32">
+          <span class="hon-size-number">32</span>
+          <span class="hon-size-label">31 matches</span>
+        </button>
+      </div>
+    `;
+  }
+
+  /**
    * Show tournament size selection UI.
    */
   function showTournamentSetup() {
@@ -3700,7 +3725,11 @@ async function fetchPerformerCount(performerFilter = {}) {
     const actionsEl = document.querySelector(".hon-actions");
     const bracketDisplay = document.getElementById("hon-tournament-bracket-display");
 
-    if (setupContainer) setupContainer.style.display = "block";
+    // Restore original setup HTML (may have been replaced by loading/error state)
+    if (setupContainer) {
+      setupContainer.innerHTML = getTournamentSetupHTML();
+      setupContainer.style.display = "block";
+    }
     if (comparisonArea) comparisonArea.style.display = "none";
     if (actionsEl) actionsEl.style.display = "none";
     if (bracketDisplay) bracketDisplay.style.display = "none";
@@ -3709,16 +3738,15 @@ async function fetchPerformerCount(performerFilter = {}) {
     hidePerformerSelection();
     hideCalibrationDashboard();
 
-    // Attach size button handlers
-    setupContainer.querySelectorAll(".hon-tournament-size-btn").forEach((btn) => {
-      // Remove old handlers by replacing element
-      const newBtn = btn.cloneNode(true);
-      btn.parentNode.replaceChild(newBtn, btn);
-      newBtn.addEventListener("click", async () => {
-        const size = parseInt(newBtn.dataset.size);
-        await initTournament(size);
+    // Attach size button handlers (fresh elements from innerHTML)
+    if (setupContainer) {
+      setupContainer.querySelectorAll(".hon-tournament-size-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const size = parseInt(btn.dataset.size);
+          await initTournament(size);
+        });
       });
-    });
+    }
   }
 
   /**
@@ -3735,13 +3763,12 @@ async function fetchPerformerCount(performerFilter = {}) {
       const performerFilter = getPerformerFilter();
       const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
         performer_filter: performerFilter,
-        filter: { per_page: size, sort: "rating", direction: "DESC" }
+        filter: { per_page: size, sort: "random" }
       });
 
       let performers = result.findPerformers.performers || [];
 
       if (performers.length < size) {
-        // If not enough top-rated, fetch additional random ones
         if (performers.length < 4) {
           if (setupContainer) {
             setupContainer.innerHTML = '<div class="hon-error">Not enough performers for a tournament. Need at least 4.</div>';
@@ -3753,6 +3780,9 @@ async function fetchPerformerCount(performerFilter = {}) {
         size = Math.pow(2, Math.floor(Math.log2(performers.length)));
         performers = performers.slice(0, size);
       }
+
+      // Sort by rating for seeding (highest rated = seed 1)
+      performers.sort((a, b) => (b.rating100 || 0) - (a.rating100 || 0));
 
       tournamentSize = size;
       tournamentPerformers = performers;
