@@ -6,27 +6,53 @@ An ELO-based ranking system for performers in [Stash](https://stashapp.cc/). Com
 
 ### Battle Modes
 
-The plugin offers three distinct comparison modes:
+The plugin offers five distinct comparison modes:
 
-#### 🎯 Swiss Mode (Default)
+#### ⚖️ Swiss Mode (Default)
 - **True ELO with zero-sum property** - Winner gains exactly what loser loses, maintaining rating pool integrity
 - Pairs performers with similar ratings for competitive matchups
 - Uses weighted random selection to prioritize performers with fewer matches
+- 10% random selection ensures detection of misranked performers
 - Best for building initial rankings and ensuring balanced coverage
 
-#### 🏆 Gauntlet Mode
+#### 🎯 Gauntlet Mode
 - **King of the hill style** - One performer stays on as champion while challengers attempt to dethrone them
 - Champion works their way up the rankings by defeating increasingly difficult opponents
 - Only the active participant (champion) has their rating change
-- When the champion loses, they "fall" to find their appropriate position
+- When the champion loses, they enter a "falling" phase to find their proper position
+  - Floor constraint: Rating cannot drop below any performer they've already defeated
+  - Ceiling constraint: Rating cannot rise above the performer who beat them
 - Visual streak tracking shows how many wins the current champion has
-- Great for quickly identifying top performers
+- Great for quickly placing a new performer and identifying top performers
 
-#### 👑 Champion Mode
+#### 🏆 Champion Mode
 - **Winner stays on** with reduced rating impact (50% of Swiss mode)
 - Both performers get rating updates, but at a slower pace
 - Maintains the "winner stays on" excitement while still evolving rankings
+- Tracks winning streak for the current champion
 - Good for fine-tuning existing rankings
+
+#### 📐 Calibration Mode
+- **Smart ranking via binary search** - Intelligently finds each performer's true rating with minimal comparisons
+- Automatically identifies the least confident performers (fewest matches, most uncertain)
+- Uses a binary-search approach to narrow down a performer's true position:
+  - If the uncertain performer wins, the search moves higher
+  - If the uncertain performer loses, the search moves lower
+  - Each match tests the midpoint between the current bounds
+- Anchors are selected from well-established performers near the search midpoint
+- Coverage dashboard shows total performers, rated count, average confidence, and confidence distribution
+- Confidence formula: `1 - (1 / √(matches + 1))` — 0 matches = 0%, 3 matches ≈ 50%, 15 matches ≈ 75%
+- Best for accurately ranking large performer pools with minimal effort
+
+#### 🏟️ Tournament Mode
+- **Single-elimination bracket competition** - Classic tournament format with seeded brackets
+- Choose a tournament size: 8, 16, 32, or 64 participants
+- Performers are seeded by current rating (highest-rated = seed 1)
+- Standard seeding: seed 1 vs. last seed, seed 2 vs. second-to-last, etc.
+- Winners advance through the bracket until a champion is crowned
+- Visual bracket display shows all matches and progression
+- Round naming: Round 1, Round 2, ..., Quarterfinal, Semifinal, Final
+- Best for engagement and determining a clear champion through bracket competition
 
 ### ELO Rating System
 
@@ -70,7 +96,7 @@ Respects the current page's filter criteria when launched from a filtered perfor
 - **Star rating widget** on performer cards in the grid view for quick inline rating
 - **Side-by-side comparison** with performer images and metadata
 - **Visual feedback** showing rating changes after each choice
-- **Keyboard shortcuts**: Left Arrow (choose left), Right Arrow (choose right), Escape (close)
+- **Keyboard shortcuts**: Left Arrow (choose left), Right Arrow (choose right), Space (skip), Escape (close)
 - **Responsive design** that works on desktop and mobile
 
 ### Star Rating Widget
@@ -109,8 +135,10 @@ When viewing a single performer's page, a badge displays their battle rank:
 ### Tips
 
 - **First run**: Swiss mode with many comparisons builds a solid ranking foundation
-- **Quick ranking**: Gauntlet mode rapidly identifies your top performers
+- **Quick ranking**: Gauntlet mode rapidly places a specific performer in the rankings
 - **Fine-tuning**: Champion mode adjusts rankings with smaller changes
+- **Accuracy**: Calibration mode efficiently finds each performer's true position using smart binary search
+- **Fun**: Tournament mode creates a bracket competition to crown a champion
 - **Skip strategically**: Use skip when you can't decide - it affects both performers' ratings based on ELO draw mechanics
 
 ## Custom Fields
