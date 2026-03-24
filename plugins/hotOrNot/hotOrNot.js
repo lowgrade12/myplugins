@@ -1605,22 +1605,30 @@
     // - true/false for active participants (track full stats)
     // - null for defenders in gauntlet mode only (track participation only)
     
+    const updatePromises = [];
+    
     // Winner updates
     if (winnerChange !== 0 || (battleType === "performers" && freshWinnerObj && shouldTrackWinner)) {
       // Update rating if changed, or always update stats if active participant
-      updateItemRating(winnerId, newWinnerRating, shouldTrackWinner ? freshWinnerObj : null, shouldTrackWinner ? true : null, winnerChange);
+      updatePromises.push(updateItemRating(winnerId, newWinnerRating, shouldTrackWinner ? freshWinnerObj : null, shouldTrackWinner ? true : null, winnerChange));
     } else if (battleType === "performers" && freshWinnerObj && currentMode === "gauntlet") {
       // Defender in gauntlet mode only - track participation only
-      updateItemRating(winnerId, newWinnerRating, freshWinnerObj, null, 0);
+      updatePromises.push(updateItemRating(winnerId, newWinnerRating, freshWinnerObj, null, 0));
     }
     
     // Loser updates
     if (loserChange !== 0 || (battleType === "performers" && freshLoserObj && shouldTrackLoser)) {
       // Update rating if changed, or always update stats if active participant
-      updateItemRating(loserId, newLoserRating, shouldTrackLoser ? freshLoserObj : null, shouldTrackLoser ? false : null, loserChange);
+      updatePromises.push(updateItemRating(loserId, newLoserRating, shouldTrackLoser ? freshLoserObj : null, shouldTrackLoser ? false : null, loserChange));
     } else if (battleType === "performers" && freshLoserObj && currentMode === "gauntlet") {
       // Defender in gauntlet mode only - track participation only
-      updateItemRating(loserId, newLoserRating, freshLoserObj, null, 0);
+      updatePromises.push(updateItemRating(loserId, newLoserRating, freshLoserObj, null, 0));
+    }
+    
+    // Wait for all rating updates to complete before returning
+    // This prevents race conditions where the next pair is loaded before ratings are saved
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
     }
     
     return { newWinnerRating, newLoserRating, winnerChange, loserChange };
@@ -4741,6 +4749,11 @@ async function fetchPerformerCount(performerFilter = {}) {
       const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
         winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
       );
+
+      // Update local performer objects with new ratings so the bracket
+      // carries current values into subsequent rounds
+      winnerItem.rating100 = newWinnerRating;
+      loserItem.rating100 = newLoserRating;
 
       // Record winner in bracket
       if (tournamentBracket && tournamentRound < tournamentBracket.length) {
