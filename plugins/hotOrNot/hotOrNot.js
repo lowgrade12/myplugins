@@ -1013,7 +1013,8 @@
       worst_streak: 0,
       last_match: null,
       recent_results: 0,
-      last_rating_change: 0
+      last_rating_change: 0,
+      tournament_wins: 0
     };
   }
 
@@ -1041,7 +1042,8 @@
           worst_streak: stats.worst_streak || 0,
           last_match: stats.last_match || null,
           recent_results: stats.recent_results || 0,
-          last_rating_change: stats.last_rating_change || 0
+          last_rating_change: stats.last_rating_change || 0,
+          tournament_wins: stats.tournament_wins || 0
         };
       } catch (e) {
         console.warn(`[HotOrNot] Failed to parse hotornot_stats for performer ${performer.id}:`, e);
@@ -1070,7 +1072,8 @@
     const newStats = {
       total_matches: currentStats.total_matches + 1,
       last_match: new Date().toISOString(),
-      last_rating_change: ratingChange
+      last_rating_change: ratingChange,
+      tournament_wins: currentStats.tournament_wins || 0
     };
     
     // If won is null, this is participation-only (gauntlet mode defender benchmark only)
@@ -1138,6 +1141,71 @@
     newStats.recent_results = recentResults;
     
     return newStats;
+  }
+
+  /**
+   * Record a tournament win for the champion performer.
+   * Fetches fresh stats from the server to avoid overwriting match updates,
+   * then increments tournament_wins.
+   * @param {Object} champion - The tournament winner performer object
+   */
+  async function recordTournamentWin(champion) {
+    if (!champion || !champion.id) return;
+
+    try {
+      // Fetch fresh performer data to get current stats (match updates during the tournament)
+      const freshQuery = `
+        query FindPerformer($id: ID!) {
+          findPerformer(id: $id) {
+            id
+            custom_fields
+          }
+        }
+      `;
+      const freshResult = await graphqlQuery(freshQuery, { id: champion.id });
+      const freshPerformer = freshResult.findPerformer;
+      if (!freshPerformer) {
+        console.warn("[HotOrNot] Could not fetch fresh performer data for tournament win recording");
+        return;
+      }
+
+      const currentStats = parsePerformerEloData(freshPerformer);
+      const updatedStats = {
+        total_matches: currentStats.total_matches,
+        wins: currentStats.wins,
+        losses: currentStats.losses,
+        draws: currentStats.draws,
+        current_streak: currentStats.current_streak,
+        best_streak: currentStats.best_streak,
+        worst_streak: currentStats.worst_streak,
+        last_match: currentStats.last_match,
+        recent_results: currentStats.recent_results,
+        last_rating_change: currentStats.last_rating_change,
+        tournament_wins: (currentStats.tournament_wins || 0) + 1
+      };
+
+      const mutation = `
+        mutation UpdatePerformerTournamentWins($id: ID!, $fields: Map) {
+          performerUpdate(input: {
+            id: $id,
+            custom_fields: {
+              partial: $fields
+            }
+          }) {
+            id
+            custom_fields
+          }
+        }
+      `;
+
+      await graphqlQuery(mutation, {
+        id: champion.id,
+        fields: { hotornot_stats: JSON.stringify(updatedStats) }
+      });
+      console.log(`[HotOrNot] Recorded tournament win for ${champion.name} (${updatedStats.tournament_wins} total)`);
+    } catch (e) {
+      console.error("[HotOrNot] Failed to record tournament win:", e);
+    }
   }
 
   /**
@@ -2889,7 +2957,10 @@ async function fetchPerformerCount(performerFilter = {}) {
 
         return {
           performers: [match.seed1, match.seed2],
-          ranks: [null, null],
+          ranks: [
+            match.seed1.tournamentSeed ? `Seed #${match.seed1.tournamentSeed}` : null,
+            match.seed2.tournamentSeed ? `Seed #${match.seed2.tournamentSeed}` : null
+          ],
           isVictory: false,
           tournamentInfo: {
             round: tournamentRound,
@@ -3010,6 +3081,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       streakBadgeDisplay = `<div class="hon-streak-badge">🔥 ${streak} win${streak > 1 ? 's' : ''}</div>`;
     }
 
+    // Tournament wins badge — show past tournament victories on the card
+    const tournamentWins = performer.tournamentWins || (stats.tournament_wins || 0);
+    let tournamentBadgeDisplay = '';
+    if (currentMode === "tournament" && tournamentWins > 0) {
+      tournamentBadgeDisplay = `<div class="hon-tournament-wins-badge">🏆 ${tournamentWins}x champion</div>`;
+    }
+
     return `
       <div class="hon-performer-card hon-scene-card" data-performer-id="${performer.id}" data-side="${side}" data-rating="${performer.rating100 || 50}">
         <div class="hon-performer-image-container hon-scene-image-container" data-performer-url="/performers/${performer.id}">
@@ -3018,6 +3096,7 @@ async function fetchPerformerCount(performerFilter = {}) {
             : `<div class="hon-performer-image hon-scene-image hon-no-image">No Image</div>`
           }
           ${streakBadgeDisplay}
+          ${tournamentBadgeDisplay}
           <div class="hon-click-hint">Click to open performer</div>
         </div>
         
@@ -3792,7 +3871,22 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
 
       // Sort by rating for seeding (highest rated = seed 1)
-      performers.sort((a, b) => (b.rating100 || 0) - (a.rating100 || 0));
+      // Past tournament winners get a small tiebreaker boost for seeding
+      performers.sort((a, b) => {
+        const ratingDiff = (b.rating100 || 0) - (a.rating100 || 0);
+        if (ratingDiff !== 0) return ratingDiff;
+        // Tiebreaker: more tournament wins = higher seed
+        const aStats = parsePerformerEloData(a);
+        const bStats = parsePerformerEloData(b);
+        return (bStats.tournament_wins || 0) - (aStats.tournament_wins || 0);
+      });
+
+      // Assign seed numbers and load tournament win history
+      for (let i = 0; i < performers.length; i++) {
+        performers[i].tournamentSeed = i + 1;
+        const stats = parsePerformerEloData(performers[i]);
+        performers[i].tournamentWins = stats.tournament_wins || 0;
+      }
 
       tournamentSize = size;
       tournamentPerformers = performers;
@@ -3954,7 +4048,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     comparisonArea.innerHTML = `
       <div class="hon-victory-screen">
-        <div class="hon-victory-crown">🏟️</div>
+        <div class="hon-victory-crown">🏆</div>
         <h2 class="hon-victory-title">TOURNAMENT CHAMPION!</h2>
         <div class="hon-victory-scene">
           ${imagePath
@@ -3964,7 +4058,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         </div>
         <h3 class="hon-victory-name">${name}</h3>
         <p class="hon-victory-stats">
-          Won the ${tournamentInfo?.size || "?"}-performer tournament!
+          Won the ${tournamentInfo?.size || "?"}-performer tournament!${champion && champion.tournamentWins > 0 ? ` (${champion.tournamentWins + 1} total wins)` : ""}
         </p>
         <button id="hon-new-tournament" class="btn btn-primary">New Tournament</button>
       </div>
@@ -3980,6 +4074,11 @@ async function fetchPerformerCount(performerFilter = {}) {
         matchesInRound: 0,
         totalRounds: tournamentInfo.bracket.length
       });
+    }
+
+    // Record tournament win in performer stats
+    if (champion) {
+      recordTournamentWin(champion);
     }
 
     // Attach new tournament button

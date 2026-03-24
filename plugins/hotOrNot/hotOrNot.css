@@ -346,6 +346,20 @@
   box-shadow: 0 2px 8px rgba(255, 107, 53, 0.4);
 }
 
+.hon-tournament-wins-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: linear-gradient(135deg, #ffd700, #daa520);
+  color: #000;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: bold;
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.4);
+}
+
 /* Rank overlay for images */
 .hon-image-rank-overlay {
   position: absolute;
