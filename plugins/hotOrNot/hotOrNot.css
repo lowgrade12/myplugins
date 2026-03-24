@@ -1741,6 +1741,15 @@
   font-size: 0.75rem;
 }
 
+.hon-cal-last-result {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--hon-success);
+  padding: 4px 0;
+  margin-top: 8px;
+  opacity: 0.9;
+}
+
 /* ============================================
    TOURNAMENT MODE
    ============================================ */
