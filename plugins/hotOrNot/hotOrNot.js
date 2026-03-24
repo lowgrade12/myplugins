@@ -1073,7 +1073,7 @@
       total_matches: currentStats.total_matches + 1,
       last_match: new Date().toISOString(),
       last_rating_change: ratingChange,
-      tournament_wins: currentStats.tournament_wins || 0
+      tournament_wins: currentStats.tournament_wins
     };
     
     // If won is null, this is participation-only (gauntlet mode defender benchmark only)
@@ -3082,7 +3082,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
 
     // Tournament wins badge — show past tournament victories on the card
-    const tournamentWins = performer.tournamentWins || (stats.tournament_wins || 0);
+    const tournamentWins = performer.tournamentWins || stats.tournament_wins;
     let tournamentBadgeDisplay = '';
     if (currentMode === "tournament" && tournamentWins > 0) {
       tournamentBadgeDisplay = `<div class="hon-tournament-wins-badge">🏆 ${tournamentWins}x champion</div>`;
