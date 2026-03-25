@@ -2154,7 +2154,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     });
 
     const performers = result.findPerformers.performers || [];
-    totalItemsCount = performers.length;
 
     if (performers.length < 2) {
       return { performers: await fetchRandomPerformers(2), ranks: [null, null], coverageInfo: null };
