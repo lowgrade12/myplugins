@@ -1057,6 +1057,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.95rem;
+  table-layout: fixed;
 }
 
 .hon-stats-table thead {
@@ -1068,7 +1069,7 @@
 
 .hon-stats-table th {
   padding: 12px 8px;
-  text-align: left;
+  text-align: center;
   font-weight: 600;
   color: var(--hon-white);
   border-bottom: 2px solid var(--hon-gray-dark);
@@ -1076,6 +1077,7 @@
 
 .hon-stats-table td {
   padding: 10px 8px;
+  text-align: center;
   color: #ccc;
   border-bottom: 1px solid var(--hon-gray-darker);
 }
@@ -1089,6 +1091,16 @@
   color: var(--hon-warning);
 }
 
+.hon-stats-name {
+  text-align: left;
+}
+
+.hon-stats-table td.hon-stats-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hon-stats-name a {
   color: var(--hon-primary);
   text-decoration: none;
@@ -1096,6 +1108,11 @@
 
 .hon-stats-name a:hover {
   text-decoration: underline;
+}
+
+.hon-stats-trophies {
+  color: #ffd700;
+  font-weight: bold;
 }
 
 .hon-stats-rating {
@@ -1324,6 +1341,7 @@
 
 .hon-stats-table-header {
   border-collapse: separate;
+  table-layout: fixed;
   border-spacing: 0;
   margin-bottom: 0;
 }

@@ -3464,6 +3464,24 @@ async function fetchPerformerCount(performerFilter = {}) {
     
     const barGraphHTML = barGraphGroups.join('');
 
+    // Column widths for consistent alignment between header and body tables
+    const leaderboardColgroup = `
+      <colgroup>
+        <col style="width: 6%">
+        <col style="width: 19%">
+        <col style="width: 7%">
+        <col style="width: 8%">
+        <col style="width: 7%">
+        <col style="width: 7%">
+        <col style="width: 7%">
+        <col style="width: 9%">
+        <col style="width: 7%">
+        <col style="width: 7%">
+        <col style="width: 7%">
+        <col style="width: 9%">
+      </colgroup>
+    `;
+
     // Group performers by 250 (1-250, 251-500, etc.)
     const groupedPerformers = [];
     for (let i = 0; i < performersWithStats.length; i += 250) {
@@ -3501,6 +3519,7 @@ async function fetchPerformerCount(performerFilter = {}) {
             <td>${streakDisplay}</td>
             <td class="hon-stats-positive">${p.best_streak}</td>
             <td class="hon-stats-negative">${p.worst_streak}</td>
+            <td class="hon-stats-trophies">${p.tournament_wins ? '🏆 ' + p.tournament_wins : '0'}</td>
           </tr>
         `;
       }).join('');
@@ -3514,6 +3533,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           </div>
           <div class="hon-rank-group-content collapsed" data-group="${groupIndex}" id="rank-group-${groupIndex}">
             <table class="hon-stats-table" role="table" aria-label="Ranks ${group.startRank}-${group.endRank} statistics">
+              ${leaderboardColgroup}
               <tbody>
                 ${groupRows}
               </tbody>
@@ -3564,10 +3584,11 @@ async function fetchPerformerCount(performerFilter = {}) {
           <div class="hon-stats-tab-panel" data-panel="leaderboard">
             <div class="hon-stats-table-container">
               <table class="hon-stats-table hon-stats-table-header" role="table" aria-label="Performer statistics breakdown">
+                ${leaderboardColgroup}
                 <thead>
                   <tr>
                     <th scope="col" aria-label="Rank position">Rank</th>
-                    <th scope="col" aria-label="Performer name">Performer</th>
+                    <th scope="col" aria-label="Performer name" class="hon-stats-name">Performer</th>
                     <th scope="col" aria-label="Current rating">Rating</th>
                     <th scope="col" aria-label="Total matches played">Matches</th>
                     <th scope="col" aria-label="Total wins">Wins</th>
@@ -3577,6 +3598,7 @@ async function fetchPerformerCount(performerFilter = {}) {
                     <th scope="col" aria-label="Current win or loss streak">Streak</th>
                     <th scope="col" aria-label="Best winning streak">Best</th>
                     <th scope="col" aria-label="Worst losing streak">Worst</th>
+                    <th scope="col" aria-label="Tournament titles won">Titles</th>
                   </tr>
                 </thead>
               </table>
