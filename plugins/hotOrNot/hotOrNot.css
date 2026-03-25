@@ -1093,6 +1093,9 @@
 
 .hon-stats-name {
   text-align: left;
+}
+
+.hon-stats-table td.hon-stats-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1341,10 +1344,6 @@
   table-layout: fixed;
   border-spacing: 0;
   margin-bottom: 0;
-}
-
-.hon-stats-table-header th.hon-stats-name {
-  text-align: left;
 }
 
 .hon-stats-table-header thead {
