@@ -4,15 +4,7 @@
   // Current comparison pair and mode
   let currentPair = { left: null, right: null };
   let currentRanks = { left: null, right: null };
-  let currentMode = "swiss"; // "swiss", "gauntlet", "champion", "calibration", or "tournament"
-  let gauntletChampion = null; // The item currently on a winning streak
-  let gauntletWins = 0; // Current win streak
-  let gauntletChampionRank = 0; // Current rank position (1 = top)
-  let gauntletDefeated = []; // IDs of items defeated in current run
-  let gauntletFalling = false; // True when champion lost and is finding their floor
-  let gauntletFallingItem = null; // The item that's falling to find its position
-  let gauntletFallingTested = []; // IDs of items already tested during falling phase (to avoid repeats)
-  let totalItemsCount = 0; // Total items for position display
+  let currentMode = "swiss"; // "swiss", "calibration", or "tournament"
 
   // Calibration mode state
   let calibrationTarget = null; // The performer being calibrated (least confident)
@@ -45,47 +37,9 @@
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
 
   /**
-   * Reset all gauntlet/champion mode state to initial values.
-   * Call when starting a new run, switching modes, or after victory/placement.
-   */
-  function resetGauntletState() {
-    gauntletChampion = null;
-    gauntletWins = 0;
-    gauntletChampionRank = 0;
-    gauntletDefeated = [];
-    gauntletFalling = false;
-    gauntletFallingItem = null;
-    gauntletFallingTested = [];
-  }
-
-  /**
-   * Reset calibration mode state.
-   */
-  function resetCalibrationState() {
-    calibrationTarget = null;
-    calibrationLow = 1;
-    calibrationHigh = 100;
-    calibrationStep = 0;
-    calibrationLastResult = "";
-  }
-
-  /**
-   * Reset tournament mode state.
-   */
-  function resetTournamentState() {
-    tournamentBracket = null;
-    tournamentRound = 0;
-    tournamentMatchIndex = 0;
-    tournamentSize = 0;
-    tournamentPerformers = [];
-    tournamentSetupDone = false;
-  }
-
-  /**
    * Reset all mode-specific state (called when switching modes).
    */
   function resetAllModeState() {
-    resetGauntletState();
     resetCalibrationState();
     resetTournamentState();
   }
