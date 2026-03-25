@@ -3599,7 +3599,7 @@ async function fetchPerformerCount(performerFilter = {}) {
                 ${leaderboardColgroup}
                 <thead>
                   <tr>
-                    <th scope="col" aria-label="Rank position" data-sort-key="rank" class="hon-sortable">Rank <span class="hon-sort-indicator hon-sort-desc">▼</span></th>
+                    <th scope="col" aria-label="Rank position" data-sort-key="rank" class="hon-sortable">Rank <span class="hon-sort-indicator hon-sort-asc">▲</span></th>
                     <th scope="col" aria-label="Performer name" class="hon-stats-name hon-sortable" data-sort-key="name">Performer <span class="hon-sort-indicator"></span></th>
                     <th scope="col" aria-label="Current rating" data-sort-key="rating" class="hon-sortable">Rating <span class="hon-sort-indicator"></span></th>
                     <th scope="col" aria-label="Total matches played" data-sort-key="total_matches" class="hon-sortable">Matches <span class="hon-sort-indicator"></span></th>
@@ -3723,7 +3723,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
       // Sortable leaderboard headers
       let currentSortKey = "rank";
-      let currentSortDir = "asc"; // rank ascending = rating descending (original order)
+      let currentSortDir = "asc";
 
       const sortHeaders = dialog.querySelectorAll(".hon-sortable");
       sortHeaders.forEach(th => {
@@ -3737,7 +3737,7 @@ async function fetchPerformerCount(performerFilter = {}) {
             currentSortDir = sortKey === "name" ? "asc" : "desc";
           }
 
-          // Sort the performers array
+          // Sort from the original array each time (independent of previous sorts)
           const sorted = performersWithStats.slice().sort((a, b) => {
             let valA = a[sortKey];
             let valB = b[sortKey];
@@ -3750,9 +3750,15 @@ async function fetchPerformerCount(performerFilter = {}) {
               return currentSortDir === "asc" ? cmp : -cmp;
             }
 
-            // Numeric comparison for everything else
-            valA = parseFloat(valA) || 0;
-            valB = parseFloat(valB) || 0;
+            // Numeric comparison — push N/A win rates (value -1) to the end
+            valA = parseFloat(valA);
+            valB = parseFloat(valB);
+            if (isNaN(valA)) valA = currentSortDir === "asc" ? Infinity : -Infinity;
+            if (isNaN(valB)) valB = currentSortDir === "asc" ? Infinity : -Infinity;
+            if (sortKey === "win_rate") {
+              if (valA < 0) valA = currentSortDir === "asc" ? Infinity : -Infinity;
+              if (valB < 0) valB = currentSortDir === "asc" ? Infinity : -Infinity;
+            }
             return currentSortDir === "asc" ? valA - valB : valB - valA;
           });
 
