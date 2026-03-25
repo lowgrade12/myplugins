@@ -37,6 +37,29 @@
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
 
   /**
+   * Reset calibration mode state.
+   */
+  function resetCalibrationState() {
+    calibrationTarget = null;
+    calibrationLow = 1;
+    calibrationHigh = 100;
+    calibrationStep = 0;
+    calibrationLastResult = "";
+  }
+
+  /**
+   * Reset tournament mode state.
+   */
+  function resetTournamentState() {
+    tournamentBracket = null;
+    tournamentRound = 0;
+    tournamentMatchIndex = 0;
+    tournamentSize = 0;
+    tournamentPerformers = [];
+    tournamentSetupDone = false;
+  }
+
+  /**
    * Reset all mode-specific state (called when switching modes).
    */
   function resetAllModeState() {
