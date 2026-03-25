@@ -4,15 +4,7 @@
   // Current comparison pair and mode
   let currentPair = { left: null, right: null };
   let currentRanks = { left: null, right: null };
-  let currentMode = "swiss"; // "swiss", "gauntlet", "champion", "calibration", or "tournament"
-  let gauntletChampion = null; // The item currently on a winning streak
-  let gauntletWins = 0; // Current win streak
-  let gauntletChampionRank = 0; // Current rank position (1 = top)
-  let gauntletDefeated = []; // IDs of items defeated in current run
-  let gauntletFalling = false; // True when champion lost and is finding their floor
-  let gauntletFallingItem = null; // The item that's falling to find its position
-  let gauntletFallingTested = []; // IDs of items already tested during falling phase (to avoid repeats)
-  let totalItemsCount = 0; // Total items for position display
+  let currentMode = "swiss"; // "swiss", "calibration", or "tournament"
 
   // Calibration mode state
   let calibrationTarget = null; // The performer being calibrated (least confident)
@@ -45,20 +37,6 @@
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
 
   /**
-   * Reset all gauntlet/champion mode state to initial values.
-   * Call when starting a new run, switching modes, or after victory/placement.
-   */
-  function resetGauntletState() {
-    gauntletChampion = null;
-    gauntletWins = 0;
-    gauntletChampionRank = 0;
-    gauntletDefeated = [];
-    gauntletFalling = false;
-    gauntletFallingItem = null;
-    gauntletFallingTested = [];
-  }
-
-  /**
    * Reset calibration mode state.
    */
   function resetCalibrationState() {
@@ -85,7 +63,6 @@
    * Reset all mode-specific state (called when switching modes).
    */
   function resetAllModeState() {
-    resetGauntletState();
     resetCalibrationState();
     resetTournamentState();
   }
@@ -849,94 +826,6 @@
     return filter;
   }
 
-  function createVictoryScreen(champion) {
-    // Handle performers and images
-    let title, imagePath;
-    
-    if (battleType === "performers") {
-      // Performer
-      title = champion.name || `Performer #${champion.id}`;
-      imagePath = champion.image_path;
-    } else {
-      // Image
-      title = `Image #${champion.id}`;
-      imagePath = champion.paths && champion.paths.thumbnail ? champion.paths.thumbnail : null;
-    }
-    
-    const itemType = battleType === "performers" ? "performers" : "images";
-    
-    return `
-      <div class="hon-victory-screen">
-        <div class="hon-victory-crown">👑</div>
-        <h2 class="hon-victory-title">CHAMPION!</h2>
-        <div class="hon-victory-scene">
-          ${imagePath 
-            ? `<img class="hon-victory-image" src="${imagePath}" alt="${title}" />`
-            : `<div class="hon-victory-image hon-no-image">No Image</div>`
-          }
-        </div>
-        <h3 class="hon-victory-name">${title}</h3>
-        <p class="hon-victory-stats">Conquered all ${totalItemsCount} ${itemType} with a ${gauntletWins} win streak!</p>
-        <button id="hon-new-gauntlet" class="btn btn-primary">Start New Gauntlet</button>
-      </div>
-    `;
-  }
-
-  function showPlacementScreen(item, rank, finalRating) {
-    const comparisonArea = document.getElementById("hon-comparison-area");
-    if (!comparisonArea) return;
-    
-    // Handle performers and images
-    let title, imagePath;
-    
-    if (battleType === "performers") {
-      // Performer
-      title = item.name || `Performer #${item.id}`;
-      imagePath = item.image_path;
-    } else {
-      // Image
-      title = `Image #${item.id}`;
-      imagePath = item.paths && item.paths.thumbnail ? item.paths.thumbnail : null;
-    }
-    
-    comparisonArea.innerHTML = `
-      <div class="hon-victory-screen">
-        <div class="hon-victory-crown">📍</div>
-        <h2 class="hon-victory-title">PLACED!</h2>
-        <div class="hon-victory-scene">
-          ${imagePath 
-            ? `<img class="hon-victory-image" src="${imagePath}" alt="${title}" />`
-            : `<div class="hon-victory-image hon-no-image">No Image</div>`
-          }
-        </div>
-        <h3 class="hon-victory-name">${title}</h3>
-        <p class="hon-victory-stats">
-          Rank <strong>#${rank}</strong> of ${totalItemsCount}<br>
-          Rating: <strong>${finalRating}/100</strong>
-        </p>
-        <button id="hon-new-gauntlet" class="btn btn-primary">Start New Run</button>
-      </div>
-    `;
-    
-    // Hide status and actions
-    const statusEl = document.getElementById("hon-gauntlet-status");
-    const actionsEl = document.querySelector(".hon-actions");
-    if (statusEl) statusEl.style.display = "none";
-    if (actionsEl) actionsEl.style.display = "none";
-    
-    // Reset state
-    resetGauntletState();
-    
-    // Attach button handler
-    const newBtn = comparisonArea.querySelector("#hon-new-gauntlet");
-    if (newBtn) {
-      newBtn.addEventListener("click", () => {
-        if (actionsEl) actionsEl.style.display = "";
-        loadNewPair();
-      });
-    }
-  }
-
   async function updatePerformerRating(performerId, newRating, performerObj = null, won = null, ratingChange = 0) {
     const mutation = `
       mutation UpdatePerformerCustomFields($id: ID!, $rating: Int!, $fields: Map) {
@@ -981,21 +870,6 @@
   // ============================================
   // RATING LOGIC
   // ============================================
-
-  /**
-   * Select a random opponent from the closest remaining opponents
-   * Assumes remainingOpponents array is in rank order (best first, closest to champion last)
-   * @param {Array} remainingOpponents - Array of remaining opponents in rank order
-   * @param {number} maxChoices - Maximum number of closest opponents to consider (default: 3)
-   * @returns {Object|null} Randomly selected opponent from the closest options, or null if no opponents
-   */
-  function selectRandomOpponent(remainingOpponents, maxChoices = 3) {
-    if (remainingOpponents.length === 0) return null;
-    
-    // Get up to maxChoices closest opponents from the end of the array
-    const closestOpponents = remainingOpponents.slice(-maxChoices);
-    return closestOpponents[Math.floor(Math.random() * closestOpponents.length)];
-  }
 
   /**
    * Create a default (empty) stats object.
@@ -1076,7 +950,7 @@
       tournament_wins: currentStats.tournament_wins
     };
     
-    // If won is null, this is participation-only (gauntlet mode defender benchmark only)
+    // If won is null, this is participation-only tracking
     // Only increment match count and timestamp, don't track win/loss or streaks
     if (won === null) {
       newStats.wins = currentStats.wins;
@@ -1372,10 +1246,10 @@
   }
 
   /**
-   * Calculate K-factor based on match count (experience), scene count, and mode
+   * Calculate K-factor based on match count (experience) and scene count
    * @param {number} currentRating - Current ELO rating
    * @param {number} matchCount - Number of matches played
-   * @param {string} mode - Current game mode ("swiss", "gauntlet", "champion")
+   * @param {string} mode - Current game mode (unused, kept for API compatibility)
    * @param {number} sceneCount - Number of scenes the performer is in (performers only)
    * @returns {number} K-factor value
    */
@@ -1438,14 +1312,6 @@
       baseKFactor = Math.max(4, Math.round(baseKFactor * sceneMultiplier));
     }
     
-    // Apply mode-specific multiplier
-    // Champion mode: 0.5x K-factor (half the rating change of Swiss mode)
-    // This allows ratings to update but at a much slower pace
-    if (mode === "champion") {
-      return Math.max(1, Math.round(baseKFactor * 0.5));
-    }
-    
-    // Swiss and gauntlet modes use full K-factor
     return baseKFactor;
   }
 
@@ -1481,51 +1347,6 @@
     
     // Otherwise ensure at least 1 point gain when baseGain > 0
     return Math.max(1, adjustedGain);
-  }
-
-  /**
-   * Check if a performer is an active participant in gauntlet mode
-   * Active participants are those whose stats should be tracked
-   * Note: In champion mode, ALL participants are active (both get full stats)
-   * @param {string} performerId - ID of the performer to check
-   * @param {number|null} performerRank - Rank of the performer (null if not ranked)
-   * @returns {boolean} True if performer's stats should be tracked
-   */
-  function isActiveParticipant(performerId, performerRank) {
-    // In Swiss, Calibration, and Tournament modes, all participants are active
-    if (currentMode === "swiss" || currentMode === "calibration" || currentMode === "tournament") {
-      return true;
-    }
-    
-    // In Champion mode, all participants are active (both get full stats tracked)
-    if (currentMode === "champion") {
-      return true;
-    }
-    
-    // In Gauntlet mode, only champion/falling performers are active
-    if (currentMode === "gauntlet") {
-      // Check if this is the champion
-      const isChampion = gauntletChampion && performerId === gauntletChampion.id;
-      
-      // Check if this is the falling performer
-      const isFalling = gauntletFalling && gauntletFallingItem && performerId === gauntletFallingItem.id;
-      
-      // Champion or falling performer are always active
-      if (isChampion || isFalling) {
-        return true;
-      }
-      
-      // Defender at rank #1 who is being challenged is also active (they can lose rating)
-      if (performerRank === 1) {
-        return true;
-      }
-      
-      // All other defenders are not active (they're just benchmarks)
-      return false;
-    }
-    
-    // Default: not active
-    return false;
   }
 
   async function handleComparison(winnerId, loserId, winnerCurrentRating, loserCurrentRating, loserRank = null, winnerObj = null, loserObj = null) {
@@ -1572,73 +1393,23 @@
     // performer (higher scene count) is treated as a bigger upset and worth more
     const adjustedRatingDiff = getSceneAdjustedDiff(ratingDiff, winnerSceneCount, loserSceneCount);
     
-    let winnerGain = 0, loserLoss = 0;
+    // True ELO with zero-sum property
+    // Both performers change by the same amount to maintain rating pool integrity
+    const expectedWinner = 1 / (1 + Math.pow(10, adjustedRatingDiff / 40));
     
-    if (currentMode === "gauntlet") {
-      // In gauntlet, only the champion/falling item changes rating
-      // Defenders stay the same (they're just benchmarks)
-      // EXCEPT: if the defender is rank #1, they get a full ELO penalty when defeated
-      // to ensure rankings remain fluid and upsets are properly reflected
-      const isChampionWinner = gauntletChampion && winnerId === gauntletChampion.id;
-      const isFallingWinner = gauntletFalling && gauntletFallingItem && winnerId === gauntletFallingItem.id;
-      const isChampionLoser = gauntletChampion && loserId === gauntletChampion.id;
-      const isFallingLoser = gauntletFalling && gauntletFallingItem && loserId === gauntletFallingItem.id;
-      
-      const expectedWinner = 1 / (1 + Math.pow(10, adjustedRatingDiff / 40));
-      const kFactor = getKFactor(winnerRating, winnerMatchCount, "gauntlet", winnerSceneCount);
-      
-      // Only the active item (champion or falling) gets rating changes
-      if (isChampionWinner || isFallingWinner) {
-        const baseGain = Math.max(0, Math.round(kFactor * (1 - expectedWinner)));
-        // Apply diminishing returns - harder to gain points at higher ratings
-        winnerGain = applyDiminishingReturns(winnerRating, baseGain);
-      }
-      if (isChampionLoser || isFallingLoser) {
-        loserLoss = Math.max(0, Math.round(kFactor * expectedWinner));
-      }
-      
-      // Special case: if defender was rank #1 and lost, apply full ELO penalty
-      // The ELO formula naturally penalizes the #1 significantly because their
-      // "Expected Score" was nearly 100%, making the upset very costly
-      if (loserRank === 1 && !isChampionLoser && !isFallingLoser) {
-        const loserK = getKFactor(loserRating, loserMatchCount, "gauntlet", loserSceneCount);
-        // expectedWinner is from winner's perspective, so expectedLoser = 1 - expectedWinner
-        // loserLoss = K * (1 - expectedLoser) = K * expectedWinner (same as normal ELO loss)
-        loserLoss = Math.max(1, Math.round(loserK * expectedWinner));
-      }
-    } else if (currentMode === "champion") {
-      // Champion mode: Both performers get rating updates, but at a reduced rate (50% of Swiss mode)
-      // This allows rankings to evolve while still maintaining the "winner stays on" feel
-      const expectedWinner = 1 / (1 + Math.pow(10, adjustedRatingDiff / 40));
-      
-      // Use individual K-factors for each performer with champion mode multiplier
-      const winnerK = getKFactor(winnerRating, winnerMatchCount, "champion", winnerSceneCount);
-      const loserK = getKFactor(loserRating, loserMatchCount, "champion", loserSceneCount);
-      
-      // Calculate changes using their respective K-factors (reduced by 50% for champion mode)
-      const baseGain = Math.max(0, Math.round(winnerK * (1 - expectedWinner)));
-      // Apply diminishing returns - harder to gain points at higher ratings
-      winnerGain = applyDiminishingReturns(winnerRating, baseGain);
-      loserLoss = Math.max(0, Math.round(loserK * expectedWinner));
-    } else {
-      // Swiss mode: True ELO with zero-sum property
-      // Both performers change by the same amount to maintain rating pool integrity
-      const expectedWinner = 1 / (1 + Math.pow(10, adjustedRatingDiff / 40));
-      
-      // Use individual K-factors but average them for the match
-      // This maintains fairness while preserving zero-sum property
-      const winnerK = getKFactor(winnerRating, winnerMatchCount, "swiss", winnerSceneCount);
-      const loserK = getKFactor(loserRating, loserMatchCount, "swiss", loserSceneCount);
-      const avgK = (winnerK + loserK) / 2;
-      
-      // Calculate single rating change for zero-sum (winner gains what loser loses)
-      const baseChange = Math.max(0, Math.round(avgK * (1 - expectedWinner)));
-      
-      // Apply diminishing returns based on winner's rating (makes reaching 100 harder)
-      // Then set loser's loss equal to winner's gain (zero-sum)
-      winnerGain = applyDiminishingReturns(winnerRating, baseChange);
-      loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
-    }
+    // Use individual K-factors but average them for the match
+    // This maintains fairness while preserving zero-sum property
+    const winnerK = getKFactor(winnerRating, winnerMatchCount, currentMode, winnerSceneCount);
+    const loserK = getKFactor(loserRating, loserMatchCount, currentMode, loserSceneCount);
+    const avgK = (winnerK + loserK) / 2;
+    
+    // Calculate single rating change for zero-sum (winner gains what loser loses)
+    const baseChange = Math.max(0, Math.round(avgK * (1 - expectedWinner)));
+    
+    // Apply diminishing returns based on winner's rating (makes reaching 100 harder)
+    // Then set loser's loss equal to winner's gain (zero-sum)
+    const winnerGain = applyDiminishingReturns(winnerRating, baseChange);
+    const loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
     
     let newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));
     let newLoserRating = Math.min(100, Math.max(1, loserRating - loserLoss));
@@ -1662,37 +1433,21 @@
     const winnerChange = newWinnerRating - winnerRating;
     const loserChange = newLoserRating - loserRating;
     
-    // Determine which participants should have stats tracked
-    const winnerRank = winnerId === currentPair.left?.id ? currentRanks.left : currentRanks.right;
-    
-    // In champion/gauntlet mode with no champion yet (first match), both participants should get full stats tracked
-    const isFirstMatchInGauntletMode = (currentMode === "gauntlet" || currentMode === "champion") && !gauntletChampion;
-    const shouldTrackWinner = battleType === "performers" && (isActiveParticipant(winnerId, winnerRank) || isFirstMatchInGauntletMode);
-    const shouldTrackLoser = battleType === "performers" && (isActiveParticipant(loserId, loserRank) || isFirstMatchInGauntletMode);
+    // All participants get full stats tracked
+    const shouldTrackWinner = battleType === "performers" && !!freshWinnerObj;
+    const shouldTrackLoser = battleType === "performers" && !!freshLoserObj;
     
     // Update items in Stash
-    // Pass win/loss status for stats tracking:
-    // - true/false for active participants (track full stats)
-    // - null for defenders in gauntlet mode only (track participation only)
-    
     const updatePromises = [];
     
     // Winner updates
-    if (winnerChange !== 0 || (battleType === "performers" && freshWinnerObj && shouldTrackWinner)) {
-      // Update rating if changed, or always update stats if active participant
+    if (winnerChange !== 0 || shouldTrackWinner) {
       updatePromises.push(updateItemRating(winnerId, newWinnerRating, shouldTrackWinner ? freshWinnerObj : null, shouldTrackWinner ? true : null, winnerChange));
-    } else if (battleType === "performers" && freshWinnerObj && currentMode === "gauntlet") {
-      // Defender in gauntlet mode only - track participation only
-      updatePromises.push(updateItemRating(winnerId, newWinnerRating, freshWinnerObj, null, 0));
     }
     
     // Loser updates
-    if (loserChange !== 0 || (battleType === "performers" && freshLoserObj && shouldTrackLoser)) {
-      // Update rating if changed, or always update stats if active participant
+    if (loserChange !== 0 || shouldTrackLoser) {
       updatePromises.push(updateItemRating(loserId, newLoserRating, shouldTrackLoser ? freshLoserObj : null, shouldTrackLoser ? false : null, loserChange));
-    } else if (battleType === "performers" && freshLoserObj && currentMode === "gauntlet") {
-      // Defender in gauntlet mode only - track participation only
-      updatePromises.push(updateItemRating(loserId, newLoserRating, freshLoserObj, null, 0));
     }
     
     // Wait for all rating updates to complete before returning
@@ -1821,56 +1576,6 @@
     };
   }
   
-  // Called when gauntlet champion loses - place them one below the winner
-  function finalizeGauntletLoss(championId, winnerRating) {
-    // Set champion rating to just below the item that beat them
-    const newRating = Math.max(1, winnerRating - 1);
-    updateItemRating(championId, newRating);
-    return newRating;
-  }
-
-  /**
-   * Calculate the rating floor based on defeated opponents in gauntlet mode.
-   * The floor is 1 point above the highest-rated defeated performer.
-   * This prevents a falling performer from dropping below performers they've already beaten.
-   * @param {Array<string>} defeatedIds - Array of IDs of defeated performers
-   * @returns {Promise<number>} The rating floor (minimum 1)
-   */
-  async function calculateDefeatedOpponentsFloor(defeatedIds) {
-    if (!defeatedIds || defeatedIds.length === 0) {
-      return 1;
-    }
-    
-    // Fetch each defeated performer by ID individually
-    // (PerformerFilterType doesn't support filtering by id directly)
-    const defeatedQuery = `
-      query FindPerformer($id: ID!) {
-        findPerformer(id: $id) {
-          id
-          rating100
-        }
-      }
-    `;
-    
-    const performerPromises = defeatedIds.map(async (id) => {
-      try {
-        const result = await graphqlQuery(defeatedQuery, { id });
-        return result.findPerformer;
-      } catch (error) {
-        console.error(`[HotOrNot] Error fetching defeated performer ${id}:`, error);
-        return null;
-      }
-    });
-    
-    const defeatedPerformers = (await Promise.all(performerPromises)).filter(p => p !== null);
-    if (defeatedPerformers.length > 0) {
-      // Floor is 1 point above the highest-rated defeated performer
-      const maxDefeatedRating = Math.max(...defeatedPerformers.map(p => p.rating100 || 50));
-      return maxDefeatedRating + 1;
-    }
-    
-    return 1;
-  }
 
 
   // ============================================
@@ -2250,265 +1955,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     };
   }
 
-  // Gauntlet mode: champion vs next challenger
-  async function fetchGauntletPairPerformers() {
-    const performerFilter = getPerformerFilter();
-
-    // Get ALL performers sorted by rating descending (highest first)
-    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
-      performer_filter: performerFilter,
-      filter: {
-        per_page: -1,
-        sort: "rating",
-        direction: "DESC"
-      }
-    });
-
-    const performers = result.findPerformers.performers || [];
-    totalItemsCount = performers.length;
-    
-    if (performers.length < 2) {
-      return { performers: await fetchRandomPerformers(2), ranks: [null, null], isVictory: false, isFalling: false };
-    }
-
-    // Handle falling mode - find next opponent BELOW to test against
-    if (gauntletFalling && gauntletFallingItem) {
-      const fallingIndex = performers.findIndex(s => s.id === gauntletFallingItem.id);
-      
-      // Find opponents below (higher index) that haven't been tested
-      const belowOpponents = performers.filter((s, idx) => {
-        if (s.id === gauntletFallingItem.id) return false;
-        if (gauntletDefeated.includes(s.id)) return false;
-        if (gauntletFallingTested.includes(s.id)) return false; // Skip opponents already tested during falling
-        return idx > fallingIndex; // Below in ranking
-      });
-      
-      if (belowOpponents.length === 0) {
-        // No more undefeated opponents below - found their floor!
-        // Simply place them at their current position
-        const currentRating = gauntletFallingItem.rating100 || 50;
-        
-        // Calculate rank based on current rating
-        const finalRank = performers.filter(p => 
-          p.id !== gauntletFallingItem.id && (p.rating100 || 50) > currentRating
-        ).length + 1;
-        
-        return {
-          performers: [gauntletFallingItem],
-          ranks: [finalRank],
-          isVictory: false,
-          isFalling: true,
-          isPlacement: true,
-          placementRank: finalRank,
-          placementRating: currentRating
-        };
-      } else {
-        // Get next opponent below (first one, closest to falling performer)
-        let fallingPool = belowOpponents;
-        const nextBelow = fallingPool[0];
-        const nextBelowIndex = performers.findIndex(s => s.id === nextBelow.id);
-        
-        // Update the falling performer's rank for display
-        gauntletChampionRank = fallingIndex + 1;
-        
-        return {
-          performers: [gauntletFallingItem, nextBelow],
-          ranks: [fallingIndex + 1, nextBelowIndex + 1],
-          isVictory: false,
-          isFalling: true
-        };
-      }
-    }
-
-    // If no champion yet, start with a random challenger vs the lowest rated performer
-    if (!gauntletChampion) {
-      // Reset state
-      gauntletDefeated = [];
-      gauntletFalling = false;
-      gauntletFallingItem = null;
-      gauntletFallingTested = [];
-      
-      // Pick random performer as challenger
-      const randomIndex = Math.floor(Math.random() * performers.length);
-      const challenger = performers[randomIndex];
-      
-      // Start at the bottom - find lowest rated performer that isn't the challenger
-      let lowestCandidates = performers.filter(s => s.id !== challenger.id);
-      const lowestRated = lowestCandidates
-        .sort((a, b) => (a.rating100 || 0) - (b.rating100 || 0))[0];
-      
-      const lowestIndex = performers.findIndex(s => s.id === lowestRated.id);
-      
-      // Challenger's current rank
-      gauntletChampionRank = randomIndex + 1;
-      
-      return { 
-        performers: [challenger, lowestRated], 
-        ranks: [randomIndex + 1, lowestIndex + 1],
-        isVictory: false,
-        isFalling: false
-      };
-    }
-
-    // Champion exists - find next opponent they haven't defeated yet
-    const championIndex = performers.findIndex(s => s.id === gauntletChampion.id);
-    
-    // Update champion rank (1-indexed, so +1)
-    gauntletChampionRank = championIndex + 1;
-    
-    // Create an index map for O(1) lookups (performance optimization)
-    const performerIndexMap = new Map(performers.map((p, idx) => [p.id, idx]));
-    
-    // Find ALL undefeated opponents (anyone the champion hasn't beaten yet)
-    const allUndefeatedOpponents = performers.filter((s) => {
-      if (s.id === gauntletChampion.id) return false;
-      if (gauntletDefeated.includes(s.id)) return false;
-      return true;
-    });
-    
-    // Victory is only when ALL performers have been defeated
-    if (allUndefeatedOpponents.length === 0) {
-      gauntletChampionRank = 1;
-      return { 
-        performers: [gauntletChampion], 
-        ranks: [1],
-        isVictory: true,
-        isFalling: false
-      };
-    }
-    
-    // From undefeated opponents, only fight those ranked higher (lower index = higher rating)
-    // Once the champion has defeated all higher-ranked opponents, they've reached the top
-    const higherRankedOpponents = allUndefeatedOpponents.filter((s) => {
-      const opponentIndex = performerIndexMap.get(s.id);
-      return opponentIndex < championIndex;
-    });
-    
-    // Victory when there are no more higher-ranked opponents to defeat
-    // The champion has proven themselves against all performers above them
-    if (higherRankedOpponents.length === 0) {
-      gauntletChampionRank = 1;
-      return { 
-        performers: [gauntletChampion], 
-        ranks: [1],
-        isVictory: true,
-        isFalling: false
-      };
-    }
-    
-    // Pick from higher ranked opponents
-    let opponentsPool = higherRankedOpponents;
-    const nextOpponent = selectRandomOpponent(opponentsPool);
-    const nextOpponentIndex = performerIndexMap.get(nextOpponent.id);
-    
-    return { 
-      performers: [gauntletChampion, nextOpponent], 
-      ranks: [championIndex + 1, nextOpponentIndex + 1],
-      isVictory: false,
-      isFalling: false
-    };
-  }
-
-  // Champion mode: like gauntlet but winner stays on (no falling)
-  async function fetchChampionPairPerformers() {
-    const performerFilter = getPerformerFilter();
-
-    // Get ALL performers sorted by rating descending (highest first)
-    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
-      performer_filter: performerFilter,
-      filter: {
-        per_page: -1,
-        sort: "rating",
-        direction: "DESC"
-      }
-    });
-
-    const performers = result.findPerformers.performers || [];
-    totalItemsCount = performers.length;
-    
-    if (performers.length < 2) {
-      return { performers: await fetchRandomPerformers(2), ranks: [null, null], isVictory: false };
-    }
-
-    // If no champion yet, start with a random challenger vs the lowest rated performer
-    if (!gauntletChampion) {
-      gauntletDefeated = [];
-      
-      // Pick random performer as challenger
-      const randomIndex = Math.floor(Math.random() * performers.length);
-      const challenger = performers[randomIndex];
-      
-      // Start at the bottom - find lowest rated performer that isn't the challenger
-      let lowestCandidatesC = performers.filter(s => s.id !== challenger.id);
-      const lowestRated = lowestCandidatesC
-        .sort((a, b) => (a.rating100 || 0) - (b.rating100 || 0))[0];
-      
-      const lowestIndex = performers.findIndex(s => s.id === lowestRated.id);
-      
-      gauntletChampionRank = randomIndex + 1;
-      
-      return { 
-        performers: [challenger, lowestRated], 
-        ranks: [randomIndex + 1, lowestIndex + 1],
-        isVictory: false
-      };
-    }
-
-    // Champion exists - find next opponent they haven't defeated yet
-    const championIndex = performers.findIndex(s => s.id === gauntletChampion.id);
-    
-    gauntletChampionRank = championIndex + 1;
-    
-    // Create an index map for O(1) lookups (performance optimization)
-    const performerIndexMap = new Map(performers.map((p, idx) => [p.id, idx]));
-    
-    // Find ALL undefeated opponents (anyone the champion hasn't beaten yet)
-    const allUndefeatedOpponents = performers.filter((s) => {
-      if (s.id === gauntletChampion.id) return false;
-      if (gauntletDefeated.includes(s.id)) return false;
-      return true;
-    });
-    
-    // Victory is only when ALL performers have been defeated
-    if (allUndefeatedOpponents.length === 0) {
-      gauntletChampionRank = 1;
-      return { 
-        performers: [gauntletChampion], 
-        ranks: [1],
-        isVictory: true
-      };
-    }
-    
-    // From undefeated opponents, only fight those ranked higher (lower index = higher rating)
-    // Once the champion has defeated all higher-ranked opponents, they've reached the top
-    const higherRankedOpponents = allUndefeatedOpponents.filter((s) => {
-      const opponentIndex = performerIndexMap.get(s.id);
-      return opponentIndex < championIndex;
-    });
-    
-    // Victory when there are no more higher-ranked opponents to defeat
-    // The champion has proven themselves against all performers above them
-    if (higherRankedOpponents.length === 0) {
-      gauntletChampionRank = 1;
-      return { 
-        performers: [gauntletChampion], 
-        ranks: [1],
-        isVictory: true
-      };
-    }
-    
-    // Pick from higher ranked opponents
-    let champOpponentsPool = higherRankedOpponents;
-    const nextOpponent = selectRandomOpponent(champOpponentsPool);
-    const nextOpponentIndex = performerIndexMap.get(nextOpponent.id);
-    
-    return { 
-      performers: [gauntletChampion, nextOpponent], 
-      ranks: [championIndex + 1, nextOpponentIndex + 1],
-      isVictory: false
-    };
-  }
-
   // ============================================
   // IMAGE FUNCTIONS
   // ============================================
@@ -2630,11 +2076,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     };
   }
 
-  // NOTE: Gauntlet and Champion modes for images have been removed.
-  // Images now use Swiss mode exclusively for optimal performance.
-  // The functions fetchGauntletPairImages() and fetchChampionPairImages() 
-  // have been removed as they are no longer needed.
-
   async function updateImageRating(imageId, newRating) {
     const mutation = `
       mutation ImageUpdate($input: ImageUpdateInput!) {
@@ -2666,26 +2107,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     if (battleType === "performers") {
       return await fetchSwissPairPerformers();
     } else {
-      return await fetchSwissPairImages();
-    }
-  }
-
-  async function fetchGauntletPair() {
-    if (battleType === "performers") {
-      return await fetchGauntletPairPerformers();
-    } else {
-      // Images use Swiss mode only - this should never be called
-      console.error("[HotOrNot] ERROR: Gauntlet mode called for images (not supported). Using Swiss mode as fallback.");
-      return await fetchSwissPairImages();
-    }
-  }
-
-  async function fetchChampionPair() {
-    if (battleType === "performers") {
-      return await fetchChampionPairPerformers();
-    } else {
-      // Images use Swiss mode only - this should never be called
-      console.error("[HotOrNot] ERROR: Champion mode called for images (not supported). Using Swiss mode as fallback.");
       return await fetchSwissPairImages();
     }
   }
@@ -3096,7 +2517,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
     }
     
-    // Streak badge for gauntlet champion
+    // Streak badge (currently unused)
     let streakBadgeDisplay = '';
     if (streak !== null && streak > 0) {
       streakBadgeDisplay = `<div class="hon-streak-badge">🔥 ${streak} win${streak > 1 ? 's' : ''}</div>`;
@@ -3162,7 +2583,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
     }
     
-    // Streak badge for gauntlet champion
+    // Streak badge (currently unused)
     let streakDisplay = '';
     if (streak !== null && streak > 0) {
       streakDisplay = `<div class="hon-streak-badge">🔥 ${streak} win${streak > 1 ? 's' : ''}</div>`;
@@ -3188,139 +2609,6 @@ async function fetchPerformerCount(performerFilter = {}) {
       </div>
     `;
   }
-
-  // ============================================
-  // PERFORMER SELECTION FOR GAUNTLET
-  // ============================================
-
-  async function fetchPerformersForSelection(count = 5) {
-    const performerFilter = getPerformerFilter();
-    const totalPerformers = await fetchPerformerCount(performerFilter);
-    
-    if (totalPerformers < count) {
-      count = totalPerformers;
-    }
-
-    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
-      performer_filter: performerFilter,
-      filter: {
-        per_page: Math.min(100, totalPerformers),
-        sort: "random"
-      }
-    });
-
-    const allPerformers = result.findPerformers.performers || [];
-    const shuffled = allPerformers.sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, count);
-  }
-
-  function createPerformerSelectionCard(performer) {
-    const name = performer.name || `Performer #${performer.id}`;
-    const imagePath = performer.image_path || null;
-    const rating = performer.rating100 ? `${performer.rating100}/100` : "Unrated";
-    
-    return `
-      <div class="hon-selection-card" data-performer-id="${performer.id}">
-        <div class="hon-selection-image-container">
-          ${imagePath 
-            ? `<img class="hon-selection-image" src="${imagePath}" alt="${name}" loading="lazy" />`
-            : `<div class="hon-selection-image hon-no-image">No Image</div>`
-          }
-        </div>
-        <div class="hon-selection-info">
-          <h4 class="hon-selection-name">${name}</h4>
-          <div class="hon-selection-rating">${rating}</div>
-        </div>
-      </div>
-    `;
-  }
-
-  async function loadPerformerSelection() {
-    const selectionContainer = document.getElementById("hon-performer-selection");
-    const performerList = document.getElementById("hon-performer-list");
-    
-    if (!selectionContainer || !performerList) return;
-
-    try {
-      const performers = await fetchPerformersForSelection(5);
-      
-      if (performers.length === 0) {
-        performerList.innerHTML = '<div class="hon-error">No performers available for selection.</div>';
-        return;
-      }
-
-      performerList.innerHTML = performers.map(p => createPerformerSelectionCard(p)).join('');
-      
-      // Attach click handlers
-      performerList.querySelectorAll('.hon-selection-card').forEach((card) => {
-        card.addEventListener('click', () => {
-          const performerId = card.dataset.performerId;
-          const selectedPerformer = performers.find(p => p.id.toString() === performerId);
-          if (selectedPerformer) {
-            startGauntletWithPerformer(selectedPerformer);
-          }
-        });
-      });
-    } catch (error) {
-      console.error("[HotOrNot] Error loading performer selection:", error);
-      performerList.innerHTML = `<div class="hon-error">Error loading performers: ${error.message}</div>`;
-    }
-  }
-
-  function startGauntletWithPerformer(performer) {
-    // Set the selected performer as the gauntlet champion
-    resetGauntletState();
-    gauntletChampion = performer;
-    
-    // Hide the selection UI
-    const selectionContainer = document.getElementById("hon-performer-selection");
-    if (selectionContainer) {
-      selectionContainer.style.display = "none";
-    }
-    
-    // Show the comparison area and actions
-    const comparisonArea = document.getElementById("hon-comparison-area");
-    const actionsEl = document.querySelector(".hon-actions");
-    if (comparisonArea) comparisonArea.style.display = "";
-    if (actionsEl) actionsEl.style.display = "";
-    
-    // Load the first matchup
-    loadNewPair();
-  }
-
-  function showPerformerSelection() {
-    const selectionContainer = document.getElementById("hon-performer-selection");
-    if (selectionContainer) {
-      selectionContainer.style.display = "block";
-      loadPerformerSelection();
-    }
-    
-    // Hide the comparison area until a performer is selected
-    const comparisonArea = document.getElementById("hon-comparison-area");
-    const actionsEl = document.querySelector(".hon-actions");
-    if (comparisonArea) comparisonArea.style.display = "none";
-    if (actionsEl) actionsEl.style.display = "none";
-  }
-
-  function hidePerformerSelection() {
-    const selectionContainer = document.getElementById("hon-performer-selection");
-    if (selectionContainer) {
-      selectionContainer.style.display = "none";
-    }
-    
-    // Show the comparison area
-    const comparisonArea = document.getElementById("hon-comparison-area");
-    const actionsEl = document.querySelector(".hon-actions");
-    if (comparisonArea) comparisonArea.style.display = "";
-    if (actionsEl) actionsEl.style.display = "";
-  }
-
-  // ============================================
-  // IMAGE SELECTION (REMOVED)
-  // ============================================
-  // NOTE: Image selection for gauntlet mode has been removed.
-  // Images now use Swiss mode exclusively for optimal performance.
-  // Gauntlet and Champion modes are only available for performers.
 
   // ============================================
   // PERFORMER STATS MODAL
@@ -3802,7 +3090,6 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   function createMainUI() {
     const itemType = battleType === "performers" ? "performers" : "images";
-    const itemTypeSingular = battleType === "performers" ? "performer" : "image";
     
     // For images, hide mode selection (only use Swiss mode)
     const showModeToggle = battleType !== "images";
@@ -3812,16 +3099,6 @@ async function fetchPerformerCount(performerFilter = {}) {
               <span class="hon-mode-icon">⚖️</span>
               <span class="hon-mode-title">Swiss</span>
               <span class="hon-mode-desc">Fair matchups</span>
-            </button>
-            <button class="hon-mode-btn ${currentMode === 'gauntlet' ? 'active' : ''}" data-mode="gauntlet">
-              <span class="hon-mode-icon">🎯</span>
-              <span class="hon-mode-title">Gauntlet</span>
-              <span class="hon-mode-desc">Place a ${itemTypeSingular}</span>
-            </button>
-            <button class="hon-mode-btn ${currentMode === 'champion' ? 'active' : ''}" data-mode="champion">
-              <span class="hon-mode-icon">🏆</span>
-              <span class="hon-mode-title">Champion</span>
-              <span class="hon-mode-desc">Winner stays on</span>
             </button>
             <button class="hon-mode-btn ${currentMode === 'calibration' ? 'active' : ''}" data-mode="calibration" title="Finds each performer's true rating using binary search. Focuses on the least-confident performers first and narrows their rating range in up to 10 steps.">
               <span class="hon-mode-icon">📐</span>
@@ -3850,13 +3127,6 @@ async function fetchPerformerCount(performerFilter = {}) {
           <p class="hon-subtitle">Compare ${itemType} head-to-head to build your rankings</p>
           ${modeToggleHTML}
           ${statsButtonHTML}
-        </div>
-
-        <div id="hon-performer-selection" class="hon-performer-selection" style="display: none;">
-          <h3 class="hon-selection-title">Select a ${itemTypeSingular} to run the gauntlet:</h3>
-          <div id="hon-performer-list" class="hon-performer-list">
-            <div class="hon-loading">Loading ${itemType}...</div>
-          </div>
         </div>
 
         <div id="hon-tournament-setup" class="hon-performer-selection" style="display: none;">
@@ -3948,7 +3218,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     if (bracketDisplay) bracketDisplay.style.display = "none";
 
     // Hide other mode-specific panels
-    hidePerformerSelection();
     hideCalibrationDashboard();
 
     // Attach size button handlers (fresh elements from innerHTML)
@@ -4246,13 +3515,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     const comparisonArea = document.getElementById("hon-comparison-area");
     if (!comparisonArea) return;
 
-    // For gauntlet mode with performers, show selection if no champion yet
-    // Images don't use gauntlet/champion modes
-    if (currentMode === "gauntlet" && battleType === "performers" && !gauntletChampion && !gauntletFalling) {
-      showPerformerSelection();
-      return;
-    }
-
     // Tournament mode: show setup if bracket not initialized
     if (currentMode === "tournament" && !tournamentSetupDone) {
       showTournamentSetup();
@@ -4267,7 +3529,6 @@ async function fetchPerformerCount(performerFilter = {}) {
     // Hide mode-specific panels that aren't relevant to the current mode
     if (currentMode !== "calibration") hideCalibrationDashboard();
     if (currentMode !== "tournament") hideTournamentBracket();
-    if (currentMode !== "gauntlet") hidePerformerSelection();
     if (currentMode !== "tournament" || tournamentSetupDone) hideTournamentSetup();
 
     try {
@@ -4279,67 +3540,6 @@ async function fetchPerformerCount(performerFilter = {}) {
         const swissResult = await fetchSwissPair();
         items = swissResult.performers || swissResult.images;
         ranks = swissResult.ranks;
-      } else if (currentMode === "gauntlet") {
-        const gauntletResult = await fetchGauntletPair();
-        
-        // Check for victory (champion reached #1)
-        if (gauntletResult.isVictory) {
-          comparisonArea.innerHTML = createVictoryScreen((gauntletResult.performers || gauntletResult.images)[0]);
-          
-          // Hide the status banner and skip button
-          const statusEl = document.getElementById("hon-gauntlet-status");
-          const actionsEl = document.querySelector(".hon-actions");
-          if (statusEl) statusEl.style.display = "none";
-          if (actionsEl) actionsEl.style.display = "none";
-          
-          // Attach new gauntlet button
-          const newGauntletBtn = comparisonArea.querySelector("#hon-new-gauntlet");
-          if (newGauntletBtn) {
-            newGauntletBtn.addEventListener("click", () => {
-              resetGauntletState();
-              // Show the actions again
-              if (actionsEl) actionsEl.style.display = "";
-              loadNewPair();
-            });
-          }
-          
-          return;
-        }
-        
-        // Check for placement (falling item hit bottom)
-        if (gauntletResult.isPlacement) {
-          showPlacementScreen((gauntletResult.performers || gauntletResult.images)[0], gauntletResult.placementRank, gauntletResult.placementRating);
-          return;
-        }
-        
-        items = gauntletResult.performers || gauntletResult.images;
-        ranks = gauntletResult.ranks;
-      } else if (currentMode === "champion") {
-        const championResult = await fetchChampionPair();
-        
-        // Check for victory (champion beat everyone)
-        if (championResult.isVictory) {
-          comparisonArea.innerHTML = createVictoryScreen((championResult.performers || championResult.images)[0]);
-          
-          // Hide the skip button
-          const actionsEl = document.querySelector(".hon-actions");
-          if (actionsEl) actionsEl.style.display = "none";
-          
-          // Attach new run button
-          const newGauntletBtn = comparisonArea.querySelector("#hon-new-gauntlet");
-          if (newGauntletBtn) {
-            newGauntletBtn.addEventListener("click", () => {
-              resetGauntletState();
-              if (actionsEl) actionsEl.style.display = "";
-              loadNewPair();
-            });
-          }
-          
-          return;
-        }
-        
-        items = championResult.performers || championResult.images;
-        ranks = championResult.ranks;
       } else if (currentMode === "calibration") {
         const calibrationResult = await fetchCalibrationPair();
         items = calibrationResult.performers;
@@ -4384,24 +3584,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       currentRanks.left = ranks[0];
       currentRanks.right = ranks[1];
 
-      // Determine streak for each card (gauntlet and champion modes)
-      let leftStreak = null;
-      let rightStreak = null;
-      if (currentMode === "gauntlet" || currentMode === "champion") {
-        if (gauntletChampion && items[0].id === gauntletChampion.id) {
-          leftStreak = gauntletWins;
-        } else if (gauntletChampion && items[1].id === gauntletChampion.id) {
-          rightStreak = gauntletWins;
-        }
-      }
-
       comparisonArea.innerHTML = `
         <div class="hon-vs-container">
-          ${(battleType === "performers" ? createPerformerCard : createImageCard)(items[0], "left", ranks[0], leftStreak)}
+          ${(battleType === "performers" ? createPerformerCard : createImageCard)(items[0], "left", ranks[0], null)}
           <div class="hon-vs-divider">
             <span class="hon-vs-text">VS</span>
           </div>
-          ${(battleType === "performers" ? createPerformerCard : createImageCard)(items[1], "right", ranks[1], rightStreak)}
+          ${(battleType === "performers" ? createPerformerCard : createImageCard)(items[1], "right", ranks[1], null)}
         </div>
       `;
 
@@ -4439,15 +3628,13 @@ async function fetchPerformerCount(performerFilter = {}) {
         });
       });
       
-      // Update skip button state (only disabled for performers in gauntlet/champion mode)
+      // Update skip button state (disabled during active tournament)
       const skipBtn = document.querySelector("#hon-skip-btn");
       if (skipBtn) {
-        const isActiveGauntletRun = battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion;
         const isActiveTournament = currentMode === "tournament" && tournamentSetupDone;
-        const disableSkip = isActiveGauntletRun || isActiveTournament;
-        skipBtn.disabled = disableSkip;
-        skipBtn.style.opacity = disableSkip ? "0.5" : "1";
-        skipBtn.style.cursor = disableSkip ? "not-allowed" : "pointer";
+        skipBtn.disabled = isActiveTournament;
+        skipBtn.style.opacity = isActiveTournament ? "0.5" : "1";
+        skipBtn.style.cursor = isActiveTournament ? "not-allowed" : "pointer";
       }
 
       // Show undo button when there is a previous battle to revert
@@ -4478,7 +3665,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   /**
    * Save the current battle state before a choice is processed (for undo support).
-   * Captures a deep copy of both items, ranks, mode, and gauntlet state.
+   * Captures a deep copy of both items, ranks, and mode state.
    */
   function saveBattleState() {
     previousBattle = {
@@ -4486,12 +3673,6 @@ async function fetchPerformerCount(performerFilter = {}) {
       right: structuredClone(currentPair.right),
       ranks: { left: currentRanks.left, right: currentRanks.right },
       mode: currentMode,
-      gauntletChampion: gauntletChampion ? structuredClone(gauntletChampion) : null,
-      gauntletWins: gauntletWins,
-      gauntletDefeated: [...gauntletDefeated],
-      gauntletFalling: gauntletFalling,
-      gauntletFallingItem: gauntletFallingItem ? structuredClone(gauntletFallingItem) : null,
-      gauntletFallingTested: [...gauntletFallingTested],
       // Calibration state
       calibrationTarget: calibrationTarget ? structuredClone(calibrationTarget) : null,
       calibrationLow: calibrationLow,
@@ -4571,14 +3752,8 @@ async function fetchPerformerCount(performerFilter = {}) {
         ]);
       }
 
-      // Restore gauntlet/mode state
+      // Restore mode state
       currentMode = undo.mode;
-      gauntletChampion = undo.gauntletChampion;
-      gauntletWins = undo.gauntletWins;
-      gauntletDefeated = undo.gauntletDefeated;
-      gauntletFalling = undo.gauntletFalling;
-      gauntletFallingItem = undo.gauntletFallingItem;
-      gauntletFallingTested = undo.gauntletFallingTested;
 
       // Restore calibration state
       if (undo.calibrationTarget !== undefined) {
@@ -4604,23 +3779,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       // Re-render the comparison area with the same pair
       const comparisonArea = document.getElementById("hon-comparison-area");
       if (comparisonArea) {
-        let leftStreak = null;
-        let rightStreak = null;
-        if (currentMode === "gauntlet" || currentMode === "champion") {
-          if (gauntletChampion && undo.left.id === gauntletChampion.id) {
-            leftStreak = gauntletWins;
-          } else if (gauntletChampion && undo.right.id === gauntletChampion.id) {
-            rightStreak = gauntletWins;
-          }
-        }
-
         comparisonArea.innerHTML = `
           <div class="hon-vs-container">
-            ${(battleType === "performers" ? createPerformerCard : createImageCard)(undo.left, "left", undo.ranks.left, leftStreak)}
+            ${(battleType === "performers" ? createPerformerCard : createImageCard)(undo.left, "left", undo.ranks.left, null)}
             <div class="hon-vs-divider">
               <span class="hon-vs-text">VS</span>
             </div>
-            ${(battleType === "performers" ? createPerformerCard : createImageCard)(undo.right, "right", undo.ranks.right, rightStreak)}
+            ${(battleType === "performers" ? createPerformerCard : createImageCard)(undo.right, "right", undo.ranks.right, null)}
           </div>
         `;
 
@@ -4716,246 +3881,11 @@ async function fetchPerformerCount(performerFilter = {}) {
     const winnerRating = parseInt(winnerCard.dataset.rating) || 50;
     const loserCard = document.querySelector(`.hon-scene-card[data-performer-id="${loserId}"], .hon-scene-card[data-image-id="${loserId}"]`);
     const loserRating = parseInt(loserCard?.dataset.rating) || 50;
-    
-    // Get the loser's rank for #1 dethrone logic
-    const loserRank = loserId === currentPair.left.id ? currentRanks.left : currentRanks.right;
 
-    // Images always use Swiss mode logic (no gauntlet/champion)
-    if (battleType === "images") {
-      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
-      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
-        winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
-      );
-
-      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
-      return;
-    }
-
-    // Handle gauntlet mode (champion tracking) - only for performers
-    if (currentMode === "gauntlet") {
-      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
-      
-      // Check if we're in falling mode (finding floor after a loss)
-      if (gauntletFalling && gauntletFallingItem) {
-        if (winnerId === gauntletFallingItem.id) {
-          // Falling item won - found their floor!
-          // Place them just above the person they beat, but also:
-          //   - no lower than the floor from already-beaten opponents
-          //   - no higher than the champion who knocked them down
-          
-          // Raw placement: just above the loser they beat
-          const rawFinalRating = Math.min(100, loserRating + 1);
-          // Apply floor (can't drop below already-beaten performers)
-          const ratingFloor = await calculateDefeatedOpponentsFloor(gauntletDefeated);
-          // Apply ceiling (must stay below the champion who beat them)
-          const championRating = gauntletChampion ? (gauntletChampion.rating100 ?? null) : null;
-          const winnerCeiling = championRating !== null ? Math.max(1, championRating - 1) : 100;
-          const finalRating = Math.min(winnerCeiling, Math.max(rawFinalRating, ratingFloor));
-          
-          // Fetch all performers to calculate rank for display
-          const performerFilter = getPerformerFilter();
-          const performersQuery = `
-            query FindPerformersByRating($performer_filter: PerformerFilterType, $filter: FindFilterType) {
-              findPerformers(performer_filter: $performer_filter, filter: $filter) {
-                performers {
-                  id
-                  rating100
-                }
-              }
-            }
-          `;
-          
-          const performersResult = await graphqlQuery(performersQuery, {
-            performer_filter: performerFilter,
-            filter: { per_page: -1, sort: "rating", direction: "DESC" }
-          });
-          
-          const allPerformers = performersResult.findPerformers.performers || [];
-          
-          // Fetch latest performer data to get current stats before updating (parallel fetch for performance)
-          let freshFallingPerformer = gauntletFallingItem;
-          let freshLoserPerformer = loserItem;
-          
-          if (battleType === "performers") {
-            const [fetchedFalling, fetchedLoser] = await Promise.all([
-              fetchPerformerById(gauntletFallingItem.id),
-              fetchPerformerById(loserId)
-            ]);
-            freshFallingPerformer = fetchedFalling || gauntletFallingItem;
-            freshLoserPerformer = fetchedLoser || loserItem;
-          }
-          
-          // Track this as a win for the falling performer
-          updateItemRating(gauntletFallingItem.id, finalRating, freshFallingPerformer, true);
-          
-          // Track participation for the loser (defender)
-          updateItemRating(loserId, loserRating, freshLoserPerformer, null);
-          
-          // Calculate final rank based on the final rating
-          // Count performers with ratings higher than finalRating
-          const finalRank = allPerformers.filter(p => 
-            p.id !== gauntletFallingItem.id && (p.rating100 || 50) > finalRating
-          ).length + 1;
-          
-          // Visual feedback
-          winnerCard.classList.add("hon-winner");
-          if (loserCard) loserCard.classList.add("hon-loser");
-          
-          // Show placement screen after brief delay
-          setTimeout(() => {
-            showPlacementScreen(gauntletFallingItem, finalRank, finalRating);
-          }, 800);
-          return;
-        } else {
-          // Falling item lost again - keep falling
-          // Track this opponent to avoid matching against them again during falling
-          gauntletFallingTested.push(winnerId);
-          
-          // Use ELO-based calculation for the rating loss instead of direct assignment
-          // This ensures the performer doesn't drop too dramatically from a single loss
-          const currentFallingRating = gauntletFallingItem.rating100 || 50;
-          // Pass null for performer objects to prevent handleComparison from tracking stats internally
-          // Stats are manually tracked below via updateItemRating calls to properly handle the floor calculation
-          const { newLoserRating, loserChange } = await handleComparison(
-            winnerId, gauntletFallingItem.id, winnerRating, currentFallingRating,
-            null, /* loserRank - not needed for falling phase */
-            null, /* winnerObj - skip stats tracking */
-            null  /* loserObj - skip stats tracking */
-          );
-          
-          // Calculate floor based on defeated opponents - can't drop below the highest-rated defeated performer
-          const ratingFloor = await calculateDefeatedOpponentsFloor(gauntletDefeated);
-          
-          // Apply floor but cap below the champion - falling performer must stay below whoever knocked them down
-          const championRating = gauntletChampion ? (gauntletChampion.rating100 ?? null) : null;
-          const winnerCeiling = championRating !== null ? Math.max(1, championRating - 1) : 100;
-          const newFallingRating = Math.min(winnerCeiling, Math.max(ratingFloor, newLoserRating));
-          
-          // Fetch latest performer data to get current stats before updating (parallel fetch for performance)
-          let freshFallingPerformer = gauntletFallingItem;
-          let freshWinnerPerformer = winnerItem;
-          
-          if (battleType === "performers") {
-            const [fetchedFalling, fetchedWinner] = await Promise.all([
-              fetchPerformerById(gauntletFallingItem.id),
-              fetchPerformerById(winnerId)
-            ]);
-            freshFallingPerformer = fetchedFalling || gauntletFallingItem;
-            freshWinnerPerformer = fetchedWinner || winnerItem;
-          }
-          
-          // Track stats for both participants
-          // Track loss for the falling performer with their new (lower) rating
-          updateItemRating(gauntletFallingItem.id, newFallingRating, freshFallingPerformer, false);
-          
-          // Update the local object to reflect the new rating
-          gauntletFallingItem.rating100 = newFallingRating;
-          
-          // Track participation for the winner (defender)
-          updateItemRating(winnerId, winnerRating, freshWinnerPerformer, null);
-          
-          // Visual feedback
-          winnerCard.classList.add("hon-winner");
-          if (loserCard) loserCard.classList.add("hon-loser");
-          
-          // Show rating animation for the falling performer
-          if (loserCard) {
-            showRatingAnimation(loserCard, currentFallingRating, newFallingRating, loserChange, false);
-          }
-          
-          setTimeout(() => {
-            loadNewPair();
-          }, 1500);
-          return;
-        }
-      }
-      
-      // Normal climbing - calculate rating changes (pass loserRank for #1 dethrone)
-      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
-        winnerId, loserId, winnerRating, loserRating, loserRank, winnerItem, loserItem
-      );
-      
-      if (gauntletChampion && winnerId === gauntletChampion.id) {
-        // Champion won - add loser to defeated list and continue climbing
-        gauntletDefeated.push(loserId);
-        gauntletWins++;
-        gauntletChampion.rating100 = newWinnerRating;
-      } else if (gauntletChampion && winnerId !== gauntletChampion.id) {
-        // Champion LOST - start falling to find their floor
-        gauntletFalling = true;
-        gauntletFallingItem = loserItem; // The old champion is now falling
-        gauntletFallingTested = []; // Reset tested list for new falling phase
-        
-        // Calculate floor based on defeated opponents - can't drop below the highest-rated defeated performer
-        const ratingFloor = await calculateDefeatedOpponentsFloor(gauntletDefeated);
-        
-        // Apply floor but cap below the winner - loser must rank below whoever beat them
-        const winnerCeiling = Math.max(1, newWinnerRating - 1);
-        const adjustedLoserRating = Math.min(winnerCeiling, Math.max(ratingFloor, newLoserRating));
-        
-        // Update the falling item's rating with floor and ceiling applied
-        gauntletFallingItem.rating100 = adjustedLoserRating;
-        
-        // If adjusted rating differs from ELO-calculated rating,
-        // update the database to reflect the adjusted rating.
-        // Note: handleComparison already tracked stats for this loss,
-        // so we pass null for performerObj to only update the rating without touching stats.
-        if (adjustedLoserRating !== newLoserRating && battleType === "performers") {
-          await updateItemRating(loserId, adjustedLoserRating, null, null);
-        }
-        // Preserve the list of opponents already defeated during the climb
-        // Note: Don't add the winner to gauntletDefeated - they beat us fair and square
-        // gauntletDefeated is only for performers we actually defeated
-        
-        // Winner becomes the new climbing champion
-        gauntletChampion = winnerItem;
-        gauntletChampion.rating100 = newWinnerRating;
-        gauntletWins = 1;
-      } else {
-        // No champion yet - winner becomes champion
-        gauntletChampion = winnerItem;
-        gauntletChampion.rating100 = newWinnerRating;
-        gauntletDefeated = [loserId];
-        gauntletWins = 1;
-      }
-      
-      // Visual feedback with animations
-      // Use the falling item's actual new rating (which may have floor applied) for the animation
-      const actualLoserRating = gauntletFallingItem ? gauntletFallingItem.rating100 : newLoserRating;
-      const actualLoserChange = actualLoserRating - loserRating;
-      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, actualLoserRating, actualLoserChange);
-      return;
-    }
-
-    // Handle champion mode (like gauntlet but winner always takes over)
-    if (currentMode === "champion") {
-      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
-      
-      // Calculate rating changes (pass loserRank for #1 dethrone)
-      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
-        winnerId, loserId, winnerRating, loserRating, loserRank, winnerItem, loserItem
-      );
-      
-      if (gauntletChampion && winnerId === gauntletChampion.id) {
-        // Champion won - continue climbing
-        gauntletDefeated.push(loserId);
-        gauntletWins++;
-        gauntletChampion.rating100 = newWinnerRating;
-      } else {
-        // Champion lost or first pick - winner becomes new champion
-        gauntletChampion = winnerItem;
-        gauntletChampion.rating100 = newWinnerRating;
-        gauntletDefeated = [loserId];
-        gauntletWins = 1;
-      }
-      
-      showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
-      return;
-    }
+    const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
 
     // Handle calibration mode — update binary search bounds after each match
     if (currentMode === "calibration") {
-      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
       const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
         winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
       );
@@ -4994,7 +3924,6 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     // Handle tournament mode — record winner in bracket and advance
     if (currentMode === "tournament") {
-      const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
       const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
         winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
       );
@@ -5019,8 +3948,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       return;
     }
 
-    // For Swiss mode (performers only, images are handled above): Calculate and show rating changes
-    const { winnerItem, loserItem } = getWinnerLoserItems(winnerId);
+    // Swiss mode (default for both performers and images)
     const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
       winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
     );
@@ -5452,12 +4380,12 @@ function addFloatingButton() {
       battleType = "performers";
       // Check if we're on a single performer page (only relevant for performers)
       const singlePerformerId = getPerformerIdFromUrl();
-      // When on a single performer page, use gauntlet mode to battle with that performer
+      // When on a single performer page, use calibration mode to find their rating
       if (singlePerformerId) {
-        currentMode = "gauntlet";
+        currentMode = "calibration";
         // No URL filters when on single performer page
         cachedUrlFilter = null;
-        console.log(`[HotOrNot] On single performer page, auto-launching gauntlet with performer ID: ${singlePerformerId}`);
+        console.log(`[HotOrNot] On single performer page, auto-launching calibration with performer ID: ${singlePerformerId}`);
       } else {
         // Always refresh URL filters when modal opens to capture current state
         // This ensures we get the latest filters from the URL, including any changes
@@ -5516,7 +4444,6 @@ function addFloatingButton() {
           if (actionsEl) actionsEl.style.display = "";
           
           // Hide all mode-specific panels
-          hidePerformerSelection();
           hideTournamentSetup();
           hideCalibrationDashboard();
           hideTournamentBracket();
@@ -5531,20 +4458,12 @@ function addFloatingButton() {
     const skipBtn = modal.querySelector("#hon-skip-btn");
     if (skipBtn) {
       skipBtn.addEventListener("click", async () => {
-        // In gauntlet/champion mode with active run (performers only), skip is disabled
-        if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion) {
-          return;
-        }
         // In tournament mode, skip is disabled (must pick a winner)
         if (currentMode === "tournament" && tournamentSetupDone) {
           return;
         }
         if(disableChoice) return
         disableChoice = true;
-        // Reset state on skip (only for performers in gauntlet/champion)
-        if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion")) {
-          resetGauntletState();
-        }
         // Apply ELO draw rating changes for skips in Swiss and calibration modes
         if ((currentMode === "swiss" || currentMode === "calibration") && currentPair.left && currentPair.right) {
           await handleSkip(currentPair.left, currentPair.right);
@@ -5569,17 +4488,22 @@ function addFloatingButton() {
       });
     }
 
-    // If on a single performer page, fetch the performer and auto-start gauntlet
+    // If on a single performer page, auto-start calibration for that performer
     if (singlePerformerId) {
       const performer = await fetchPerformerById(singlePerformerId);
       if (performer) {
-        console.log(`[HotOrNot] Fetched performer for gauntlet:`, performer.name);
-        startGauntletWithPerformer(performer);
+        console.log(`[HotOrNot] Fetched performer for calibration:`, performer.name);
+        // Set the performer as the calibration target so calibration mode
+        // focuses on rating this specific performer
+        calibrationTarget = performer;
+        calibrationStep = 0;
+        calibrationLow = 1;
+        calibrationHigh = 100;
       } else {
         console.error(`[HotOrNot] Could not fetch performer with ID: ${singlePerformerId}. Performer may have been deleted, access restricted, or ID is invalid.`);
-        // Fall back to normal behavior if performer not found
-        loadNewPair();
       }
+      // Load initial comparison (calibration mode is already set)
+      loadNewPair();
     } else {
       // Load initial comparison
       loadNewPair();
@@ -5616,19 +4540,12 @@ function addFloatingButton() {
         const activeElement = document.activeElement;
         if (activeElement.tagName !== "INPUT" && activeElement.tagName !== "TEXTAREA") {
           e.preventDefault();
-          // Don't skip during active gauntlet/champion run (performers only)
-          if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion") && gauntletChampion) {
-            return;
-          }
           // Don't skip during tournament (must pick a winner)
           if (currentMode === "tournament" && tournamentSetupDone) {
             return;
           }
           if(disableChoice) return;
           disableChoice = true;
-          if (battleType === "performers" && (currentMode === "gauntlet" || currentMode === "champion")) {
-            resetGauntletState();
-          }
           // Apply ELO draw rating changes for skips in Swiss and calibration modes
           if ((currentMode === "swiss" || currentMode === "calibration") && currentPair.left && currentPair.right) {
             await handleSkip(currentPair.left, currentPair.right);

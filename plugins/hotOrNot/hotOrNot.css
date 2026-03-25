@@ -331,7 +331,7 @@
   z-index: 5;
 }
 
-/* Streak badge for gauntlet champion */
+/* Streak badge */
 .hon-streak-badge {
   position: absolute;
   top: 10px;
@@ -784,10 +784,6 @@
   margin-bottom: 20px;
 }
 
-#hon-new-gauntlet {
-  padding: 12px 30px;
-  font-size: 1.1rem;
-}
 
 
 /* ===== Performer -> Scene compatibility shim (feat/performer-mode) =====
@@ -876,7 +872,7 @@
 /* End shim */
 
 /* ============================================
-   PERFORMER SELECTION FOR GAUNTLET
+   SELECTION PANEL (shared by tournament setup)
    ============================================ */
 
 .hon-performer-selection {
@@ -895,89 +891,6 @@
   text-align: center;
 }
 
-.hon-performer-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 15px;
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-.hon-selection-card {
-  background: #252525;
-  border: 2px solid var(--hon-gray-dark);
-  border-radius: 10px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  flex-direction: column;
-}
-
-.hon-selection-card:hover {
-  border-color: var(--hon-primary);
-  transform: translateY(-5px);
-  box-shadow: 0 8px 20px rgba(13, 110, 253, 0.3);
-}
-
-.hon-selection-image-container {
-  width: 100%;
-  aspect-ratio: 2/3;
-  overflow: hidden;
-  background: var(--hon-gray-darker);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hon-selection-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.hon-selection-image.hon-no-image {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--hon-gray);
-  font-size: 0.9rem;
-}
-
-.hon-selection-info {
-  padding: 10px;
-  text-align: center;
-}
-
-.hon-selection-name {
-  font-size: 0.95rem;
-  font-weight: bold;
-  color: var(--hon-white);
-  margin-bottom: 5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hon-selection-rating {
-  font-size: 0.85rem;
-  color: var(--hon-gray);
-}
-
-@media (max-width: 768px) {
-  .hon-performer-list {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 10px;
-  }
-  
-  .hon-selection-name {
-    font-size: 0.85rem;
-  }
-  
-  .hon-selection-rating {
-    font-size: 0.75rem;
-  }
-}
 /* ============================================
    STATS MODAL & BUTTON
    ============================================ */
