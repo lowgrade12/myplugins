@@ -1354,6 +1354,29 @@
   border-bottom: 2px solid var(--hon-gray-dark);
 }
 
+.hon-sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+  position: relative;
+}
+
+.hon-sortable:hover {
+  background: var(--hon-overlay-light);
+}
+
+.hon-sort-indicator {
+  font-size: 0.7em;
+  margin-left: 2px;
+  opacity: 0.5;
+}
+
+.hon-sort-indicator.hon-sort-asc,
+.hon-sort-indicator.hon-sort-desc {
+  opacity: 1;
+  color: var(--hon-primary);
+}
+
 .hon-bar-graph-title {
   font-size: 1.3rem;
   color: var(--hon-white);
