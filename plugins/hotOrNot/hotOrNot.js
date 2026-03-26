@@ -1420,10 +1420,28 @@
     // Calculate single rating change for zero-sum (winner gains what loser loses)
     const baseChange = Math.max(0, Math.round(avgK * (1 - expectedWinner)));
     
-    // Calibration mode skips diminishing returns so performers can reach any rating.
-    // Swiss/tournament apply diminishing returns to make reaching 100 harder.
-    const winnerGain = currentMode === "calibration" ? baseChange : applyDiminishingReturns(winnerRating, baseChange);
-    const loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
+    // Calibration mode uses asymmetric rating changes:
+    // Winners rise aggressively toward the defeated performer's level,
+    // while losers are cushioned to prevent dropping lower than they deserve.
+    // Swiss/tournament mode stays zero-sum with diminishing returns.
+    let winnerGain, loserLoss;
+    if (currentMode === "calibration") {
+      if (baseChange <= 0) {
+        winnerGain = 0;
+        loserLoss = 0;
+      } else {
+        // Soft ceiling dampening: full gain below rating 80, then linear taper
+        // to 15% at rating 100. Prevents too many performers clustering at 100.
+        const ceilingFactor = winnerRating < 80 ? 1.0 : Math.max(0.15, (100 - winnerRating) / 20);
+        winnerGain = Math.max(1, Math.round(baseChange * ceilingFactor));
+
+        // Loser drops at 40% rate — prioritizes winner rising over loser falling
+        loserLoss = Math.max(1, Math.round(baseChange * 0.4));
+      }
+    } else {
+      winnerGain = applyDiminishingReturns(winnerRating, baseChange);
+      loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
+    }
     
     let newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));
     let newLoserRating = Math.min(100, Math.max(1, loserRating - loserLoss));
