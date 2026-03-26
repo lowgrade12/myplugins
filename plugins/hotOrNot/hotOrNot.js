@@ -845,7 +845,7 @@
   
     const variables = {
       id: performerId,
-      rating: Math.round(newRating)
+      rating: Math.max(1, Math.min(100, Math.round(newRating)))
     };
     
     // Update stats if performer object provided (won can be true/false/null)
@@ -2562,7 +2562,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
 
     return `
-      <div class="hon-performer-card hon-scene-card" data-performer-id="${performer.id}" data-side="${side}" data-rating="${performer.rating100 || 50}">
+      <div class="hon-performer-card hon-scene-card" data-performer-id="${performer.id}" data-side="${side}" data-rating="${Math.max(1, Math.min(100, performer.rating100 || 50))}">
         <div class="hon-performer-image-container hon-scene-image-container" data-performer-url="/performers/${performer.id}">
           ${imagePath 
             ? `<img class="hon-performer-image hon-scene-image" src="${imagePath}" alt="${name}" loading="lazy" />`
@@ -2621,7 +2621,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
 
     return `
-      <div class="hon-image-card hon-scene-card" data-image-id="${image.id}" data-side="${side}" data-rating="${image.rating100 || 50}">
+      <div class="hon-image-card hon-scene-card" data-image-id="${image.id}" data-side="${side}" data-rating="${Math.max(1, Math.min(100, image.rating100 || 50))}">
         <div class="hon-image-image-container hon-scene-image-container" data-image-url="/images/${image.id}">
           ${thumbnailPath 
             ? `<img class="hon-image-image hon-scene-image" src="${thumbnailPath}" alt="Image #${image.id}" loading="lazy" />`
@@ -3745,7 +3745,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     return await graphqlQuery(mutation, {
       id: performerId,
-      rating: Math.round(oldRating),
+      rating: Math.max(1, Math.min(100, Math.round(oldRating))),
       fields
     });
   }
@@ -3923,7 +3923,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
       // Update binary search bounds for the calibration target
       if (calibrationTarget) {
-        const anchorRating = calibrationTarget.id === winnerId ? loserRating : winnerRating;
+        const anchorRating = Math.max(1, Math.min(100, calibrationTarget.id === winnerId ? loserRating : winnerRating));
         if (calibrationTarget.id === winnerId) {
           // Target won — they're at least as good as the anchor, raise lower bound
           calibrationLow = Math.max(calibrationLow, anchorRating);
@@ -3936,7 +3936,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         // Check if calibration is done (converged or max steps reached)
         if (calibrationStep >= CALIBRATION_MAX_STEPS || (calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
           const targetName = escapeHtml(calibrationTarget.name);
-          const finalRating = Math.round((calibrationLow + calibrationHigh) / 2);
+          const finalRating = Math.max(1, Math.min(100, Math.round((calibrationLow + calibrationHigh) / 2)));
 
           if ((calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
             calibrationLastResult = `✅ ${targetName} converged at step ${calibrationStep}/${CALIBRATION_MAX_STEPS} — rating narrowed to ${calibrationLow}–${calibrationHigh}, final rating: ${finalRating}`;
@@ -4014,38 +4014,45 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   function showRatingAnimation(card, oldRating, newRating, change, isWinner) {
+    // Clamp values to valid rating range
+    const clampedOld = Math.max(1, Math.min(100, oldRating));
+    const clampedNew = Math.max(1, Math.min(100, newRating));
+    const clampedChange = clampedNew - clampedOld;
+
     // Create overlay
     const overlay = document.createElement("div");
     overlay.className = `hon-rating-overlay ${isWinner ? 'hon-rating-winner' : 'hon-rating-loser'}`;
     
     const ratingDisplay = document.createElement("div");
     ratingDisplay.className = "hon-rating-display";
-    ratingDisplay.textContent = oldRating;
+    ratingDisplay.textContent = clampedOld;
     
     const changeDisplay = document.createElement("div");
     changeDisplay.className = "hon-rating-change";
-    changeDisplay.textContent = isWinner ? `+${change}` : `${change}`;
+    changeDisplay.textContent = clampedChange >= 0 ? `+${clampedChange}` : `${clampedChange}`;
     
     overlay.appendChild(ratingDisplay);
     overlay.appendChild(changeDisplay);
     card.appendChild(overlay);
 
     // Animate the rating counting
-    let currentDisplay = oldRating;
-    const step = isWinner ? 1 : -1;
-    const totalSteps = Math.abs(change);
+    let currentDisplay = clampedOld;
+    const step = clampedChange >= 0 ? 1 : -1;
+    const totalSteps = Math.abs(clampedChange);
     let stepCount = 0;
-    
-    const interval = setInterval(() => {
-      stepCount++;
-      currentDisplay += step;
-      ratingDisplay.textContent = currentDisplay;
-      
-      if (stepCount >= totalSteps) {
-        clearInterval(interval);
-        ratingDisplay.textContent = newRating;
-      }
-    }, 50);
+
+    if (totalSteps > 0) {
+      const interval = setInterval(() => {
+        stepCount++;
+        currentDisplay += step;
+        ratingDisplay.textContent = currentDisplay;
+        
+        if (stepCount >= totalSteps) {
+          clearInterval(interval);
+          ratingDisplay.textContent = clampedNew;
+        }
+      }, 50);
+    }
 
     // Remove overlay after animation
     setTimeout(() => {
