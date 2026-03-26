@@ -3899,7 +3899,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     // Handle calibration mode — update binary search bounds after each match
     if (currentMode === "calibration") {
-      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
+      let { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
         winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
       );
 
@@ -3918,11 +3918,37 @@ async function fetchPerformerCount(performerFilter = {}) {
         // Check if calibration is done (converged or max steps reached)
         if (calibrationStep >= CALIBRATION_MAX_STEPS || (calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
           const targetName = escapeHtml(calibrationTarget.name);
+          const finalRating = Math.round((calibrationLow + calibrationHigh) / 2);
+
           if ((calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
-            calibrationLastResult = `✅ ${targetName} converged at step ${calibrationStep}/${CALIBRATION_MAX_STEPS} — rating narrowed to ${calibrationLow}–${calibrationHigh}`;
+            calibrationLastResult = `✅ ${targetName} converged at step ${calibrationStep}/${CALIBRATION_MAX_STEPS} — rating narrowed to ${calibrationLow}–${calibrationHigh}, final rating: ${finalRating}`;
           } else {
-            calibrationLastResult = `✅ ${targetName} finished all ${CALIBRATION_MAX_STEPS} steps`;
+            calibrationLastResult = `✅ ${targetName} finished all ${CALIBRATION_MAX_STEPS} steps — rating set to ${finalRating}`;
           }
+
+          // Override the target's rating with the calibration midpoint.
+          // The ELO changes during calibration were for pairing guidance only;
+          // the binary search midpoint is the true calibrated rating.
+          const targetId = calibrationTarget.id;
+          const targetIsWinner = (targetId === winnerId);
+          const preCalibrationRating = targetIsWinner ? winnerRating : loserRating;
+
+          if (battleType === "performers") {
+            await updatePerformerRatingSimple(targetId, finalRating);
+          } else {
+            await updateImageRating(targetId, finalRating);
+          }
+          console.log(`[HotOrNot] Calibration finalized ${targetName} rating: ${preCalibrationRating} → ${finalRating}`);
+
+          // Update animation values to show the calibrated final rating
+          if (targetIsWinner) {
+            newWinnerRating = finalRating;
+            winnerChange = finalRating - preCalibrationRating;
+          } else {
+            newLoserRating = finalRating;
+            loserChange = finalRating - preCalibrationRating;
+          }
+
           // Reset target — next loadNewPair will pick a new performer to calibrate
           calibrationTarget = null;
           calibrationStep = 0;
