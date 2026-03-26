@@ -1246,31 +1246,41 @@
   }
 
   /**
-   * Calculate K-factor based on match count (experience) and scene count
+   * Calculate K-factor based on match count (experience) and scene count.
+   * Calibration mode uses full USCF/FIDE K-factors and skips scene dampening
+   * for unrestricted rating movement during binary search placement.
    * @param {number} currentRating - Current ELO rating
    * @param {number} matchCount - Number of matches played
-   * @param {string} mode - Current game mode (unused, kept for API compatibility)
+   * @param {string} mode - Current game mode ("swiss", "calibration", or "tournament")
    * @param {number} sceneCount - Number of scenes the performer is in (performers only)
    * @returns {number} K-factor value
    */
   function getKFactor(currentRating, matchCount = null, mode = "swiss", sceneCount = null) {
     let baseKFactor;
     
-    // If match count is available, use it for more accurate K-factor
-    // K-factor ranges follow a reduced USCF/FIDE approach for slower rating changes:
-    // This makes it harder to jump to extreme ratings quickly
+    // Calibration mode uses full USCF/FIDE K-factors for unrestricted rating movement.
+    // This lets performers reach their true rating faster during binary search placement.
+    const isCalibration = mode === "calibration";
+
     if (matchCount !== null && matchCount !== undefined) {
-      // New performers: Moderate K-factor for convergence (reduced from 32)
-      if (matchCount < 10) {
-        baseKFactor = 16;
-      }
-      // Moderately established: Lower K-factor (reduced from 24)
-      else if (matchCount < 30) {
-        baseKFactor = 12;
-      }
-      // Well-established (30+ matches): Low K-factor for stability (reduced from 16)
-      else {
-        baseKFactor = 8;
+      if (isCalibration) {
+        // Full USCF/FIDE K-factors — no reduction for calibration
+        if (matchCount < 10) {
+          baseKFactor = 32;
+        } else if (matchCount < 30) {
+          baseKFactor = 24;
+        } else {
+          baseKFactor = 16;
+        }
+      } else {
+        // Swiss/tournament: Reduced K-factor ranges for slower, stable rating changes
+        if (matchCount < 10) {
+          baseKFactor = 16;
+        } else if (matchCount < 30) {
+          baseKFactor = 12;
+        } else {
+          baseKFactor = 8;
+        }
       }
     } else {
       // Fallback to rating-based heuristic (legacy behavior)
@@ -1278,36 +1288,40 @@
       // Items far from 50 have likely had more comparisons
       const distanceFromDefault = Math.abs(currentRating - 50);
       
-      if (distanceFromDefault < 10) {
-        baseKFactor = 14;  // Higher K for unproven items near default (reduced from 24)
-      } else if (distanceFromDefault < 25) {
-        baseKFactor = 10;  // Medium K for moderately established items (reduced from 20)
+      if (isCalibration) {
+        // Full K-factors for calibration fallback
+        if (distanceFromDefault < 10) {
+          baseKFactor = 24;
+        } else if (distanceFromDefault < 25) {
+          baseKFactor = 20;
+        } else {
+          baseKFactor = 16;
+        }
       } else {
-        baseKFactor = 8;   // Lower K for well-established items (reduced from 16)
+        if (distanceFromDefault < 10) {
+          baseKFactor = 14;
+        } else if (distanceFromDefault < 25) {
+          baseKFactor = 10;
+        } else {
+          baseKFactor = 8;
+        }
       }
     }
     
-    // Apply scene count weighting for performers
-    // Performers with more scenes get lower K-factor (more stable ratings)
-    // This reflects that performers with extensive filmography have more "evidence" 
-    // of their quality and their rating should be more stable
-    if (sceneCount !== null && sceneCount !== undefined && sceneCount > 0) {
+    // Apply scene count weighting for performers (Swiss/tournament only)
+    // Calibration skips this — performers need full movement to converge quickly
+    if (!isCalibration && sceneCount !== null && sceneCount !== undefined && sceneCount > 0) {
       let sceneMultiplier = 1.0;
       
       if (sceneCount >= 100) {
-        // Very prolific performers: 60% K-factor (stable but still meaningful)
         sceneMultiplier = 0.6;
       } else if (sceneCount >= 50) {
-        // Prolific performers: 70% K-factor
         sceneMultiplier = 0.7;
       } else if (sceneCount >= 20) {
-        // Established performers: 85% K-factor
         sceneMultiplier = 0.85;
       } else if (sceneCount >= 10) {
-        // Moderately established: 90% K-factor
         sceneMultiplier = 0.9;
       }
-      // Performers with < 10 scenes: full K-factor (no reduction)
       
       baseKFactor = Math.max(4, Math.round(baseKFactor * sceneMultiplier));
     }
@@ -1406,9 +1420,9 @@
     // Calculate single rating change for zero-sum (winner gains what loser loses)
     const baseChange = Math.max(0, Math.round(avgK * (1 - expectedWinner)));
     
-    // Apply diminishing returns based on winner's rating (makes reaching 100 harder)
-    // Then set loser's loss equal to winner's gain (zero-sum)
-    const winnerGain = applyDiminishingReturns(winnerRating, baseChange);
+    // Calibration mode skips diminishing returns so performers can reach any rating.
+    // Swiss/tournament apply diminishing returns to make reaching 100 harder.
+    const winnerGain = currentMode === "calibration" ? baseChange : applyDiminishingReturns(winnerRating, baseChange);
     const loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
     
     let newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));
