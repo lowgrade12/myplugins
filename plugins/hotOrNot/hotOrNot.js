@@ -2540,7 +2540,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     // but allow upsets by occasionally picking from further away
     const eligible = performers.filter(p => p.id !== kothKing.id);
     if (eligible.length === 0) {
-      return { performers: [kothKing], ranks: [kingRank], kothInfo: { streak: kothStreak } };
+      throw new Error("Not enough performers for King of the Hill — need at least 2");
     }
 
     // Weight challengers: closer ratings get higher weight, but everyone has a chance

@@ -2130,7 +2130,7 @@
 
 .hon-koth-history-label {
   font-weight: bold;
-  color: var(--hon-gray-light, #aaa);
+  color: var(--hon-gray-light);
 }
 
 .hon-koth-fallen {
