@@ -1802,7 +1802,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 100px;
+  min-width: 120px;
 }
 
 .hon-bracket-round-col.hon-bracket-current {
@@ -1839,7 +1839,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100px;
+  max-width: 120px;
   border-bottom: 1px solid var(--hon-gray-darker);
 }
 

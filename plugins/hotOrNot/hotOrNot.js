@@ -3433,8 +3433,10 @@ async function fetchPerformerCount(performerFilter = {}) {
       for (let m = 0; m < roundMatches.length; m++) {
         const match = roundMatches[m];
         const isCurrentMatch = isCurrentRound && m === matchIndex;
-        const name1 = match.seed1 ? match.seed1.name : "—";
-        const name2 = match.seed2 ? (match.seed2.name || "BYE") : "—";
+        const seed1Label = match.seed1 && match.seed1.tournamentSeed ? `(${match.seed1.tournamentSeed}) ` : "";
+        const seed2Label = match.seed2 && match.seed2.tournamentSeed ? `(${match.seed2.tournamentSeed}) ` : "";
+        const name1 = match.seed1 ? `${seed1Label}${match.seed1.name}` : "—";
+        const name2 = !match.seed2 ? "—" : !match.seed2.name ? "BYE" : `${seed2Label}${match.seed2.name}`;
         const winnerClass1 = match.winner && match.seed1 && match.winner.id === match.seed1.id ? "hon-bracket-winner" : "";
         const winnerClass2 = match.winner && match.seed2 && match.winner.id === match.seed2.id ? "hon-bracket-winner" : "";
         const loserClass1 = match.winner && match.seed1 && match.winner.id !== match.seed1.id ? "hon-bracket-loser" : "";
