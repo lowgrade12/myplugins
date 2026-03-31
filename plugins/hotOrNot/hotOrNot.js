@@ -4,7 +4,7 @@
   // Current comparison pair and mode
   let currentPair = { left: null, right: null };
   let currentRanks = { left: null, right: null };
-  let currentMode = "swiss"; // "swiss", "calibration", or "tournament"
+  let currentMode = "swiss"; // "swiss", "calibration", "tournament", or "koth"
 
   // Calibration mode state
   let calibrationTarget = null; // The performer being calibrated (least confident)
@@ -27,6 +27,13 @@
   let tournamentSize = 0; // Number of participants (8, 16, 32)
   let tournamentPerformers = []; // All tournament participants
   let tournamentSetupDone = false; // Whether bracket has been seeded
+
+  // King of the Hill mode state
+  let kothKing = null; // Current king (performer object)
+  let kothStreak = 0; // How many challengers the current king has defeated
+  let kothBestStreak = 0; // Best streak achieved in this session
+  let kothBestKing = null; // Performer who achieved the best streak
+  let kothDethroned = []; // History of dethroned kings [{performer, streak}]
 
   let disableChoice = false; // Track when inputs should be disabled to prevent multiple events
   let battleType = "performers"; // HotOrNot is performers-only
@@ -60,11 +67,23 @@
   }
 
   /**
+   * Reset King of the Hill mode state.
+   */
+  function resetKothState() {
+    kothKing = null;
+    kothStreak = 0;
+    kothBestStreak = 0;
+    kothBestKing = null;
+    kothDethroned = [];
+  }
+
+  /**
    * Reset all mode-specific state (called when switching modes).
    */
   function resetAllModeState() {
     resetCalibrationState();
     resetTournamentState();
+    resetKothState();
   }
 
   // All genders supported by Stash, with display labels
@@ -2478,6 +2497,91 @@ async function fetchPerformerCount(performerFilter = {}) {
     return await fetchTournamentPairPerformers();
   }
 
+  /**
+   * Fetch a pair for King of the Hill mode.
+   * The current king stays on one side and faces a random challenger.
+   * If no king exists yet, the top-rated performer becomes the first king.
+   * @returns {Object} { performers, ranks, kothInfo }
+   */
+  async function fetchKothPairPerformers() {
+    const performerFilter = getPerformerFilter();
+
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
+      performer_filter: performerFilter,
+      filter: {
+        per_page: -1,
+        sort: "rating",
+        direction: "DESC"
+      }
+    });
+
+    const performers = result.findPerformers.performers || [];
+
+    if (performers.length < 2) {
+      return { performers: await fetchRandomPerformers(2), ranks: [null, null] };
+    }
+
+    // If no king yet, pick the top-rated performer as the first king
+    if (!kothKing) {
+      kothKing = performers[0];
+      kothStreak = 0;
+      console.log(`[HotOrNot] KOTH: ${kothKing.name} is the first king (rating ${kothKing.rating100 || 50})`);
+    }
+
+    // Refresh the king's data to get latest rating
+    const freshKing = performers.find(p => p.id === kothKing.id);
+    if (freshKing) {
+      kothKing = freshKing;
+    }
+
+    const kingRank = performers.findIndex(p => p.id === kothKing.id) + 1;
+
+    // Pick a challenger — weighted toward performers within a reasonable rating window,
+    // but allow upsets by occasionally picking from further away
+    const eligible = performers.filter(p => p.id !== kothKing.id);
+    if (eligible.length === 0) {
+      return { performers: [kothKing], ranks: [kingRank], kothInfo: { streak: kothStreak } };
+    }
+
+    // Weight challengers: closer ratings get higher weight, but everyone has a chance
+    const kingRating = kothKing.rating100 || 50;
+    const challengerWeights = eligible.map(p => {
+      const diff = Math.abs((p.rating100 || 50) - kingRating);
+      // Inverse-distance weighting: nearby performers are more likely challengers
+      // but add a floor so distant performers still have a chance
+      return Math.max(0.1, 1.0 / (1 + diff / 15));
+    });
+
+    const totalWeight = challengerWeights.reduce((sum, w) => sum + w, 0);
+    let roll = Math.random() * totalWeight;
+    let challengerIdx = 0;
+    for (let i = 0; i < challengerWeights.length; i++) {
+      roll -= challengerWeights[i];
+      if (roll <= 0) {
+        challengerIdx = i;
+        break;
+      }
+    }
+
+    const challenger = eligible[challengerIdx];
+    const challengerRank = performers.findIndex(p => p.id === challenger.id) + 1;
+
+    return {
+      performers: [kothKing, challenger],
+      ranks: [kingRank, challengerRank],
+      kothInfo: {
+        streak: kothStreak,
+        bestStreak: kothBestStreak,
+        bestKing: kothBestKing,
+        dethroned: kothDethroned
+      }
+    };
+  }
+
+  async function fetchKothPair() {
+    return await fetchKothPairPerformers();
+  }
+
   async function updateItemRating(itemId, newRating, itemObj = null, won = null, ratingChange = 0) {
     if (battleType === "performers") {
       return await updatePerformerRating(itemId, newRating, itemObj, won, ratingChange);
@@ -3141,6 +3245,11 @@ async function fetchPerformerCount(performerFilter = {}) {
               <span class="hon-mode-title">Tournament</span>
               <span class="hon-mode-desc">Bracket battle</span>
             </button>
+            <button class="hon-mode-btn ${currentMode === 'koth' ? 'active' : ''}" data-mode="koth" title="One performer defends the throne against a series of challengers. Track how long they can hold the crown!">
+              <span class="hon-mode-icon">👑</span>
+              <span class="hon-mode-title">King of the Hill</span>
+              <span class="hon-mode-desc">Defend the throne</span>
+            </button>
           </div>
     ` : '';
 
@@ -3182,6 +3291,8 @@ async function fetchPerformerCount(performerFilter = {}) {
         <div id="hon-calibration-dashboard" class="hon-calibration-dashboard" style="display: none;"></div>
 
         <div id="hon-tournament-bracket-display" class="hon-bracket-display" style="display: none;"></div>
+
+        <div id="hon-koth-status" class="hon-koth-status" style="display: none;"></div>
 
         <div class="hon-content">
           <div id="hon-comparison-area" class="hon-comparison-area">
@@ -3638,6 +3749,102 @@ async function fetchPerformerCount(performerFilter = {}) {
     if (el) el.style.display = "none";
   }
 
+  function hideKothStatus() {
+    const el = document.getElementById("hon-koth-status");
+    if (el) el.style.display = "none";
+  }
+
+  /**
+   * Update the King of the Hill status display showing the current king,
+   * their defense streak, and the history of dethroned kings.
+   * @param {Object} kothInfo - KOTH state info
+   */
+  function updateKothStatus(kothInfo) {
+    const statusEl = document.getElementById("hon-koth-status");
+    if (!statusEl) return;
+    statusEl.style.display = "";
+
+    const king = kothKing;
+    const kingName = king ? escapeHtml(king.name) : "—";
+    const kingRating = king ? (king.rating100 || 50) : "—";
+    const streak = kothInfo.streak || 0;
+    const bestStreak = kothInfo.bestStreak || 0;
+    const bestKingName = kothInfo.bestKing ? escapeHtml(kothInfo.bestKing.name) : "—";
+    const dethroned = kothInfo.dethroned || [];
+
+    // Streak flame icons
+    let streakIcon = "";
+    if (streak >= 10) streakIcon = "🔥🔥🔥";
+    else if (streak >= 5) streakIcon = "🔥🔥";
+    else if (streak >= 3) streakIcon = "🔥";
+
+    let html = `
+      <div class="hon-koth-header">
+        <span class="hon-koth-crown">👑</span>
+        <span class="hon-koth-king-name">${kingName}</span>
+        <span class="hon-koth-king-rating">(${kingRating})</span>
+      </div>
+      <div class="hon-koth-stats">
+        <span class="hon-koth-streak">${streakIcon} Defense streak: <strong>${streak}</strong></span>
+        <span class="hon-koth-best">Session best: <strong>${bestStreak}</strong>${bestStreak > 0 ? ` (${bestKingName})` : ""}</span>
+      </div>
+    `;
+
+    if (dethroned.length > 0) {
+      html += `<div class="hon-koth-history">`;
+      html += `<span class="hon-koth-history-label">Fallen kings:</span> `;
+      // Show last 5 dethroned kings
+      const recent = dethroned.slice(-5).reverse();
+      html += recent.map(d =>
+        `<span class="hon-koth-fallen">${escapeHtml(d.name)} <small>(${d.streak} win${d.streak !== 1 ? "s" : ""})</small></span>`
+      ).join(" → ");
+      html += `</div>`;
+    }
+
+    statusEl.innerHTML = html;
+  }
+
+  /**
+   * Show the "dethroned" screen when the king loses in KOTH mode.
+   * @param {Object} oldKing - The performer who was dethroned
+   * @param {Object} newKing - The challenger who won
+   * @param {number} streak - How many challengers the old king defeated
+   */
+  function showKothDethroned(oldKing, newKing, streak) {
+    const comparisonArea = document.getElementById("hon-comparison-area");
+    if (!comparisonArea) return;
+
+    const oldName = oldKing ? escapeHtml(oldKing.name) : "Unknown";
+    const newName = newKing ? escapeHtml(newKing.name) : "Unknown";
+    const oldImage = oldKing ? oldKing.image_path : null;
+    const newImage = newKing ? newKing.image_path : null;
+    const streakText = streak > 0
+      ? `Defended the throne ${streak} time${streak !== 1 ? "s" : ""}!`
+      : "Dethroned on the first challenge!";
+
+    comparisonArea.innerHTML = `
+      <div class="hon-koth-dethroned">
+        <div class="hon-koth-dethroned-old">
+          ${oldImage
+            ? `<img class="hon-koth-dethroned-img" src="${oldImage}" alt="${oldName}" />`
+            : `<div class="hon-koth-dethroned-img hon-no-image">No Image</div>`
+          }
+          <div class="hon-koth-dethroned-label">👑 ${oldName}</div>
+          <div class="hon-koth-dethroned-streak">${streakText}</div>
+        </div>
+        <div class="hon-koth-dethroned-arrow">⚔️ Dethroned by</div>
+        <div class="hon-koth-dethroned-new">
+          ${newImage
+            ? `<img class="hon-koth-dethroned-img" src="${newImage}" alt="${newName}" />`
+            : `<div class="hon-koth-dethroned-img hon-no-image">No Image</div>`
+          }
+          <div class="hon-koth-dethroned-label">👑 ${newName}</div>
+          <div class="hon-koth-dethroned-sublabel">New King!</div>
+        </div>
+      </div>
+    `;
+  }
+
   async function loadNewPair(retryCount = 0) {
     disableChoice = false;
     const comparisonArea = document.getElementById("hon-comparison-area");
@@ -3658,6 +3865,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     if (currentMode !== "calibration") hideCalibrationDashboard();
     if (currentMode !== "tournament") hideTournamentBracket();
     if (currentMode !== "tournament" || tournamentSetupDone) hideTournamentSetup();
+    if (currentMode !== "koth") hideKothStatus();
 
     try {
       let items;
@@ -3693,6 +3901,15 @@ async function fetchPerformerCount(performerFilter = {}) {
         // Update bracket display
         if (tournamentResult.tournamentInfo) {
           updateTournamentBracketDisplay(tournamentResult.tournamentInfo);
+        }
+      } else if (currentMode === "koth") {
+        const kothResult = await fetchKothPair();
+        items = kothResult.performers;
+        ranks = kothResult.ranks;
+
+        // Update KOTH status display
+        if (kothResult.kothInfo) {
+          updateKothStatus(kothResult.kothInfo);
         }
       }
       
@@ -3810,6 +4027,12 @@ async function fetchPerformerCount(performerFilter = {}) {
       tournamentBracket: tournamentBracket ? structuredClone(tournamentBracket) : null,
       tournamentRound: tournamentRound,
       tournamentMatchIndex: tournamentMatchIndex,
+      // KOTH state
+      kothKing: kothKing ? structuredClone(kothKing) : null,
+      kothStreak: kothStreak,
+      kothBestStreak: kothBestStreak,
+      kothBestKing: kothBestKing ? structuredClone(kothBestKing) : null,
+      kothDethroned: structuredClone(kothDethroned),
     };
   }
 
@@ -3896,6 +4119,15 @@ async function fetchPerformerCount(performerFilter = {}) {
         tournamentBracket = undo.tournamentBracket;
         tournamentRound = undo.tournamentRound;
         tournamentMatchIndex = undo.tournamentMatchIndex;
+      }
+
+      // Restore KOTH state
+      if (undo.kothKing !== undefined) {
+        kothKing = undo.kothKing;
+        kothStreak = undo.kothStreak;
+        kothBestStreak = undo.kothBestStreak;
+        kothBestKing = undo.kothBestKing;
+        kothDethroned = undo.kothDethroned;
       }
 
       // Restore the pair objects (with original ratings)
@@ -4099,6 +4331,64 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
 
       showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
+      return;
+    }
+
+    // Handle King of the Hill mode — king defends against challengers
+    if (currentMode === "koth" && kothKing) {
+      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
+        winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
+      );
+
+      if (winnerId === kothKing.id) {
+        // King defended successfully
+        kothStreak++;
+        if (kothStreak > kothBestStreak) {
+          kothBestStreak = kothStreak;
+          kothBestKing = structuredClone(kothKing);
+        }
+        // Refresh king's rating
+        kothKing.rating100 = newWinnerRating;
+        console.log(`[HotOrNot] KOTH: ${kothKing.name} defends! Streak: ${kothStreak}`);
+
+        showResultAndLoadNext(winnerCard, loserCard, winnerRating, newWinnerRating, winnerChange, loserRating, newLoserRating, loserChange);
+      } else {
+        // King dethroned!
+        const oldKing = structuredClone(kothKing);
+        const oldStreak = kothStreak;
+
+        // Record the dethroned king in history
+        kothDethroned.push({ name: oldKing.name, streak: oldStreak, id: oldKing.id });
+
+        // The challenger becomes the new king
+        kothKing = structuredClone(winnerItem);
+        kothKing.rating100 = newWinnerRating;
+        kothStreak = 0;
+
+        console.log(`[HotOrNot] KOTH: ${oldKing.name} dethroned after ${oldStreak} wins! New king: ${kothKing.name}`);
+
+        // Show rating animation, then show dethroned screen before loading next pair
+        winnerCard.classList.add("hon-winner");
+        if (loserCard) loserCard.classList.add("hon-loser");
+        showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
+        if (loserCard) showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
+
+        setTimeout(() => {
+          showKothDethroned(oldKing, kothKing, oldStreak);
+          // Update KOTH status with new king info
+          updateKothStatus({
+            streak: kothStreak,
+            bestStreak: kothBestStreak,
+            bestKing: kothBestKing,
+            dethroned: kothDethroned
+          });
+
+          // Auto-continue after showing dethroned screen
+          setTimeout(() => {
+            loadNewPair();
+          }, 2500);
+        }, 1500);
+      }
       return;
     }
 
@@ -4608,6 +4898,7 @@ function addFloatingButton() {
           hideTournamentSetup();
           hideCalibrationDashboard();
           hideTournamentBracket();
+          hideKothStatus();
           
           // Load new pair in new mode
           loadNewPair();
@@ -4626,6 +4917,7 @@ function addFloatingButton() {
         if(disableChoice) return
         disableChoice = true;
         // Apply ELO draw rating changes for skips in Swiss and calibration modes
+        // KOTH skips just fetch a new challenger — no draw penalty (king stays)
         if ((currentMode === "swiss" || currentMode === "calibration") && currentPair.left && currentPair.right) {
           await handleSkip(currentPair.left, currentPair.right);
         }
@@ -4708,6 +5000,7 @@ function addFloatingButton() {
           if(disableChoice) return;
           disableChoice = true;
           // Apply ELO draw rating changes for skips in Swiss and calibration modes
+          // KOTH skips just fetch a new challenger — no draw penalty (king stays)
           if ((currentMode === "swiss" || currentMode === "calibration") && currentPair.left && currentPair.right) {
             await handleSkip(currentPair.left, currentPair.right);
           }
