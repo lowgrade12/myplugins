@@ -1791,18 +1791,44 @@
   color: var(--hon-gray);
 }
 
-.hon-bracket-rounds {
+/* --- Side-by-side bracket layout --- */
+.hon-bracket-wings {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
+  align-items: stretch;
   min-width: max-content;
 }
 
+.hon-bracket-wing {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.hon-bracket-left {
+  justify-content: flex-end;
+}
+
+.hon-bracket-right {
+  justify-content: flex-start;
+}
+
+/* Center final column */
+.hon-bracket-center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-width: 130px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+/* Round column within a wing */
 .hon-bracket-round-col {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   min-width: 120px;
+  position: relative;
 }
 
 .hon-bracket-round-col.hon-bracket-current {
@@ -1820,11 +1846,129 @@
   margin-bottom: 4px;
 }
 
+/* Matchups container — uses space-around so later rounds
+   automatically center between their feeder matches */
+.hon-bracket-matchups {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  flex: 1;
+}
+
+/* Match pair wrapper (two matches that feed into the same next-round match) */
+.hon-bracket-pair {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+  gap: 4px;
+  position: relative;
+}
+
+/* --- Connector lines (bracket "]" and "[" shapes) --- */
+
+/* Left wing: "]" connector on pairs that have outgoing connections */
+.hon-bracket-left .hon-bracket-pair-conn::after {
+  content: "";
+  position: absolute;
+  right: -14px;
+  top: 25%;
+  height: 50%;
+  width: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  pointer-events: none;
+}
+
+/* Left wing: horizontal line from "]" midpoint toward next round */
+.hon-bracket-left .hon-bracket-pair-conn::before {
+  content: "";
+  position: absolute;
+  right: -22px;
+  top: calc(50% - 1px);
+  width: 8px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+
+/* Right wing: "[" connector on pairs that have outgoing connections */
+.hon-bracket-right .hon-bracket-pair-conn::after {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 25%;
+  height: 50%;
+  width: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-right: none;
+  border-radius: 4px 0 0 4px;
+  pointer-events: none;
+}
+
+/* Right wing: horizontal line from "[" midpoint toward next round */
+.hon-bracket-right .hon-bracket-pair-conn::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: calc(50% - 1px);
+  width: 8px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+
+/* Horizontal connector stubs from individual matches toward the bracket line */
+.hon-bracket-left .hon-bracket-pair-conn > .hon-bracket-match {
+  position: relative;
+}
+.hon-bracket-left .hon-bracket-pair-conn > .hon-bracket-match::after {
+  content: "";
+  position: absolute;
+  right: -6px;
+  top: calc(50% - 1px);
+  width: 6px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+
+.hon-bracket-right .hon-bracket-pair-conn > .hon-bracket-match {
+  position: relative;
+}
+.hon-bracket-right .hon-bracket-pair-conn > .hon-bracket-match::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: calc(50% - 1px);
+  width: 6px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+
+/* Spacing between round columns to make room for connectors */
+.hon-bracket-left .hon-bracket-round-col {
+  margin-right: 24px;
+}
+.hon-bracket-left .hon-bracket-round-col:last-child {
+  margin-right: 0;
+}
+
+.hon-bracket-right .hon-bracket-round-col {
+  margin-left: 24px;
+}
+.hon-bracket-right .hon-bracket-round-col:first-child {
+  margin-left: 0;
+}
+
+/* Individual match box */
 .hon-bracket-match {
   border: 1px solid var(--hon-gray-dark);
   border-radius: 6px;
   overflow: hidden;
-  margin-bottom: 4px;
+  position: relative;
 }
 
 .hon-bracket-match.hon-bracket-match-active {
@@ -1856,6 +2000,46 @@
   color: var(--hon-gray-mid);
   text-decoration: line-through;
   opacity: 0.7;
+}
+
+/* Center final special styling */
+.hon-bracket-center .hon-bracket-round-label {
+  font-size: 0.85rem;
+  color: var(--hon-warning);
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.hon-bracket-center .hon-bracket-match {
+  border-color: var(--hon-warning);
+  min-width: 120px;
+}
+
+/* Responsive: stack vertically on small screens */
+@media (max-width: 600px) {
+  .hon-bracket-wings {
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+  }
+  .hon-bracket-wing {
+    justify-content: center !important;
+    flex-direction: column;
+  }
+  .hon-bracket-left .hon-bracket-round-col,
+  .hon-bracket-right .hon-bracket-round-col {
+    margin: 0 0 12px 0;
+  }
+  .hon-bracket-center {
+    padding: 12px 0;
+    min-width: 0;
+  }
+  .hon-bracket-pair-conn::before,
+  .hon-bracket-pair-conn::after,
+  .hon-bracket-pair-conn > .hon-bracket-match::before,
+  .hon-bracket-pair-conn > .hon-bracket-match::after {
+    display: none !important;
+  }
 }
 
 .hon-selection-subtitle {
