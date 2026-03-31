@@ -2068,3 +2068,147 @@
     font-size: 0.75rem;
   }
 }
+
+/* ============================================
+   KING OF THE HILL STATUS
+   ============================================ */
+
+.hon-koth-status {
+  background: rgba(255, 215, 0, 0.06);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hon-koth-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+}
+
+.hon-koth-crown {
+  font-size: 1.3rem;
+}
+
+.hon-koth-king-name {
+  color: var(--hon-warning);
+}
+
+.hon-koth-king-rating {
+  color: var(--hon-gray);
+  font-weight: normal;
+  font-size: 0.85rem;
+}
+
+.hon-koth-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 0.85rem;
+  color: var(--hon-text);
+  flex-wrap: wrap;
+}
+
+.hon-koth-streak strong {
+  color: var(--hon-success);
+}
+
+.hon-koth-best strong {
+  color: var(--hon-warning);
+}
+
+.hon-koth-history {
+  font-size: 0.8rem;
+  color: var(--hon-gray);
+  margin-top: 2px;
+}
+
+.hon-koth-history-label {
+  font-weight: bold;
+  color: var(--hon-gray-light);
+}
+
+.hon-koth-fallen {
+  color: var(--hon-text);
+}
+
+.hon-koth-fallen small {
+  color: var(--hon-gray);
+}
+
+/* ============================================
+   KING OF THE HILL DETHRONED SCREEN
+   ============================================ */
+
+.hon-koth-dethroned {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.hon-koth-dethroned-old,
+.hon-koth-dethroned-new {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.hon-koth-dethroned-img {
+  width: 120px;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid var(--hon-gray-dark);
+}
+
+.hon-koth-dethroned-new .hon-koth-dethroned-img {
+  border-color: var(--hon-warning);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+}
+
+.hon-koth-dethroned-label {
+  font-size: 1rem;
+  font-weight: bold;
+  color: var(--hon-text);
+}
+
+.hon-koth-dethroned-streak {
+  font-size: 0.85rem;
+  color: var(--hon-gray);
+}
+
+.hon-koth-dethroned-arrow {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: var(--hon-danger);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.hon-koth-dethroned-sublabel {
+  font-size: 0.85rem;
+  color: var(--hon-warning);
+  font-weight: bold;
+}
+
+@media (max-width: 600px) {
+  .hon-koth-dethroned {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .hon-koth-dethroned-img {
+    width: 80px;
+    height: 110px;
+  }
+}
