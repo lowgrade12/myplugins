@@ -2521,9 +2521,9 @@ async function fetchPerformerCount(performerFilter = {}) {
       return { performers: await fetchRandomPerformers(2), ranks: [null, null] };
     }
 
-    // If no king yet, pick the top-rated performer as the first king
+    // If no king yet, pick a random performer as the first king
     if (!kothKing) {
-      kothKing = performers[0];
+      kothKing = performers[Math.floor(Math.random() * performers.length)];
       kothStreak = 0;
       console.log(`[HotOrNot] KOTH: ${kothKing.name} is the first king (rating ${kothKing.rating100 || 50})`);
     }
