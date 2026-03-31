@@ -3398,7 +3398,9 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   /**
-   * Update the tournament bracket display.
+   * Update the tournament bracket display with a side-by-side bracket layout.
+   * Left half of the bracket flows left→center, right half flows right→center,
+   * with the final match in the center (NCAA March Madness style).
    * @param {Object} tournamentInfo - Tournament state info
    */
   function updateTournamentBracketDisplay(tournamentInfo) {
@@ -3409,49 +3411,142 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     const { bracket, round, roundName, matchIndex, matchesInRound, totalRounds } = tournamentInfo;
 
-    // Build compact bracket visualization
+    /**
+     * Render a single match box.
+     * @param {Object} match - Match object with seed1, seed2, winner
+     * @param {boolean} isActive - Whether this match is currently being played
+     * @returns {string} HTML string
+     */
+    function renderMatchHTML(match, isActive) {
+      const seed1Label = match.seed1 && match.seed1.tournamentSeed ? `(${match.seed1.tournamentSeed}) ` : "";
+      const seed2Label = match.seed2 && match.seed2.tournamentSeed ? `(${match.seed2.tournamentSeed}) ` : "";
+      const name1 = match.seed1 ? `${seed1Label}${match.seed1.name}` : "—";
+      const name2 = !match.seed2 ? "—" : !match.seed2.name ? "BYE" : `${seed2Label}${match.seed2.name}`;
+      const winnerClass1 = match.winner && match.seed1 && match.winner.id === match.seed1.id ? "hon-bracket-winner" : "";
+      const winnerClass2 = match.winner && match.seed2 && match.winner.id === match.seed2.id ? "hon-bracket-winner" : "";
+      const loserClass1 = match.winner && match.seed1 && match.winner.id !== match.seed1.id ? "hon-bracket-loser" : "";
+      const loserClass2 = match.winner && match.seed2 && match.winner.id !== match.seed2.id ? "hon-bracket-loser" : "";
+
+      return `
+        <div class="hon-bracket-match ${isActive ? "hon-bracket-match-active" : ""}">
+          <div class="hon-bracket-slot ${winnerClass1} ${loserClass1}">${name1}</div>
+          <div class="hon-bracket-slot ${winnerClass2} ${loserClass2}">${name2}</div>
+        </div>
+      `;
+    }
+
+    /**
+     * Get a human-readable label for a round.
+     * @param {number} r - Round index (0-based)
+     * @param {number} total - Total number of rounds
+     * @returns {string} Round label
+     */
+    function getRoundLabel(r, total) {
+      if (r === total - 1) return "Final";
+      if (r === total - 2) return "Semi";
+      if (r === total - 3) return "Quarter";
+      return `R${r + 1}`;
+    }
+
+    /**
+     * Render a wing's round column with matches grouped into pairs for connector lines.
+     * @param {Array} matches - Array of match objects for this wing's half of the round
+     * @param {number} r - Round index
+     * @param {number} globalOffset - Offset to convert local index to global match index
+     * @param {boolean} isCurrentRound - Whether this is the active round
+     * @param {string} roundLabel - Label for the round
+     * @param {boolean} isLastInWing - Whether this is the last column in the wing (no outgoing connectors)
+     * @returns {string} HTML string
+     */
+    function renderRoundColumn(matches, r, globalOffset, isCurrentRound, roundLabel, isLastInWing) {
+      let html = `<div class="hon-bracket-round-col ${isCurrentRound ? "hon-bracket-current" : ""}">
+        <div class="hon-bracket-round-label">${roundLabel}</div>
+        <div class="hon-bracket-matchups">`;
+
+      // Group matches into pairs (each pair feeds into one match in the next round)
+      for (let m = 0; m < matches.length; m += 2) {
+        const hasPairPartner = m + 1 < matches.length;
+        if (hasPairPartner) {
+          html += `<div class="hon-bracket-pair${isLastInWing ? "" : " hon-bracket-pair-conn"}">`;
+        }
+
+        const match1 = matches[m];
+        const isActive1 = isCurrentRound && (globalOffset + m) === matchIndex;
+        html += renderMatchHTML(match1, isActive1);
+
+        if (hasPairPartner) {
+          const match2 = matches[m + 1];
+          const isActive2 = isCurrentRound && (globalOffset + m + 1) === matchIndex;
+          html += renderMatchHTML(match2, isActive2);
+          html += `</div>`;
+        }
+      }
+
+      html += `</div></div>`;
+      return html;
+    }
+
+    const finalRoundIdx = bracket.length - 1;
+
+    // Fallback for brackets with fewer than 2 rounds
+    if (bracket.length < 2) {
+      bracketDisplay.innerHTML = `
+        <div class="hon-bracket-header">
+          <span class="hon-bracket-round">${roundName}</span>
+          <span class="hon-bracket-progress">Match ${matchIndex + 1} of ${matchesInRound}</span>
+        </div>`;
+      return;
+    }
+
     let bracketHTML = `
       <div class="hon-bracket-header">
         <span class="hon-bracket-round">${roundName}</span>
         <span class="hon-bracket-progress">Match ${matchIndex + 1} of ${matchesInRound}</span>
       </div>
-      <div class="hon-bracket-rounds">
+      <div class="hon-bracket-wings">
     `;
 
-    for (let r = 0; r < bracket.length; r++) {
+    // LEFT WING — first half of each round's matches (except the final)
+    bracketHTML += `<div class="hon-bracket-wing hon-bracket-left">`;
+    for (let r = 0; r < finalRoundIdx; r++) {
       const roundMatches = bracket[r];
+      const halfCount = Math.ceil(roundMatches.length / 2);
+      const leftMatches = roundMatches.slice(0, halfCount);
       const isCurrentRound = r === round;
-      let roundLabel;
-      if (r === bracket.length - 1) roundLabel = "Final";
-      else if (r === bracket.length - 2) roundLabel = "Semi";
-      else if (r === bracket.length - 3) roundLabel = "Quarter";
-      else roundLabel = `R${r + 1}`;
+      const roundLabel = getRoundLabel(r, bracket.length);
+      const isLastInWing = r === finalRoundIdx - 1;
 
-      bracketHTML += `<div class="hon-bracket-round-col ${isCurrentRound ? 'hon-bracket-current' : ''}">
-        <div class="hon-bracket-round-label">${roundLabel}</div>`;
-
-      for (let m = 0; m < roundMatches.length; m++) {
-        const match = roundMatches[m];
-        const isCurrentMatch = isCurrentRound && m === matchIndex;
-        const seed1Label = match.seed1 && match.seed1.tournamentSeed ? `(${match.seed1.tournamentSeed}) ` : "";
-        const seed2Label = match.seed2 && match.seed2.tournamentSeed ? `(${match.seed2.tournamentSeed}) ` : "";
-        const name1 = match.seed1 ? `${seed1Label}${match.seed1.name}` : "—";
-        const name2 = !match.seed2 ? "—" : !match.seed2.name ? "BYE" : `${seed2Label}${match.seed2.name}`;
-        const winnerClass1 = match.winner && match.seed1 && match.winner.id === match.seed1.id ? "hon-bracket-winner" : "";
-        const winnerClass2 = match.winner && match.seed2 && match.winner.id === match.seed2.id ? "hon-bracket-winner" : "";
-        const loserClass1 = match.winner && match.seed1 && match.winner.id !== match.seed1.id ? "hon-bracket-loser" : "";
-        const loserClass2 = match.winner && match.seed2 && match.winner.id !== match.seed2.id ? "hon-bracket-loser" : "";
-
-        bracketHTML += `
-          <div class="hon-bracket-match ${isCurrentMatch ? 'hon-bracket-match-active' : ''}">
-            <div class="hon-bracket-slot ${winnerClass1} ${loserClass1}">${name1}</div>
-            <div class="hon-bracket-slot ${winnerClass2} ${loserClass2}">${name2}</div>
-          </div>
-        `;
-      }
-
-      bracketHTML += `</div>`;
+      bracketHTML += renderRoundColumn(leftMatches, r, 0, isCurrentRound, roundLabel, isLastInWing);
     }
+    bracketHTML += `</div>`;
+
+    // CENTER — Final match
+    const finalMatch = bracket[finalRoundIdx][0];
+    const isFinalCurrent = round === finalRoundIdx;
+    const isFinalActive = isFinalCurrent && matchIndex === 0;
+    bracketHTML += `
+      <div class="hon-bracket-center ${isFinalCurrent ? "hon-bracket-current" : ""}">
+        <div class="hon-bracket-round-label">🏆 Final</div>
+        <div class="hon-bracket-matchups">
+          ${renderMatchHTML(finalMatch, isFinalActive)}
+        </div>
+      </div>
+    `;
+
+    // RIGHT WING — second half of each round's matches, displayed in reverse
+    // order so later rounds are closest to center
+    bracketHTML += `<div class="hon-bracket-wing hon-bracket-right">`;
+    for (let r = finalRoundIdx - 1; r >= 0; r--) {
+      const roundMatches = bracket[r];
+      const halfCount = Math.ceil(roundMatches.length / 2);
+      const rightMatches = roundMatches.slice(halfCount);
+      const isCurrentRound = r === round;
+      const roundLabel = getRoundLabel(r, bracket.length);
+      const isLastInWing = r === finalRoundIdx - 1;
+
+      bracketHTML += renderRoundColumn(rightMatches, r, halfCount, isCurrentRound, roundLabel, isLastInWing);
+    }
+    bracketHTML += `</div>`;
 
     bracketHTML += `</div>`;
     bracketDisplay.innerHTML = bracketHTML;
