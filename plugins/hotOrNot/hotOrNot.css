@@ -2022,8 +2022,9 @@
     align-items: stretch;
     min-width: 0;
   }
-  .hon-bracket-wing {
-    justify-content: center !important;
+  .hon-bracket-wing.hon-bracket-left,
+  .hon-bracket-wing.hon-bracket-right {
+    justify-content: center;
     flex-direction: column;
   }
   .hon-bracket-left .hon-bracket-round-col,
@@ -2034,11 +2035,13 @@
     padding: 12px 0;
     min-width: 0;
   }
-  .hon-bracket-pair-conn::before,
-  .hon-bracket-pair-conn::after,
-  .hon-bracket-pair-conn > .hon-bracket-match::before,
-  .hon-bracket-pair-conn > .hon-bracket-match::after {
-    display: none !important;
+  .hon-bracket-left .hon-bracket-pair-conn::before,
+  .hon-bracket-left .hon-bracket-pair-conn::after,
+  .hon-bracket-right .hon-bracket-pair-conn::before,
+  .hon-bracket-right .hon-bracket-pair-conn::after,
+  .hon-bracket-left .hon-bracket-pair-conn > .hon-bracket-match::after,
+  .hon-bracket-right .hon-bracket-pair-conn > .hon-bracket-match::before {
+    display: none;
   }
 }
 
