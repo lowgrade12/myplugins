@@ -55,7 +55,10 @@
    */
   function getGraphQLUrl() {
     const baseEl = document.querySelector("base");
-    const baseURL = baseEl ? baseEl.getAttribute("href") : "/";
+    let baseURL = baseEl ? baseEl.getAttribute("href") : "/";
+    if (!baseURL.endsWith("/")) {
+      baseURL += "/";
+    }
     return `${baseURL}graphql`;
   }
 
