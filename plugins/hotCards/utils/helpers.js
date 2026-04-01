@@ -125,9 +125,13 @@
     const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern);
 
     function checkURL() {
-      _hc.checkConfigurationRefresh().then(() => {
+      if (_hc.checkConfigurationRefresh) {
+        _hc.checkConfigurationRefresh().then(() => {
+          if (regex.test(window.location.pathname)) callback();
+        });
+      } else {
         if (regex.test(window.location.pathname)) callback();
-      });
+      }
     }
 
     onPathChange(checkURL);
