@@ -1,8 +1,25 @@
-"use strict";
+(function () {
+  "use strict";
 
-const CONFIG = {};
-const CARDS = {};
-const CRITERIA = { tag: "t", rating: "r", disabled: "d" };
+  const _hc = window._hotCards = window._hotCards || {};
+
+  // Import shared references from other hotCards files
+  // (guaranteed available since hotCards.yml loads these files in order:
+  //  configurationHandler → helpers → fetchInterceptor → stashHandler → hotCards)
+  const {
+    CARD_KEYS, DEFAULTS, setConfiguration,
+    getRandomInt, getFixedBackgroundOpacity, waitForClass, waitForImageLoad,
+    createElementFromHTML, onPathChange, registerPathChangeListener,
+  } = _hc;
+
+  const CONFIG = {};
+  const CARDS = {};
+  const CRITERIA = { tag: "t", rating: "r", disabled: "d" };
+
+  // Export shared state for other hotCards files
+  _hc.CONFIG = CONFIG;
+  _hc.CARDS = CARDS;
+  _hc.CRITERIA = CRITERIA;
 // Custom CSS style presets for hot cards.
 const STYLES = {
   default: getDefaultStylePreset(),
@@ -33,7 +50,7 @@ let backupCardElements = [];
 // Current hot card elements
 let hotCardElements = [];
 // Current hot card classes
-let hotCardClasses = [];
+let hotCardClasses = _hc.hotCardClasses = [];
 // Home page observer for detecting late-loading recommendation rows
 let homeObserver = null;
 let homeDebounceTimer = null;
@@ -797,3 +814,4 @@ function getHoloStylePreset() {
 }
 
 hotCardsSetup();
+})();
