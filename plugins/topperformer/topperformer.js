@@ -17,10 +17,27 @@
   // GRAPHQL HELPERS
   // ============================================
 
+  // Track whether Apollo client has failed (skip after first failure to reduce noise)
+  let apolloFailed = false;
+
+  /**
+   * Get the GraphQL endpoint URL, respecting the base tag for subpath deployments.
+   * @returns {string} The GraphQL endpoint URL
+   */
+  function getGraphQLUrl() {
+    const baseEl = document.querySelector("base");
+    let baseURL = baseEl ? baseEl.getAttribute("href") : "/";
+    if (!baseURL.endsWith("/")) {
+      baseURL += "/";
+    }
+    return `${baseURL}graphql`;
+  }
+
   async function graphqlQuery(query, variables = {}) {
     // Use Stash's Apollo client when available (preferred method for Stash plugins)
     // This ensures authentication is handled automatically and avoids Apollo context errors
     if (
+      !apolloFailed &&
       typeof PluginApi !== "undefined" &&
       PluginApi.utils &&
       PluginApi.utils.StashService &&
@@ -28,25 +45,38 @@
       PluginApi.libraries &&
       PluginApi.libraries.Apollo
     ) {
-      const { gql } = PluginApi.libraries.Apollo;
-      const client = PluginApi.utils.StashService.getClient();
-      const doc = gql(query);
-      const isMutation = doc.definitions.some(
-        (def) => def.kind === "OperationDefinition" && def.operation === "mutation"
-      );
-      const result = isMutation
-        ? await client.mutate({ mutation: doc, variables })
-        : await client.query({ query: doc, variables, fetchPolicy: "no-cache" });
-      return result.data;
+      try {
+        const { gql } = PluginApi.libraries.Apollo;
+        const client = PluginApi.utils.StashService.getClient();
+        if (!client || !gql) {
+          throw new Error("Apollo client or gql not available");
+        }
+        const doc = gql(query);
+        const isMutation = doc.definitions.some(
+          (def) => def.kind === "OperationDefinition" && def.operation === "mutation"
+        );
+        const result = isMutation
+          ? await client.mutate({ mutation: doc, variables })
+          : await client.query({ query: doc, variables, fetchPolicy: "no-cache" });
+        return result.data;
+      } catch (apolloError) {
+        // Permanently switch to direct fetch after first Apollo failure to avoid
+        // repeated errors (e.g., clearStore race, version mismatch, invariant violations)
+        apolloFailed = true;
+        console.warn("[TopPerformer] Apollo client unavailable, using direct fetch for all queries:", apolloError?.message || apolloError);
+      }
     }
     // Fallback: direct fetch (for environments where PluginApi is not available)
-    const response = await fetch("/graphql", {
+    const response = await fetch(getGraphQLUrl(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query, variables }),
     });
+    if (!response.ok) {
+      throw new Error(`[TopPerformer] GraphQL request failed: ${response.status}`);
+    }
     const result = await response.json();
     if (result.errors) {
       console.error("[TopPerformer] GraphQL error:", result.errors);

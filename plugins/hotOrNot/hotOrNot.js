@@ -41,6 +41,7 @@
   let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
   let previousBattle = null; // Stores pre-battle state for undo functionality
   let pluginConfigCache = null; // Cached plugin configuration from Stash settings
+  let apolloFailed = false; // Track whether Apollo client has failed (skip after first failure to reduce noise)
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
 
   /**
@@ -255,10 +256,24 @@
   // GRAPHQL QUERIES
   // ============================================
 
+  /**
+   * Get the GraphQL endpoint URL, respecting the base tag for subpath deployments.
+   * @returns {string} The GraphQL endpoint URL
+   */
+  function getGraphQLUrl() {
+    const baseEl = document.querySelector("base");
+    let baseURL = baseEl ? baseEl.getAttribute("href") : "/";
+    if (!baseURL.endsWith("/")) {
+      baseURL += "/";
+    }
+    return `${baseURL}graphql`;
+  }
+
   async function graphqlQuery(query, variables = {}) {
     // Use Stash's Apollo client when available (preferred method for Stash plugins)
     // This ensures authentication is handled automatically and avoids Apollo context errors
     if (
+      !apolloFailed &&
       typeof PluginApi !== "undefined" &&
       PluginApi.utils &&
       PluginApi.utils.StashService &&
@@ -269,6 +284,9 @@
       try {
         const { gql } = PluginApi.libraries.Apollo;
         const client = PluginApi.utils.StashService.getClient();
+        if (!client || !gql) {
+          throw new Error("Apollo client or gql not available");
+        }
         const doc = gql(query);
         const isMutation = doc.definitions.some(
           (def) => def.kind === "OperationDefinition" && def.operation === "mutation"
@@ -278,19 +296,23 @@
           : await client.query({ query: doc, variables, fetchPolicy: "no-cache" });
         return result.data;
       } catch (apolloError) {
-        // Fall back to direct fetch when Apollo client is unavailable or in an invalid
-        // state (e.g., clearStore called during an in-progress query/mutation)
-        console.warn("[HotOrNot] Apollo client error, falling back to fetch:", apolloError?.message || apolloError);
+        // Permanently switch to direct fetch after first Apollo failure to avoid
+        // repeated errors (e.g., clearStore race, version mismatch, invariant violations)
+        apolloFailed = true;
+        console.warn("[HotOrNot] Apollo client unavailable, using direct fetch for all queries:", apolloError?.message || apolloError);
       }
     }
     // Fallback: direct fetch (for environments where PluginApi is not available)
-    const response = await fetch("/graphql", {
+    const response = await fetch(getGraphQLUrl(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query, variables }),
     });
+    if (!response.ok) {
+      throw new Error(`[HotOrNot] GraphQL request failed: ${response.status}`);
+    }
     const result = await response.json();
     if (result.errors) {
       console.error("[HotOrNot] GraphQL error:", result.errors);
