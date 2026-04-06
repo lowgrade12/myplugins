@@ -42,6 +42,7 @@
   let previousBattle = null; // Stores pre-battle state for undo functionality
   let pluginConfigCache = null; // Cached plugin configuration from Stash settings
   let apolloFailed = false; // Track whether Apollo client has failed (skip after first failure to reduce noise)
+  let navigationVersion = 0; // Incremented on every page navigation; used to abort stale async work
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
 
   /**
@@ -4635,10 +4636,16 @@ async function fetchPerformerCount(performerFilter = {}) {
    * Looks for the rating stars section and adds the badge next to it.
    */
   async function injectBattleRankBadge() {
+    // Capture navigation version to detect stale work after awaits
+    const navVersion = navigationVersion;
+
     // Skip injection if the user has disabled the battle rank badge in Stash settings
     if (!await isBattleRankBadgeEnabled()) {
       return;
     }
+    // Abort if user navigated away while we were checking config
+    if (navVersion !== navigationVersion) return;
+
     // Use compare-and-set pattern with global flag to prevent concurrent injections
     // This handles both same-plugin races and cross-plugin races
     // In JavaScript's single-threaded event loop, this synchronous block before any await is atomic
@@ -4663,6 +4670,8 @@ async function fetchPerformerCount(performerFilter = {}) {
 
       // Fetch the performer's battle rank
       const rankInfo = await getPerformerBattleRank(performerId);
+      // Abort if user navigated away during the fetch
+      if (navVersion !== navigationVersion) return;
       if (!rankInfo) {
         console.log("[HotOrNot] Could not fetch battle rank for performer");
         return;
@@ -5074,8 +5083,13 @@ function addFloatingButton() {
     // This ensures filters are always up-to-date when users navigate or change filters
     if (typeof PluginApi !== 'undefined' && PluginApi.Event && PluginApi.Event.addEventListener) {
       PluginApi.Event.addEventListener("stash:location", (e) => {
+        // Increment navigation version to invalidate any in-flight async work
+        navigationVersion++;
+        // Cancel any pending debounced processing from the previous page
+        clearTimeout(starRatingProcessingTimeout);
+
         console.log("[HotOrNot] Page changed:", e.detail.data.location.pathname);
-        
+
         const path = e.detail.data.location.pathname;
 
         // Invalidate plugin config cache when navigating away from Settings,
@@ -5605,6 +5619,9 @@ function addFloatingButton() {
    * Process all performer cards on the page for star rating widgets
    */
   async function processPerformerCardsForRating() {
+    // Capture navigation version to detect stale work after awaits
+    const navVersion = navigationVersion;
+
     // Various selectors for performer cards in Stash UI
     const cardSelectors = [
       ".performer-card",
@@ -5654,7 +5671,8 @@ function addFloatingButton() {
     try {
       // Fetch all ratings in a single batch query
       const ratings = await getMultiplePerformerRatingsForWidget(performerIds);
-      
+      // Abort if user navigated away during the fetch
+      if (navVersion !== navigationVersion) return;
       // Inject widgets for each card in parallel
       const widgetPromises = Array.from(cardIdMap.entries()).map(([performerId, card]) => {
         const rating = ratings.get(performerId);
@@ -5734,6 +5752,12 @@ function addFloatingButton() {
     // Listen for Stash navigation events if PluginApi is available
     if (typeof PluginApi !== "undefined" && PluginApi.Event && PluginApi.Event.addEventListener) {
       PluginApi.Event.addEventListener("stash:location", () => {
+        // Increment navigation version (also done in main handler, but
+        // kept here defensively in case handler registration order changes)
+        navigationVersion++;
+        // Clear any pending star-rating debounce from the previous page
+        clearTimeout(starRatingProcessingTimeout);
+
         if (isPerformersListPage()) {
           // Delay to allow UI to render
           setTimeout(() => {

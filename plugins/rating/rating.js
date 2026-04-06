@@ -1,6 +1,10 @@
 (function () {
   "use strict";
 
+  // Navigation version counter — incremented on every page change.
+  // Async functions capture this before awaiting and abort if it changed.
+  let navigationVersion = 0;
+
   // ============================================
   // RATINGS CACHE
   // ============================================
@@ -598,6 +602,9 @@
    * Process all performer cards on the page
    */
   async function processPerformerCards() {
+    // Capture navigation version to detect stale work after awaits
+    const navVersion = navigationVersion;
+
     // Various selectors for performer cards in Stash UI
     const cardSelectors = [
       ".performer-card",
@@ -647,7 +654,8 @@
     try {
       // Fetch all ratings in a single batch query
       const ratings = await getMultiplePerformerRatings(performerIds);
-      
+      // Abort if user navigated away during the fetch
+      if (navVersion !== navigationVersion) return;
       // Inject widgets for each card in parallel
       const widgetPromises = Array.from(cardIdMap.entries()).map(([performerId, card]) => {
         const rating = ratings.get(performerId);
@@ -731,6 +739,11 @@
     // Listen for Stash navigation events if PluginApi is available
     if (typeof PluginApi !== "undefined" && PluginApi.Event && PluginApi.Event.addEventListener) {
       PluginApi.Event.addEventListener("stash:location", (e) => {
+        // Increment navigation version to invalidate any in-flight async work
+        navigationVersion++;
+        // Cancel any pending debounced processing from the previous page
+        clearTimeout(processingTimeout);
+
         console.log("[PerformerRating] Page changed:", e.detail.data.location.pathname);
         
         if (isPerformersPage()) {

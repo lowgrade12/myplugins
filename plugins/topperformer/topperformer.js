@@ -6,6 +6,10 @@
   // Displays the performer with the highest number of appearances for a studio
   // ============================================
 
+  // Navigation version counter — incremented on every page change.
+  // Async functions capture this before awaiting and abort if it changed.
+  let navigationVersion = 0;
+
   // Cache for top performers to avoid repeated API calls
   // Map<studioId, { performerName: string, sceneCount: number, timestamp: number }>
   const topPerformerCache = new Map();
@@ -344,6 +348,9 @@
    * Process all studio cards on the page
    */
   async function processStudioCards() {
+    // Capture navigation version to detect stale work after awaits
+    const navVersion = navigationVersion;
+
     // Various selectors for studio cards in Stash UI
     const cardSelectors = [
       ".studio-card",
@@ -393,7 +400,8 @@
     try {
       // Fetch top performers for all studios
       const topPerformers = await getTopPerformersForStudios(studioIds);
-
+      // Abort if user navigated away during the fetch
+      if (navVersion !== navigationVersion) return;
       // Inject widgets for each card
       for (const [studioId, card] of cardIdMap.entries()) {
         const topPerformer = topPerformers.get(studioId);
@@ -476,6 +484,11 @@
     // Listen for Stash navigation events if PluginApi is available
     if (typeof PluginApi !== "undefined" && PluginApi.Event && PluginApi.Event.addEventListener) {
       PluginApi.Event.addEventListener("stash:location", (e) => {
+        // Increment navigation version to invalidate any in-flight async work
+        navigationVersion++;
+        // Cancel any pending debounced processing from the previous page
+        clearTimeout(processingTimeout);
+
         console.log("[TopPerformer] Page changed:", e.detail.data.location.pathname);
 
         if (shouldProcessStudios()) {
