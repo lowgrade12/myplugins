@@ -2813,7 +2813,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       `;
       paginationEl.querySelectorAll(".hon-image-page-link").forEach((link) => {
         link.addEventListener("click", () => {
-          renderPage(parseInt(link.dataset.page));
+          renderPage(parseInt(link.dataset.page, 10));
         });
       });
     }
