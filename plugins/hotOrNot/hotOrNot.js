@@ -2613,6 +2613,391 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
   }
 
+  // ============================================
+  // RIGHT-CLICK CONTEXT MENU (Change Performer Image)
+  // ============================================
+
+  let honContextMenu = null; // Track the currently open context menu
+
+  /**
+   * Fetch a performer's stash_ids to look up their StashDB/TPDB identifiers.
+   * @param {string} performerId - Local performer ID
+   * @returns {Promise<Array>} Array of { endpoint, stash_id }
+   */
+  async function fetchPerformerStashIds(performerId) {
+    const query = `
+      query FindPerformerStashIds($id: ID!) {
+        findPerformer(id: $id) {
+          stash_ids {
+            endpoint
+            stash_id
+          }
+        }
+      }
+    `;
+    const result = await graphqlQuery(query, { id: performerId });
+    return (result && result.findPerformer && result.findPerformer.stash_ids) || [];
+  }
+
+  /**
+   * Fetch performer images from a StashDB-compatible endpoint.
+   * @param {string} endpoint - The stash-box endpoint URL
+   * @param {string} stashId - The performer's stash_id on that endpoint
+   * @returns {Promise<Array>} Array of { url, width, height }
+   */
+  async function fetchStashBoxPerformerImages(endpoint, stashId) {
+    const query = `
+      query FindPerformer($id: ID!) {
+        findPerformer(id: $id) {
+          images {
+            url
+            width
+            height
+          }
+        }
+      }
+    `;
+    try {
+      // Fetch the API key for this endpoint from Stash configuration
+      const configResult = await graphqlQuery(`
+        query Configuration {
+          configuration {
+            general {
+              stashBoxes {
+                endpoint
+                api_key
+              }
+            }
+          }
+        }
+      `);
+      const stashBoxes = (configResult && configResult.configuration &&
+        configResult.configuration.general && configResult.configuration.general.stashBoxes) || [];
+      const box = stashBoxes.find((b) => b.endpoint === endpoint);
+      const apiKey = box ? box.api_key : "";
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ApiKey": apiKey,
+        },
+        body: JSON.stringify({ query, variables: { id: stashId } }),
+      });
+      if (!response.ok) {
+        throw new Error(`StashBox request failed: ${response.status}`);
+      }
+      const json = await response.json();
+      if (json.data && json.data.findPerformer && json.data.findPerformer.images) {
+        return json.data.findPerformer.images;
+      }
+      return [];
+    } catch (err) {
+      console.error("[HotOrNot] Error fetching stash-box images:", err);
+      return [];
+    }
+  }
+
+  /**
+   * Update a performer's profile image via GraphQL mutation.
+   * @param {string} performerId - The performer's ID
+   * @param {string} imageUrl - The URL of the new image
+   * @returns {Promise<boolean>} Whether the update succeeded
+   */
+  async function updatePerformerProfileImage(performerId, imageUrl) {
+    const mutation = `
+      mutation PerformerUpdateImage($id: ID!, $image: String!) {
+        performerUpdate(input: { id: $id, image: $image }) {
+          id
+          image_path
+        }
+      }
+    `;
+    try {
+      const result = await graphqlQuery(mutation, { id: performerId, image: imageUrl });
+      return !!(result && result.performerUpdate);
+    } catch (err) {
+      console.error("[HotOrNot] Error updating performer image:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Update the performer image in the battle card DOM after a successful image change.
+   * @param {string} performerId - The performer's ID
+   * @param {string} newImageUrl - The new image URL
+   */
+  function updateBattleCardImage(performerId, newImageUrl) {
+    const card = document.querySelector(`.hon-scene-card[data-performer-id="${performerId}"]`);
+    if (!card) return;
+    const img = card.querySelector(".hon-performer-image");
+    if (img && img.tagName === "IMG") {
+      img.src = newImageUrl;
+    }
+    // Also update currentPair so if undo is used, the new image is shown
+    if (currentPair.left && currentPair.left.id === performerId) {
+      currentPair.left.image_path = newImageUrl;
+    }
+    if (currentPair.right && currentPair.right.id === performerId) {
+      currentPair.right.image_path = newImageUrl;
+    }
+  }
+
+  /**
+   * Create and show the image selection modal for a performer.
+   * @param {Array} images - Array of { url, width, height }
+   * @param {string} performerId - The performer's local ID
+   * @param {string} performerName - The performer's name
+   * @param {string} sourceName - Label for the source (e.g., "StashDB")
+   */
+  function showImageSelectionModal(images, performerId, performerName, sourceName) {
+    // Remove any existing modal
+    const existing = document.getElementById("hon-image-select-modal");
+    if (existing) existing.remove();
+
+    const IMAGES_PER_PAGE = 40;
+    let currentPage = 1;
+    const totalPages = Math.ceil(images.length / IMAGES_PER_PAGE);
+
+    const modal = document.createElement("div");
+    modal.id = "hon-image-select-modal";
+    modal.className = "hon-image-select-modal";
+    modal.innerHTML = `
+      <div class="hon-image-select-backdrop"></div>
+      <div class="hon-image-select-dialog">
+        <button class="hon-modal-close hon-image-select-close">✕</button>
+        <h2 class="hon-image-select-title">${escapeHtml(sourceName)} Images</h2>
+        <h3 class="hon-image-select-subtitle">${escapeHtml(performerName)}</h3>
+        <div id="hon-image-gallery" class="hon-image-gallery"></div>
+        <div id="hon-image-pagination" class="hon-image-pagination"></div>
+        <button id="hon-image-apply" class="btn btn-primary hon-image-apply-btn" disabled>Apply Selected Image</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    let selectedUrl = null;
+
+    function renderPage(page) {
+      currentPage = page;
+      const start = (page - 1) * IMAGES_PER_PAGE;
+      const end = start + IMAGES_PER_PAGE;
+      const pageImages = images.slice(start, end);
+
+      const gallery = document.getElementById("hon-image-gallery");
+      gallery.innerHTML = pageImages.map((img) => `
+        <div class="hon-image-option-wrapper">
+          <img src="${escapeHtml(img.url)}" class="hon-image-option" data-url="${escapeHtml(img.url)}" alt="Performer image" loading="lazy" />
+          ${img.width && img.height ? `<div class="hon-image-dimensions">${img.width} × ${img.height}</div>` : ""}
+        </div>
+      `).join("");
+
+      gallery.querySelectorAll(".hon-image-option").forEach((imgEl) => {
+        imgEl.addEventListener("click", () => {
+          gallery.querySelectorAll(".hon-image-option").forEach((i) => i.classList.remove("hon-selected"));
+          imgEl.classList.add("hon-selected");
+          selectedUrl = imgEl.dataset.url;
+          document.getElementById("hon-image-apply").disabled = false;
+        });
+      });
+
+      // Pagination
+      const paginationEl = document.getElementById("hon-image-pagination");
+      if (totalPages <= 1) {
+        paginationEl.innerHTML = "";
+        return;
+      }
+      paginationEl.innerHTML = `
+        ${page > 1 ? `<span class="hon-image-page-link" data-page="${page - 1}">◀ Previous</span>` : ""}
+        <span class="hon-image-page-info">Page ${page} of ${totalPages}</span>
+        ${page < totalPages ? `<span class="hon-image-page-link" data-page="${page + 1}">Next ▶</span>` : ""}
+      `;
+      paginationEl.querySelectorAll(".hon-image-page-link").forEach((link) => {
+        link.addEventListener("click", () => {
+          renderPage(parseInt(link.dataset.page));
+        });
+      });
+    }
+
+    renderPage(1);
+
+    // Close handlers
+    const closeModal = () => modal.remove();
+    modal.querySelector(".hon-image-select-backdrop").addEventListener("click", closeModal);
+    modal.querySelector(".hon-image-select-close").addEventListener("click", closeModal);
+
+    // Apply handler
+    document.getElementById("hon-image-apply").addEventListener("click", async () => {
+      if (!selectedUrl) return;
+      const applyBtn = document.getElementById("hon-image-apply");
+      applyBtn.disabled = true;
+      applyBtn.textContent = "Applying...";
+
+      const success = await updatePerformerProfileImage(performerId, selectedUrl);
+      if (success) {
+        updateBattleCardImage(performerId, selectedUrl);
+        console.log(`[HotOrNot] Successfully updated image for performer ${performerId}`);
+      } else {
+        console.error(`[HotOrNot] Failed to update image for performer ${performerId}`);
+      }
+      closeModal();
+    });
+  }
+
+  /**
+   * Show the right-click context menu for a performer during battles.
+   * @param {MouseEvent} event - The contextmenu event
+   * @param {string} performerId - The performer's local ID
+   */
+  async function showPerformerContextMenu(event, performerId) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Remove existing context menu
+    if (honContextMenu) {
+      honContextMenu.remove();
+      honContextMenu = null;
+    }
+
+    // Look up performer name from current pair
+    let performerName = `Performer #${performerId}`;
+    if (currentPair.left && currentPair.left.id === performerId) {
+      performerName = currentPair.left.name || performerName;
+    } else if (currentPair.right && currentPair.right.id === performerId) {
+      performerName = currentPair.right.name || performerName;
+    }
+
+    const menu = document.createElement("div");
+    menu.id = "hon-context-menu";
+    menu.className = "hon-context-menu";
+    menu.innerHTML = `<div class="hon-context-menu-header">${escapeHtml(performerName)}</div>`;
+
+    // Loading indicator while we fetch stash_ids
+    const loadingItem = document.createElement("div");
+    loadingItem.className = "hon-context-menu-item hon-context-loading";
+    loadingItem.textContent = "Loading sources…";
+    menu.appendChild(loadingItem);
+
+    // Position the menu
+    menu.style.top = `${event.clientY}px`;
+    menu.style.left = `${event.clientX}px`;
+    document.body.appendChild(menu);
+    honContextMenu = menu;
+
+    // Ensure the menu stays within the viewport
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+      menu.style.left = `${window.innerWidth - rect.width - 8}px`;
+    }
+    if (rect.bottom > window.innerHeight) {
+      menu.style.top = `${window.innerHeight - rect.height - 8}px`;
+    }
+
+    // Close on click outside
+    const handleClickOutside = (e) => {
+      if (menu && !menu.contains(e.target)) {
+        menu.remove();
+        honContextMenu = null;
+        document.removeEventListener("click", handleClickOutside);
+      }
+    };
+    // Defer so the current event doesn't immediately close it
+    setTimeout(() => document.addEventListener("click", handleClickOutside), 0);
+
+    // Fetch stash_ids
+    try {
+      const stashIds = await fetchPerformerStashIds(performerId);
+
+      // Remove loading indicator
+      loadingItem.remove();
+
+      if (stashIds.length === 0) {
+        const noSource = document.createElement("div");
+        noSource.className = "hon-context-menu-item hon-context-disabled";
+        noSource.textContent = "No stash-box links found";
+        menu.appendChild(noSource);
+      } else {
+        // Known stash-box endpoints with friendly names
+        const endpointNames = {
+          "https://stashdb.org/graphql": "StashDB",
+          "https://theporndb.net/graphql": "TPDB",
+          "https://fansdb.cc/graphql": "FansDB",
+          "https://fansdb.xyz/graphql": "FansDB",
+        };
+
+        stashIds.forEach((entry) => {
+          let sourceName;
+          try {
+            sourceName = endpointNames[entry.endpoint] || new URL(entry.endpoint).hostname;
+          } catch (_) {
+            sourceName = entry.endpoint;
+          }
+          const item = document.createElement("div");
+          item.className = "hon-context-menu-item";
+          item.textContent = `Change Image from ${sourceName}…`;
+          item.addEventListener("click", async () => {
+            menu.remove();
+            honContextMenu = null;
+            document.removeEventListener("click", handleClickOutside);
+
+            const images = await fetchStashBoxPerformerImages(entry.endpoint, entry.stash_id);
+            if (images.length > 0) {
+              showImageSelectionModal(images, performerId, performerName, sourceName);
+            } else {
+              console.warn(`[HotOrNot] No images found on ${sourceName} for performer ${performerId}`);
+            }
+          });
+          menu.appendChild(item);
+        });
+      }
+
+      // Always add "Open Performer Page" link
+      const openLink = document.createElement("div");
+      openLink.className = "hon-context-menu-item hon-context-menu-separator";
+      openLink.textContent = "Open Performer Page";
+      openLink.addEventListener("click", () => {
+        window.open(`/performers/${performerId}`, "_blank");
+        menu.remove();
+        honContextMenu = null;
+        document.removeEventListener("click", handleClickOutside);
+      });
+      menu.appendChild(openLink);
+
+      // Reposition after content loads
+      const newRect = menu.getBoundingClientRect();
+      if (newRect.right > window.innerWidth) {
+        menu.style.left = `${window.innerWidth - newRect.width - 8}px`;
+      }
+      if (newRect.bottom > window.innerHeight) {
+        menu.style.top = `${window.innerHeight - newRect.height - 8}px`;
+      }
+    } catch (err) {
+      console.error("[HotOrNot] Error building context menu:", err);
+      loadingItem.textContent = "Error loading sources";
+      loadingItem.classList.add("hon-context-disabled");
+    }
+  }
+
+  /**
+   * Attach right-click context menu to performer image containers within a given root element.
+   * Only activates for performer battles (not image battles).
+   * @param {HTMLElement} root - The root element to search for image containers
+   */
+  function attachPerformerContextMenus(root) {
+    if (battleType !== "performers") return;
+    root.querySelectorAll(".hon-performer-image-container").forEach((container) => {
+      const performerUrl = container.dataset.performerUrl;
+      if (!performerUrl) return;
+      // Extract performer ID from URL like "/performers/123"
+      const match = performerUrl.match(/\/performers\/(\d+)/);
+      if (!match) return;
+      const performerId = match[1];
+
+      container.addEventListener("contextmenu", (event) => {
+        showPerformerContextMenu(event, performerId);
+      });
+    });
+  }
+
   // UI COMPONENTS
   // ============================================
 
@@ -3978,6 +4363,9 @@ async function fetchPerformerCount(performerFilter = {}) {
         });
       });
 
+      // Attach right-click context menu for performer image changes
+      attachPerformerContextMenus(comparisonArea);
+
       // Attach hover preview to entire card
       comparisonArea.querySelectorAll(".hon-scene-card").forEach((card) => {
         const video = card.querySelector(".hon-hover-preview");
@@ -4182,6 +4570,9 @@ async function fetchPerformerCount(performerFilter = {}) {
             if (itemUrl) window.open(itemUrl, "_blank");
           });
         });
+
+        // Attach right-click context menu for performer image changes
+        attachPerformerContextMenus(comparisonArea);
       }
 
       // Update mode toggle button states

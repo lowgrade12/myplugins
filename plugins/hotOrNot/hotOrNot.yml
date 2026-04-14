@@ -7,6 +7,12 @@ ui:
     - hotOrNot.js
   css:
     - hotOrNot.css
+  csp:
+    connect-src:
+      - https://stashdb.org/graphql
+      - https://theporndb.net/graphql
+      - https://fansdb.cc/graphql
+      - https://fansdb.xyz/graphql
 settings:
   showBattleRankBadge:
     displayName: Show Battle Rank Badge
