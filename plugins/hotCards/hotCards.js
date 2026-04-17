@@ -272,6 +272,10 @@ function findMatchingValueSegment(
     return null;
   }
 
+  // Detect whether thresholds use the 10-point decimal scale (0-10)
+  // or the 5-star scale (1-5) by checking all value segments at once.
+  const useDecimalScale = isCriterionRatingOrEmpty && detectDecimalRatingScale(value);
+
   for (let i = 0; i < value.length; i++) {
     const segment = value[i];
     const valueNotSet = segment.length === 0;
@@ -281,7 +285,7 @@ function findMatchingValueSegment(
       (isCriterionTagOrEmpty &&
         matchesTagCriterion(tags, segmentOrValue, valueNotSet)) ||
       (isCriterionRatingOrEmpty &&
-        matchesRatingCriterion(rating, segmentOrValue, valueNotSet))
+        matchesRatingCriterion(rating, segmentOrValue, valueNotSet, useDecimalScale))
     ) {
       const v = segmentOrValue || [""];
       const s = style[i] || style[0];
@@ -294,6 +298,32 @@ function findMatchingValueSegment(
   return null;
 }
 
+/**
+ * Detects whether the rating thresholds use the 10-point decimal scale (0-10)
+ * rather than the 5-star scale (1-5).
+ * Returns true if any threshold value is > 5 or has a non-zero decimal part,
+ * which indicates the decimal rating system.
+ * @param {Array} values - The full array of value segments from the card config
+ * @returns {boolean}
+ */
+function detectDecimalRatingScale(values) {
+  // Check the global threshold
+  const globalThreshold = CONFIG.ratingThreshold;
+  if (globalThreshold > 5 || (globalThreshold !== 0 && globalThreshold % 1 !== 0)) {
+    return true;
+  }
+
+  // Check all per-card value segments
+  for (const segment of values) {
+    const items = Array.isArray(segment) ? segment : [segment];
+    for (const item of items) {
+      const num = parseFloat(item);
+      if (!isNaN(num) && (num > 5 || num % 1 !== 0)) return true;
+    }
+  }
+  return false;
+}
+
 function matchesTagCriterion(tags, valueSegment, valueNotSet) {
   if (!tags) return false;
 
@@ -303,17 +333,19 @@ function matchesTagCriterion(tags, valueSegment, valueNotSet) {
   );
 }
 
-function matchesRatingCriterion(rating, valueSegment, valueNotSet) {
+function matchesRatingCriterion(rating, valueSegment, valueNotSet, useDecimalScale) {
   if (!rating) return false;
 
-  const isStarsRatingSystem = CONFIG.ratingThreshold <= 5;
-  const parsedRating = isStarsRatingSystem ? rating / 20 : rating;
+  // Convert rating100 to the user-facing scale:
+  // - 10-point decimal system (0.1-10.0): rating100 / 10
+  // - 5-star system (1-5): rating100 / 20
+  const parsedRating = useDecimalScale ? rating / 10 : rating / 20;
   const ratingThresholds = valueNotSet
     ? [CONFIG.ratingThreshold]
     : valueSegment;
   return ratingThresholds.length > 1
-    ? ratingThresholds.includes(parsedRating.toString())
-    : parsedRating >= ratingThresholds[0];
+    ? ratingThresholds.some((t) => parseFloat(t) === parsedRating)
+    : parsedRating >= parseFloat(ratingThresholds[0]);
 }
 
 function createHotElementAndAttachToDOM(
