@@ -110,7 +110,7 @@
   async function setConfiguration() {
     const settings = await getUserSettings();
     const { tagId, threshold } = settings;
-    const ratingThreshold = parseInt(threshold ?? 0);
+    const ratingThreshold = parseFloat(threshold ?? 0) || 0;
     const isTagBased = tagId?.length;
     const isRatingBased = ratingThreshold !== 0;
 
