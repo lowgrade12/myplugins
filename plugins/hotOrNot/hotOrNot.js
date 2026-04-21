@@ -41,6 +41,8 @@
   let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
   let previousBattle = null; // Stores pre-battle state for undo functionality
   let pluginConfigCache = null; // Cached plugin configuration from Stash settings
+  let hotCardsConfigCache = null; // Cached hotCards plugin configuration (used for tier rankings)
+  let tierConfigCache = undefined; // undefined = not yet loaded; null = no valid tier config
   let apolloFailed = false; // Track whether Apollo client has failed (skip after first failure to reduce noise)
   let navigationVersion = 0; // Incremented on every page navigation; used to abort stale async work
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
@@ -115,10 +117,13 @@
           }
         }
       `);
-      pluginConfigCache = (result.configuration.plugins || {})["hotOrNot"] || {};
+      const plugins = result.configuration.plugins || {};
+      pluginConfigCache = plugins["hotOrNot"] || {};
+      hotCardsConfigCache = plugins["hotCards"] || {};
     } catch (e) {
       console.error("[HotOrNot] Failed to fetch plugin config:", e);
       pluginConfigCache = {};
+      hotCardsConfigCache = {};
     }
     return pluginConfigCache;
   }
@@ -145,7 +150,94 @@
     return config.showStarRatingWidget !== false;
   }
 
-  // GraphQL filter modifier constants
+  // ============================================
+  // TIER RANKINGS (reads from hotCards performers setting)
+  // ============================================
+
+  // Named style → border color/glow mappings (mirrors hotCards preset colours)
+  const TIER_NAMED_STYLES = {
+    gold:    { color: "#d4af37", glow: "rgba(212,175,55,0.55)",   animated: true,  label: "🥇" },
+    hot:     { color: "#e03535", glow: "rgba(224,53,53,0.55)",    animated: true,  label: "🔥" },
+    default: { color: "#7e77ff", glow: "rgba(126,119,255,0.50)",  animated: true,  label: "⭐" },
+    silver:  { color: "#c0c0c0", glow: "rgba(192,192,192,0.45)",  animated: false, label: "🥈" },
+    bronze:  { color: "#cd7f32", glow: "rgba(205,127,50,0.45)",   animated: false, label: "🥉" },
+    holo:    { color: "#fbe1f6", glow: "rgba(251,225,246,0.55)",  animated: true,  label: "✨" },
+  };
+
+  /**
+   * Parse the hotCards performers tier string into a usable config.
+   * Format: r_10/8.5/7/5.5/4/2.5/0_gold/hot/default/#7f1e82/#14bbe0/#92e014/#808080
+   * @param {string} configString
+   * @returns {{tiers: Array, useDecimalScale: boolean}|null}
+   */
+  function parseTierConfig(configString) {
+    if (!configString || typeof configString !== "string") return null;
+    const parts = configString.split("_");
+    if (parts.length < 3) return null;
+    if (parts[0].trim().toLowerCase() !== "r") return null; // Only rating criterion supported
+
+    const values = parts[1].split("/").map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+    const styles = parts[2].split("/").map(s => s.trim());
+    if (values.length === 0) return null;
+
+    // Detect scale: decimal (0-10) if any threshold > 5 or has a non-zero decimal part
+    const useDecimalScale = values.some(v => v > 5 || (v !== 0 && v % 1 !== 0));
+
+    // Build tier array; values are expected highest-first
+    const tiers = values.map((threshold, i) => ({
+      threshold,
+      style: styles[i] || styles[styles.length - 1] || "",
+      index: i, // 0 = best/highest tier
+    }));
+
+    return { tiers, useDecimalScale };
+  }
+
+  /**
+   * Load and cache the tier config from the hotCards performers setting.
+   * @returns {Promise<{tiers: Array, useDecimalScale: boolean}|null>}
+   */
+  async function getTierConfig() {
+    if (tierConfigCache !== undefined) return tierConfigCache;
+    await getHotOrNotConfig(); // populates hotCardsConfigCache as a side-effect
+    tierConfigCache = parseTierConfig((hotCardsConfigCache || {}).performers || "");
+    return tierConfigCache;
+  }
+
+  /**
+   * Return the matching tier for a given rating100 value (sync — requires getTierConfig() pre-loaded).
+   * @param {number} rating100
+   * @returns {{threshold: number, style: string, index: number}|null}
+   */
+  function getPerformerTier(rating100) {
+    if (!tierConfigCache || !tierConfigCache.tiers) return null;
+    const { tiers, useDecimalScale } = tierConfigCache;
+    const ratingValue = useDecimalScale ? rating100 / 10 : rating100 / 20;
+    for (const tier of tiers) {
+      if (ratingValue >= tier.threshold) return tier;
+    }
+    return null;
+  }
+
+  /**
+   * Return border colour/glow info for a tier object.
+   * @param {{style: string, index: number}|null} tier
+   * @returns {{color: string, glow: string, animated: boolean, label: string}|null}
+   */
+  function getTierBorderInfo(tier) {
+    if (!tier) return null;
+    const named = TIER_NAMED_STYLES[tier.style.toLowerCase()];
+    if (named) return { ...named };
+    // Hex colour: derive glow with alpha
+    const color = tier.style;
+    if (!/^#[0-9a-fA-F]{3,8}$/.test(color)) return null;
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return { color, glow: `rgba(${r},${g},${b},0.5)`, animated: false, label: "" };
+  }
+
+
   // Array-based modifiers require value_list field for enum-based criterion inputs
   // (e.g., GenderCriterionInput uses value_list for INCLUDES/EXCLUDES).
   // HierarchicalMultiCriterionInput types (tags, studios) always use 'value' field regardless of modifier.
@@ -3073,8 +3165,21 @@ async function fetchPerformerCount(performerFilter = {}) {
       tournamentBadgeDisplay = `<div class="hon-tournament-wins-badge">🏆 ${tournamentWins}x champion</div>`;
     }
 
+    // Tier border & badge (reads cached hotCards performers config — no extra GraphQL needed)
+    const tier = getPerformerTier(performer.rating100 || 50);
+    const tierInfo = getTierBorderInfo(tier);
+    const tierClasses = tierInfo
+      ? ` hon-tier-border${tierInfo.animated ? " hon-tier-animated" : ""}`
+      : "";
+    const tierStyleAttr = tierInfo
+      ? ` style="--hon-tier-color:${tierInfo.color};--hon-tier-glow:${tierInfo.glow};"`
+      : "";
+    const tierBadge = tierInfo && tierInfo.label
+      ? `<div class="hon-tier-badge" style="background-color:${tierInfo.color};box-shadow:0 0 8px ${tierInfo.glow};">${tierInfo.label}</div>`
+      : "";
+
     return `
-      <div class="hon-performer-card hon-scene-card" data-performer-id="${performer.id}" data-side="${side}" data-rating="${Math.max(1, Math.min(100, performer.rating100 || 50))}">
+      <div class="hon-performer-card hon-scene-card${tierClasses}" data-performer-id="${performer.id}" data-side="${side}" data-rating="${Math.max(1, Math.min(100, performer.rating100 || 50))}"${tierStyleAttr}>
         <div class="hon-performer-image-container hon-scene-image-container" data-performer-url="/performers/${performer.id}">
           ${imagePath 
             ? `<img class="hon-performer-image hon-scene-image" src="${imagePath}" alt="${name}" loading="lazy" />`
@@ -3082,6 +3187,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           }
           ${streakBadgeDisplay}
           ${tournamentBadgeDisplay}
+          ${tierBadge}
           <div class="hon-click-hint">Click to open performer</div>
         </div>
         
@@ -4255,6 +4361,8 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   async function loadNewPair(retryCount = 0) {
     disableChoice = false;
+    // Ensure tier config is loaded before rendering cards (cheap — cached after first call)
+    await getTierConfig();
     const comparisonArea = document.getElementById("hon-comparison-area");
     if (!comparisonArea) return;
 
@@ -4637,9 +4745,49 @@ async function fetchPerformerCount(performerFilter = {}) {
       showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
     }
 
+    // Show tier-up animation if the winner crosses into a better tier
+    if (battleType === "performers") {
+      checkAndShowTierUp(winnerCard, winnerRating, newWinnerRating);
+    }
+
     setTimeout(() => {
       loadNewPair();
     }, 1500);
+  }
+
+  /**
+   * Detect whether a performer moved into a higher tier and, if so, show the tier-up overlay.
+   * @param {HTMLElement} card - The winning card element
+   * @param {number} oldRating - Rating before the battle
+   * @param {number} newRating - Rating after the battle
+   */
+  function checkAndShowTierUp(card, oldRating, newRating) {
+    if (!tierConfigCache) return;
+    const oldTier = getPerformerTier(oldRating);
+    const newTier = getPerformerTier(newRating);
+    // A lower index means a better tier (index 0 = highest)
+    if (newTier && (!oldTier || newTier.index < oldTier.index)) {
+      const tierInfo = getTierBorderInfo(newTier);
+      if (tierInfo) showTierUpAnimation(card, tierInfo);
+    }
+  }
+
+  /**
+   * Show an animated "TIER UP!" overlay on the winning card.
+   * @param {HTMLElement} card - Card element to overlay
+   * @param {{color: string, glow: string, label: string}} tierInfo - The new tier's visual info
+   */
+  function showTierUpAnimation(card, tierInfo) {
+    const overlay = document.createElement("div");
+    overlay.className = "hon-tier-up-overlay";
+    overlay.style.setProperty("--hon-tier-up-color", tierInfo.color);
+    overlay.style.setProperty("--hon-tier-up-glow", tierInfo.glow);
+    overlay.innerHTML = `
+      ${tierInfo.label ? `<div class="hon-tier-up-icon">${tierInfo.label}</div>` : ""}
+      <div class="hon-tier-up-text">TIER UP!</div>
+    `;
+    card.appendChild(overlay);
+    setTimeout(() => overlay.remove(), 1800);
   }
 
   async function handleChooseItem(event) {
@@ -4787,6 +4935,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         if (loserCard) loserCard.classList.add("hon-loser");
         showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
         if (loserCard) showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
+        checkAndShowTierUp(winnerCard, winnerRating, newWinnerRating);
 
         setTimeout(() => {
           showKothDethroned(oldKing, kothKing, oldStreak);
