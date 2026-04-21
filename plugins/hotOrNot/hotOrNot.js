@@ -4813,10 +4813,16 @@ async function fetchPerformerCount(performerFilter = {}) {
       overlay.style.setProperty("--hon-tier-down-color", tierInfo.color);
       overlay.style.setProperty("--hon-tier-down-glow", tierInfo.glow);
     }
-    overlay.innerHTML = `
-      ${tierInfo && tierInfo.label ? `<div class="hon-tier-down-grade">${tierInfo.label}</div>` : ""}
-      <div class="hon-tier-down-text">TIER DOWN</div>
-    `;
+    if (tierInfo && tierInfo.label) {
+      const grade = document.createElement("div");
+      grade.className = "hon-tier-down-grade";
+      grade.textContent = tierInfo.label;
+      overlay.appendChild(grade);
+    }
+    const text = document.createElement("div");
+    text.className = "hon-tier-down-text";
+    text.textContent = "TIER DOWN";
+    overlay.appendChild(text);
     card.appendChild(overlay);
     setTimeout(() => overlay.remove(), 1800);
   }
