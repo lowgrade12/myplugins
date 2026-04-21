@@ -1469,37 +1469,24 @@
   }
 
   /**
-   * Apply diminishing returns for rating gains at higher ratings.
-   * Makes it progressively harder to reach 100 - the closer you are to 100,
-   * the less points you gain from a win.
+   * Apply a soft ceiling to rating gains in the top 15 points (ratings 85–100).
+   * Full gain below rating 85; linear taper to a 15% minimum at rating 100.
+   * ELO's expected-score formula already resists runaway gains in the mid range,
+   * so dampening is only applied where it actually matters.
+   * At rating 90: ~67% of base gain
+   * At rating 95: ~33% of base gain
+   * At rating 99: 15% of base gain (floor)
    * @param {number} currentRating - Current rating (1-100)
    * @param {number} baseGain - Base rating gain calculated from ELO formula
-   * @returns {number} Adjusted gain with diminishing returns applied
+   * @returns {number} Adjusted gain with soft ceiling applied
    */
-  function applyDiminishingReturns(currentRating, baseGain) {
+  function applySoftCeiling(currentRating, baseGain) {
     if (baseGain <= 0) return baseGain;
-    
-    // Calculate how close we are to the ceiling (100)
-    // The multiplier decreases as we approach 100
-    // At rating 50: multiplier = 1.0 (full gain)
-    // At rating 75: multiplier = 0.25
-    // At rating 90: multiplier = 0.04
-    // At rating 95: multiplier = 0.01
-    const distanceFromCeiling = 100 - currentRating;
-    
-    // Use a quadratic curve for smooth diminishing returns
-    // Formula: multiplier = (distance / 50)^2, clamped between 0 and 1
-    // This creates a smooth curve that gets progressively steeper near 100
-    const multiplier = Math.min(1, Math.pow(distanceFromCeiling / 50, 2));
-    
-    // Ensure at least 1 point can be gained if baseGain > 0 and not at the absolute ceiling
-    const adjustedGain = Math.round(baseGain * multiplier);
-    
-    // At rating 100, no more gains possible
     if (currentRating >= 100) return 0;
-    
-    // Otherwise ensure at least 1 point gain when baseGain > 0
-    return Math.max(1, adjustedGain);
+
+    // Full gain below the ceiling zone; linear taper inside it
+    const ceilingFactor = currentRating < 85 ? 1.0 : Math.max(0.15, (100 - currentRating) / 15);
+    return Math.max(1, Math.round(baseGain * ceilingFactor));
   }
 
   async function handleComparison(winnerId, loserId, winnerCurrentRating, loserCurrentRating, loserRank = null, winnerObj = null, loserObj = null) {
@@ -1562,7 +1549,7 @@
     // Calibration mode uses asymmetric rating changes:
     // Winners rise aggressively toward the defeated performer's level,
     // while losers are cushioned to prevent dropping lower than they deserve.
-    // Swiss/tournament mode stays zero-sum with diminishing returns.
+    // Swiss/tournament mode is zero-sum with a soft ceiling above rating 85.
     let winnerGain, loserLoss;
     if (currentMode === "calibration") {
       if (baseChange <= 0) {
@@ -1578,7 +1565,7 @@
         loserLoss = Math.max(1, Math.round(baseChange * 0.4));
       }
     } else {
-      winnerGain = applyDiminishingReturns(winnerRating, baseChange);
+      winnerGain = applySoftCeiling(winnerRating, baseChange);
       loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
     }
     
