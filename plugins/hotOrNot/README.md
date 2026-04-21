@@ -101,6 +101,7 @@ Respects the current page's filter criteria when launched from a filtered perfor
 - **Performer Gauntlet** launch from performer page to start Gauntlet with that performer
 - **Battle rank badge** on individual performer pages showing their rank position (e.g., "#5 of 100")
 - **Star rating widget** on performer cards in the grid view for quick inline rating
+- **Battle card tier pills** on HotOrNot matchup cards, with tier-change feedback after each vote
 - **Side-by-side comparison** with performer images and metadata
 - **Visual feedback** showing rating changes after each choice
 - **Keyboard shortcuts**: Left Arrow (choose left), Right Arrow (choose right), Space (skip), Escape (close)
@@ -123,6 +124,16 @@ When viewing a single performer's page, a badge displays their battle rank:
 - Tier-based styling: 👑 Legendary (top 5%), 🥇 Gold (top 20%), 🥈 Silver (top 40%), 🥉 Bronze (top 60%), 🔥 Default
 - Hover for tooltip showing exact rating
 - Toggle on/off via **Settings → Plugins → HotOrNot → Show Battle Rank Badge** (enabled by default)
+
+### Battle Card Tiers
+
+Battle cards can optionally show configurable rating tiers and highlight when a performer crosses into a new tier after a vote.
+
+- Setting: **Settings → Plugins → HotOrNot → Battle Card Tier Mapping**
+- Format: `r_<thresholds>_<tiers>`
+- Example: `r_10/8.5/7/0_gold/hot/default/#808080`
+- Threshold count must match tier count (each threshold maps to one tier token)
+- If counts do not match, HotOrNot falls back to default tier mapping and logs a console warning
 
 ## Installation
 

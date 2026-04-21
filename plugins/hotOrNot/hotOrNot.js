@@ -41,9 +41,17 @@
   let badgeInjectionInProgress = false; // Flag to prevent concurrent badge injections
   let previousBattle = null; // Stores pre-battle state for undo functionality
   let pluginConfigCache = null; // Cached plugin configuration from Stash settings
+  let battleCardTierConfig = null; // Parsed battle card tier mapping from plugin settings
   let apolloFailed = false; // Track whether Apollo client has failed (skip after first failure to reduce noise)
   let navigationVersion = 0; // Incremented on every page navigation; used to abort stale async work
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
+  const BATTLE_TIER_PRESET_COLORS = {
+    gold: "#f5c451",
+    hot: "#14bbe0",
+    default: "#808080",
+    low: "#6b7280"
+  };
+  const UNRATED_BATTLE_TIER = { threshold: -1, label: "unrated", color: "#6b7280" };
 
   /**
    * Reset calibration mode state.
@@ -143,6 +151,120 @@
     const config = await getHotOrNotConfig();
     // Default to true if the setting has never been changed
     return config.showStarRatingWidget !== false;
+  }
+
+  /**
+   * Default battle card tier config used when no custom mapping is configured.
+   * Uses 10-point scale thresholds derived from rating100/10.
+   * @returns {{tiers: Array<{threshold: number, label: string, color: string}>, useTenPointScale: boolean}}
+   */
+  function getDefaultBattleCardTierConfig() {
+    return {
+      useTenPointScale: true,
+      tiers: [
+        { threshold: 8.5, label: "gold", color: BATTLE_TIER_PRESET_COLORS.gold },
+        { threshold: 7, label: "hot", color: BATTLE_TIER_PRESET_COLORS.hot },
+        { threshold: 5.5, label: "default", color: BATTLE_TIER_PRESET_COLORS.default },
+        { threshold: 0, label: "low", color: BATTLE_TIER_PRESET_COLORS.low }
+      ]
+    };
+  }
+
+  /**
+   * Resolve a tier style token to a safe CSS color value.
+   * Supports known preset names and hex values.
+   * @param {string} token - Color/style token from config
+   * @returns {string} Safe CSS color
+   */
+  function resolveTierColor(token) {
+    const value = String(token || "").trim();
+    const lower = value.toLowerCase();
+
+    if (BATTLE_TIER_PRESET_COLORS[lower]) return BATTLE_TIER_PRESET_COLORS[lower];
+    if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) return value;
+    return "#808080";
+  }
+
+  /**
+   * Parse battle card tier mapping from plugin settings.
+   * Format: r_<thresholds>_<tiers>
+   * Example: r_10/8.5/7/5.5/4/2.5/0_gold/hot/default/#7f1e82/#14bbe0/#92e014/#808080
+   * @param {string} rawValue - Raw settings value
+   * @returns {{tiers: Array<{threshold: number, label: string, color: string}>, useTenPointScale: boolean}}
+   */
+  function parseBattleCardTierConfig(rawValue) {
+    const defaults = getDefaultBattleCardTierConfig();
+    if (!rawValue || typeof rawValue !== "string") return defaults;
+
+    const parts = rawValue.trim().split("_");
+    if (parts.length < 3) return defaults;
+
+    const criterion = String(parts[0] || "").toLowerCase();
+    if (criterion !== "r" && criterion !== "rating" && criterion !== "rating100") {
+      return defaults;
+    }
+
+    const thresholds = parts[1]
+      .split("/")
+      .map((rawThreshold) => parseFloat(rawThreshold))
+      .filter((threshold) => Number.isFinite(threshold));
+    const tierTokens = parts.slice(2).join("_")
+      .split("/")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (thresholds.length === 0 || thresholds.length !== tierTokens.length) {
+      console.warn("[HotOrNot] Invalid battleCardTiers config. Falling back to defaults.");
+      return defaults;
+    }
+
+    const tiers = thresholds
+      .map((threshold, index) => {
+        const token = tierTokens[index];
+        return {
+          threshold,
+          label: token,
+          color: resolveTierColor(token)
+        };
+      })
+      .sort((a, b) => b.threshold - a.threshold);
+
+    const maxThreshold = Math.max(...thresholds);
+    const useTenPointScale = maxThreshold <= 10;
+
+    return { tiers, useTenPointScale };
+  }
+
+  /**
+   * Ensure battle card tier config is loaded from plugin settings.
+   */
+  async function ensureBattleCardTierConfig() {
+    if (battleCardTierConfig !== null) return;
+    const config = await getHotOrNotConfig();
+    battleCardTierConfig = parseBattleCardTierConfig(config.battleCardTiers);
+  }
+
+  /**
+   * Get the display tier for a given rating100 value.
+   * @param {number} rating100 - Rating value in 1-100 scale
+   * @returns {{threshold: number, label: string, color: string}}
+   */
+  function getBattleCardTier(rating100) {
+    const config = battleCardTierConfig || getDefaultBattleCardTierConfig();
+    const numericRating = Number(rating100);
+    if (!Number.isFinite(numericRating)) {
+      return UNRATED_BATTLE_TIER;
+    }
+    const normalizedRating = Math.max(1, Math.min(100, numericRating));
+    const comparableRating = config.useTenPointScale ? normalizedRating / 10 : normalizedRating;
+
+    for (const tier of config.tiers) {
+      if (comparableRating >= tier.threshold) {
+        return tier;
+      }
+    }
+
+    return config.tiers[config.tiers.length - 1];
   }
 
   // GraphQL filter modifier constants
@@ -3018,7 +3140,10 @@ async function fetchPerformerCount(performerFilter = {}) {
     // Parse stats for enhanced display
     const stats = parsePerformerEloData(performer);
     const confidence = getConfidenceLevel(stats);
-    const rating = performer.rating100 || 50;
+    const numericRating = Number(performer.rating100);
+    const hasNumericRating = Number.isFinite(numericRating);
+    const rating = hasNumericRating ? numericRating : 50;
+    const ratingTier = getBattleCardTier(hasNumericRating ? rating : null);
     const ratingInterval = getRatingConfidenceInterval(rating, stats.total_matches);
     
     // Build confidence and stats display
@@ -3098,7 +3223,10 @@ async function fetchPerformerCount(performerFilter = {}) {
               ${country ? `<div class="hon-meta-item"><strong>Country:</strong> ${getCountryDisplay(country)}</div>` : ''}
               ${performer.gender ? `<div class="hon-meta-item"><strong>Gender:</strong> ${getGenderDisplay(performer.gender)}</div>` : ''}
               <div class="hon-meta-item"><strong>Scenes:</strong> ${sceneCount}</div>
-              <div class="hon-meta-item"><strong>Rating:</strong> ${enhancedRating}</div>
+              <div class="hon-meta-item">
+                <strong>Rating:</strong> ${enhancedRating}
+                <span class="hon-rating-tier-pill" style="--hon-tier-color: ${ratingTier.color};">${escapeHtml(ratingTier.label)}</span>
+              </div>
               ${statsDisplay}
             </div>
           </div>
@@ -4257,6 +4385,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     disableChoice = false;
     const comparisonArea = document.getElementById("hon-comparison-area");
     if (!comparisonArea) return;
+    await ensureBattleCardTierConfig();
 
     // Tournament mode: show setup if bracket not initialized
     if (currentMode === "tournament" && !tournamentSetupDone) {
@@ -4832,9 +4961,23 @@ async function fetchPerformerCount(performerFilter = {}) {
     const changeDisplay = document.createElement("div");
     changeDisplay.className = "hon-rating-change";
     changeDisplay.textContent = clampedChange >= 0 ? `+${clampedChange}` : `${clampedChange}`;
+
+    const oldTier = getBattleCardTier(clampedOld);
+    const newTier = getBattleCardTier(clampedNew);
+    const tierChanged = oldTier.label !== newTier.label;
+    let tierChangeDisplay = null;
+    if (tierChanged) {
+      tierChangeDisplay = document.createElement("div");
+      tierChangeDisplay.className = "hon-tier-change";
+      tierChangeDisplay.textContent = `${oldTier.label} to ${newTier.label}`;
+      tierChangeDisplay.style.setProperty("--hon-tier-change-color", newTier.color);
+    }
     
     overlay.appendChild(ratingDisplay);
     overlay.appendChild(changeDisplay);
+    if (tierChangeDisplay) {
+      overlay.appendChild(tierChangeDisplay);
+    }
     card.appendChild(overlay);
 
     // Animate the rating counting
@@ -5488,6 +5631,7 @@ function addFloatingButton() {
         // so the badge respects any changes the user made.
         if (path !== '/settings') {
           pluginConfigCache = null;
+          battleCardTierConfig = null;
         }
 
         // Update cached filter when on performers page
