@@ -131,8 +131,9 @@ Battle cards can optionally show configurable rating tiers and highlight when a 
 
 - Setting: **Settings → Plugins → HotOrNot → Battle Card Tier Mapping**
 - Format: `r_<thresholds>_<tiers>`
-- Example: `r_10/8.5/7/5.5/4/2.5/0_gold/hot/default/#7f1e82/#14bbe0/#92e014/#808080`
+- Example: `r_10/8.5/7/0_gold/hot/default/#808080`
 - Threshold count must match tier count (each threshold maps to one tier token)
+- If counts do not match, HotOrNot falls back to default tier mapping and logs a console warning
 
 ## Installation
 

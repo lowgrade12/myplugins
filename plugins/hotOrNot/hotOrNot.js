@@ -45,6 +45,13 @@
   let apolloFailed = false; // Track whether Apollo client has failed (skip after first failure to reduce noise)
   let navigationVersion = 0; // Incremented on every page navigation; used to abort stale async work
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
+  const BATTLE_TIER_PRESET_COLORS = {
+    gold: "#f5c451",
+    hot: "#14bbe0",
+    default: "#808080",
+    low: "#6b7280"
+  };
+  const UNRATED_BATTLE_TIER = { threshold: -1, label: "unrated", color: "#6b7280" };
 
   /**
    * Reset calibration mode state.
@@ -155,10 +162,10 @@
     return {
       useTenPointScale: true,
       tiers: [
-        { threshold: 8.5, label: "gold", color: "#f5c451" },
-        { threshold: 7, label: "hot", color: "#14bbe0" },
-        { threshold: 5.5, label: "default", color: "#808080" },
-        { threshold: 0, label: "unrated", color: "#6b7280" }
+        { threshold: 8.5, label: "gold", color: BATTLE_TIER_PRESET_COLORS.gold },
+        { threshold: 7, label: "hot", color: BATTLE_TIER_PRESET_COLORS.hot },
+        { threshold: 5.5, label: "default", color: BATTLE_TIER_PRESET_COLORS.default },
+        { threshold: 0, label: "low", color: BATTLE_TIER_PRESET_COLORS.low }
       ]
     };
   }
@@ -173,15 +180,8 @@
     const value = String(token || "").trim();
     const lower = value.toLowerCase();
 
-    const presetColors = {
-      gold: "#f5c451",
-      hot: "#14bbe0",
-      default: "#808080"
-    };
-
-    if (presetColors[lower]) return presetColors[lower];
+    if (BATTLE_TIER_PRESET_COLORS[lower]) return BATTLE_TIER_PRESET_COLORS[lower];
     if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) return value;
-    if (/^[a-z]+$/i.test(value)) return value;
     return "#808080";
   }
 
@@ -206,9 +206,9 @@
 
     const thresholds = parts[1]
       .split("/")
-      .map((value) => Number.parseFloat(value))
-      .filter((value) => Number.isFinite(value));
-    const tierTokens = parts[2]
+      .map((rawThreshold) => parseFloat(rawThreshold))
+      .filter((threshold) => Number.isFinite(threshold));
+    const tierTokens = parts.slice(2).join("_")
       .split("/")
       .map((value) => value.trim())
       .filter(Boolean);
@@ -251,7 +251,11 @@
    */
   function getBattleCardTier(rating100) {
     const config = battleCardTierConfig || getDefaultBattleCardTierConfig();
-    const normalizedRating = Math.max(1, Math.min(100, Number(rating100) || 50));
+    const numericRating = Number(rating100);
+    if (!Number.isFinite(numericRating)) {
+      return UNRATED_BATTLE_TIER;
+    }
+    const normalizedRating = Math.max(1, Math.min(100, numericRating));
     const comparableRating = config.useTenPointScale ? normalizedRating / 10 : normalizedRating;
 
     for (const tier of config.tiers) {
@@ -3136,8 +3140,10 @@ async function fetchPerformerCount(performerFilter = {}) {
     // Parse stats for enhanced display
     const stats = parsePerformerEloData(performer);
     const confidence = getConfidenceLevel(stats);
-    const rating = performer.rating100 || 50;
-    const ratingTier = getBattleCardTier(rating);
+    const numericRating = Number(performer.rating100);
+    const hasNumericRating = Number.isFinite(numericRating);
+    const rating = hasNumericRating ? numericRating : 50;
+    const ratingTier = getBattleCardTier(hasNumericRating ? rating : null);
     const ratingInterval = getRatingConfidenceInterval(rating, stats.total_matches);
     
     // Build confidence and stats display
@@ -4963,7 +4969,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     if (tierChanged) {
       tierChangeDisplay = document.createElement("div");
       tierChangeDisplay.className = "hon-tier-change";
-      tierChangeDisplay.textContent = `${oldTier.label} → ${newTier.label}`;
+      tierChangeDisplay.textContent = `${oldTier.label} to ${newTier.label}`;
       tierChangeDisplay.style.setProperty("--hon-tier-change-color", newTier.color);
     }
     
