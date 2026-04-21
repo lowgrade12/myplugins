@@ -22,3 +22,7 @@ settings:
     displayName: Show Star Rating Widget
     description: Show a star rating widget on performer cards. Enabled by default.
     type: BOOLEAN
+  battleCardTiers:
+    displayName: Battle Card Tier Mapping
+    description: "Optional rating tier mapping for battle cards. Format: r_<thresholds>_<tiers>. Example: r_10/8.5/7/5.5/4/2.5/0_gold/hot/default/#7f1e82/#14bbe0/#92e014/#808080"
+    type: STRING
