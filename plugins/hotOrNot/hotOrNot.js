@@ -154,14 +154,17 @@
   // TIER RANKINGS (reads from hotCards performers setting)
   // ============================================
 
+  // Grade labels assigned by tier index (0 = best tier)
+  const TIER_GRADE_LABELS = ["S", "A", "B", "C", "D", "F"];
+
   // Named style → border color/glow mappings (mirrors hotCards preset colours)
   const TIER_NAMED_STYLES = {
-    gold:    { color: "#d4af37", glow: "rgba(212,175,55,0.55)",   animated: true,  label: "🥇" },
-    hot:     { color: "#e03535", glow: "rgba(224,53,53,0.55)",    animated: true,  label: "🔥" },
-    default: { color: "#7e77ff", glow: "rgba(126,119,255,0.50)",  animated: true,  label: "⭐" },
-    silver:  { color: "#c0c0c0", glow: "rgba(192,192,192,0.45)",  animated: false, label: "🥈" },
-    bronze:  { color: "#cd7f32", glow: "rgba(205,127,50,0.45)",   animated: false, label: "🥉" },
-    holo:    { color: "#fbe1f6", glow: "rgba(251,225,246,0.55)",  animated: true,  label: "✨" },
+    gold:    { color: "#d4af37", glow: "rgba(212,175,55,0.55)",   animated: true  },
+    hot:     { color: "#e03535", glow: "rgba(224,53,53,0.55)",    animated: true  },
+    default: { color: "#7e77ff", glow: "rgba(126,119,255,0.50)",  animated: true  },
+    silver:  { color: "#c0c0c0", glow: "rgba(192,192,192,0.45)",  animated: false },
+    bronze:  { color: "#cd7f32", glow: "rgba(205,127,50,0.45)",   animated: false },
+    holo:    { color: "#fbe1f6", glow: "rgba(251,225,246,0.55)",  animated: true  },
   };
 
   /**
@@ -180,8 +183,9 @@
     const styles = parts[2].split("/").map(s => s.trim());
     if (values.length === 0) return null;
 
-    // Detect scale: decimal (0-10) if any threshold > 5 or has a non-zero decimal part
-    const useDecimalScale = values.some(v => v > 5 || (v !== 0 && v % 1 !== 0));
+    // Detect scale: decimal (0-10) if any threshold > 5 or has a non-zero decimal part.
+    // Mirrors hotCards' detectDecimalRatingScale logic exactly.
+    const useDecimalScale = values.some(v => v > 5 || v % 1 !== 0);
 
     // Build tier array; values are expected highest-first
     const tiers = values.map((threshold, i) => ({
@@ -226,15 +230,16 @@
    */
   function getTierBorderInfo(tier) {
     if (!tier) return null;
+    const label = TIER_GRADE_LABELS[tier.index] || "";
     const named = TIER_NAMED_STYLES[tier.style.toLowerCase()];
-    if (named) return { ...named };
+    if (named) return { ...named, label };
     // Hex colour: derive glow with alpha
     const color = tier.style;
-    if (!/^#[0-9a-fA-F]{3,8}$/.test(color)) return null;
+    if (!color || !/^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(color)) return null;
     const r = parseInt(color.slice(1, 3), 16);
     const g = parseInt(color.slice(3, 5), 16);
     const b = parseInt(color.slice(5, 7), 16);
-    return { color, glow: `rgba(${r},${g},${b},0.5)`, animated: false, label: "" };
+    return { color, glow: `rgba(${r},${g},${b},0.5)`, animated: false, label };
   }
 
 
@@ -4783,7 +4788,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     overlay.style.setProperty("--hon-tier-up-color", tierInfo.color);
     overlay.style.setProperty("--hon-tier-up-glow", tierInfo.glow);
     overlay.innerHTML = `
-      ${tierInfo.label ? `<div class="hon-tier-up-icon">${tierInfo.label}</div>` : ""}
+      ${tierInfo.label ? `<div class="hon-tier-up-grade">${tierInfo.label}</div>` : ""}
       <div class="hon-tier-up-text">TIER UP!</div>
     `;
     card.appendChild(overlay);
