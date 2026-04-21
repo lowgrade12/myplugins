@@ -4738,8 +4738,10 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
 
     // Show tier-up animation if the winner crosses into a better tier
+    // Show tier-down animation if the loser drops into a lower tier
     if (battleType === "performers") {
       checkAndShowTierUp(winnerCard, winnerRating, newWinnerRating);
+      if (loserCard) checkAndShowTierDown(loserCard, loserRating, newLoserRating);
     }
 
     setTimeout(() => {
@@ -4778,6 +4780,49 @@ async function fetchPerformerCount(performerFilter = {}) {
       ${tierInfo.label ? `<div class="hon-tier-up-grade">${tierInfo.label}</div>` : ""}
       <div class="hon-tier-up-text">TIER UP!</div>
     `;
+    card.appendChild(overlay);
+    setTimeout(() => overlay.remove(), 1800);
+  }
+
+  /**
+   * Detect whether a performer dropped into a lower tier and, if so, show the tier-down overlay.
+   * @param {HTMLElement} card - The losing card element
+   * @param {number} oldRating - Rating before the battle
+   * @param {number} newRating - Rating after the battle
+   */
+  function checkAndShowTierDown(card, oldRating, newRating) {
+    if (!tierConfigCache) return;
+    const oldTier = getPerformerTier(oldRating);
+    const newTier = getPerformerTier(newRating);
+    // A higher index means a worse tier (index 0 = highest)
+    if (oldTier && (!newTier || newTier.index > oldTier.index)) {
+      const tierInfo = newTier ? getTierBorderInfo(newTier) : null;
+      showTierDownAnimation(card, tierInfo);
+    }
+  }
+
+  /**
+   * Show an animated "TIER DOWN!" overlay on the losing card.
+   * @param {HTMLElement} card - Card element to overlay
+   * @param {{color: string, glow: string, label: string}|null} tierInfo - The new (lower) tier's visual info, or null if below all tiers
+   */
+  function showTierDownAnimation(card, tierInfo) {
+    const overlay = document.createElement("div");
+    overlay.className = "hon-tier-down-overlay";
+    if (tierInfo) {
+      overlay.style.setProperty("--hon-tier-down-color", tierInfo.color);
+      overlay.style.setProperty("--hon-tier-down-glow", tierInfo.glow);
+    }
+    if (tierInfo && tierInfo.label) {
+      const grade = document.createElement("div");
+      grade.className = "hon-tier-down-grade";
+      grade.textContent = tierInfo.label;
+      overlay.appendChild(grade);
+    }
+    const text = document.createElement("div");
+    text.className = "hon-tier-down-text";
+    text.textContent = "TIER DOWN";
+    overlay.appendChild(text);
     card.appendChild(overlay);
     setTimeout(() => overlay.remove(), 1800);
   }
@@ -4928,6 +4973,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         showRatingAnimation(winnerCard, winnerRating, newWinnerRating, winnerChange, true);
         if (loserCard) showRatingAnimation(loserCard, loserRating, newLoserRating, loserChange, false);
         checkAndShowTierUp(winnerCard, winnerRating, newWinnerRating);
+        if (loserCard) checkAndShowTierDown(loserCard, loserRating, newLoserRating);
 
         setTimeout(() => {
           showKothDethroned(oldKing, kothKing, oldStreak);
