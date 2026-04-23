@@ -6266,12 +6266,14 @@ function addFloatingButton() {
   }
 
   /**
-   * Check if we're on the performers list page
-   * @returns {boolean} True if on performers list page
+   * Check if we're on the performers list page or a studio performers page.
+   * Matches /performers, /performers/, /performers?... and /studios/{id}/performers.
+   * @returns {boolean} True if on a performers list page
    */
   function isPerformersListPage() {
     const path = window.location.pathname;
-    return path === "/performers" || path === "/performers/" || path.startsWith("/performers?");
+    return path === "/performers" || path === "/performers/" || path.startsWith("/performers?") ||
+      /^\/studios\/\d+\/performers(?:\/|$)/.test(path);
   }
 
   // Debounce timeout for star rating processing
