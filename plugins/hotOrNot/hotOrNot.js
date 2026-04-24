@@ -5341,40 +5341,27 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   /**
-   * Attempt to inject the 🔥 HotOrNot button into Stash's top navigation bar.
-   * Tries several common Stash navbar CSS selectors in order of preference.
+   * Attempt to inject the 🔥 HotOrNot button into Stash's main navigation bar.
+   * Appends a nav-link style item to .navbar-nav to match native Stash nav items.
    * @returns {boolean} True if the button was successfully injected, false if no navbar was found.
    */
 function addNavbarButton() {
     if (document.getElementById("hon-nav-btn")) return true;
 
-    // Try multiple selectors for Stash's navbar container (right-side area)
-    const navbarSelectors = [
-      ".top-nav .ms-auto",
-      ".navbar .ms-auto",
-      ".navbar-buttons",
-      ".top-nav",
-      ".navbar"
-    ];
+    const navTarget = document.querySelector(".navbar-nav");
+    if (!navTarget) return false;
 
-    let navbarContainer = null;
-    for (const selector of navbarSelectors) {
-      const found = document.querySelector(selector);
-      if (found) {
-        navbarContainer = found;
-        break;
-      }
-    }
-
-    if (!navbarContainer) return false;
-
-    const btn = document.createElement("button");
-    btn.id = "hon-nav-btn";
-    btn.innerHTML = "🔥";
-    btn.title = "HotOrNot";
-    btn.className = "hon-nav-btn";
-    btn.addEventListener("click", openRankingModal);
-    navbarContainer.appendChild(btn);
+    const container = document.createElement("div");
+    container.className = "col-4 col-sm-3 col-md-2 col-lg-auto nav-link";
+    container.innerHTML = `
+      <a href="javascript:void(0);" id="hon-nav-btn" class="minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center" title="HotOrNot">
+        <span class="hon-nav-icon d-block d-xl-inline mb-2 mb-xl-0" aria-hidden="true">🔥</span>
+        <span>HotOrNot</span>
+      </a>
+    `;
+    const link = container.querySelector("#hon-nav-btn");
+    link.addEventListener("click", openRankingModal);
+    navTarget.appendChild(container);
     return true;
   }
 

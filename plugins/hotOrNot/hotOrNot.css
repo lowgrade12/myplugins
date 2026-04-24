@@ -658,22 +658,10 @@
 
 }
 
-/* Navbar button — injected into Stash's top nav bar */
-.hon-nav-btn {
-  background: transparent;
-  border: none;
-  color: var(--hon-white);
-  font-size: 1.3rem;
+/* Navbar button — injected into Stash's main nav as a native nav-link item */
+.hon-nav-icon {
+  font-size: 1.5rem;
   line-height: 1;
-  cursor: pointer;
-  padding: 4px 10px;
-  border-radius: 4px;
-  vertical-align: middle;
-  transition: background 0.2s ease;
-}
-
-.hon-nav-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
 }
 
 /* Undo Last Battle button */
