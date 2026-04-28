@@ -1,0 +1,60 @@
+name: Advanced Scene Rating
+description: Rate scenes based on advanced criteria using tags.
+version: 2.0.0
+url: https://github.com/ordureconnoisseur/stash-advanced-scene-rating
+exec:
+  - python
+  - "{pluginDir}/stashAppAdvancedRating.py"
+interface: raw
+ui:
+  javascript:
+    - custom-rating-ui.js
+  css:
+    - custom-rating-ui.css
+hooks:
+  - name: Process Scene
+    triggeredBy:
+      - Scene.Update.Post
+settings:
+  disable_production_quality:
+    displayName: "Disable: Production Quality"
+    description: Remove Production Quality from rating categories.
+    type: BOOLEAN
+  disable_chemistry:
+    displayName: "Disable: Chemistry"
+    description: Remove Chemistry from rating categories.
+    type: BOOLEAN
+  disable_performance:
+    displayName: "Disable: Performance"
+    description: Remove Performance from rating categories.
+    type: BOOLEAN
+  disable_aesthetics:
+    displayName: "Disable: Aesthetics"
+    description: Remove Aesthetics from rating categories.
+    type: BOOLEAN
+  disable_creativity:
+    displayName: "Disable: Creativity"
+    description: Remove Creativity from rating categories.
+    type: BOOLEAN
+  rating_precision:
+    displayName: Rating Star Precision
+    description: "Match this to your Stash rating precision setting. 20 = Full, 10 = Half, 5 = Quarter, 1 = Tenth."
+    type: NUMBER
+  minimum_required_tags:
+    displayName: Minimum Required Tags
+    description: Minimum number of category tags needed before a rating is calculated.
+    type: NUMBER
+  allow_destructive_actions:
+    displayName: Allow Destructive Actions
+    description: Enables the Remove Tags task. Use with caution.
+    type: BOOLEAN
+tasks:
+  - name: Process All Scenes
+    defaultArgs:
+      mode: process_scenes
+  - name: Create Tags
+    defaultArgs:
+      mode: create_tags
+  - name: Remove Tags
+    defaultArgs:
+      mode: remove_tags
