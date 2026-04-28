@@ -353,7 +353,7 @@ class ScrapeParser:
 			try:
 				performer_update["gender"] = GenderEnum[scrape["gender"].upper()].value
 			except:
-				log.warning("Could not map performer gender from scraped input")
+				log.warning("Could not map performer gender from scraped data")
 
 		return performer_update
 
