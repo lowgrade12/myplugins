@@ -1,5 +1,6 @@
 import re, math, requests
 from enum import Enum
+from urllib.parse import urlparse
 
 from requests.structures import CaseInsensitiveDict
 
@@ -35,7 +36,8 @@ class StashBoxInterface(GQLWrapper):
 		if not self.url:
 			raise Exception("REQUIRED key 'endpoint' not provided in connection dict")
 
-		if "theporndb.net" in self.url:
+		host = urlparse(self.url).hostname
+		if host and (host == "theporndb.net" or host.endswith(".theporndb.net")):
 			self.log.warning("theporndb.net is not an actual Stash-Box instance, use their API (https://api.theporndb.net/docs/)")
 
 		if stash := conn.get("stash"):
