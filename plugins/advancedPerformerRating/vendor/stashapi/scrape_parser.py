@@ -347,13 +347,13 @@ class ScrapeParser:
 			try:
 				performer_update["weight"] = int(scrape["weight"])
 			except:
-				log.warning(f'Could not parse performer weight "{scrape["weight"]}" it Int for {scrape["name"]}')
+				log.warning("Could not parse performer weight to Int from scraped input")
 
 		if scrape.get("gender"):
 			try:
 				performer_update["gender"] = GenderEnum[scrape["gender"].upper()].value
 			except:
-				log.warning(f'Could not map performer Gender "{scrape["gender"]}" for {scrape["name"]}')
+				log.warning("Could not map performer gender from scraped input")
 
 		return performer_update
 
