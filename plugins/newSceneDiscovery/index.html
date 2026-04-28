@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Scene Discovery - StashDB</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg-color: #1E1E1E;
+            --text-color: #E0E0E0;
+            --accent-color: #FF9800;
+            --border-color: #333;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .header {
+            background-color: var(--card-bg-color);
+            padding: 15px 40px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: #fff;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            color: var(--text-color);
+            font-size: 0.9rem;
+        }
+
+        .toggle-container input {
+            display: none;
+        }
+
+        .toggle-container svg {
+            color: #555;
+            transition: color 0.2s, transform 0.1s;
+        }
+
+        .toggle-container svg:hover {
+            transform: scale(1.1);
+        }
+
+        .toggle-container input:checked + svg {
+            color: var(--accent-color);
+        }
+
+        .refresh-btn {
+            background-color: transparent;
+            border: 2px solid var(--accent-color);
+            color: var(--accent-color);
+            padding: 6px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .refresh-btn:hover {
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+        }
+
+        .search-container {
+            position: relative;
+            flex-grow: 1;
+            max-width: 500px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 8px 12px;
+            background-color: #252525;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: #fff;
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        .search-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: #252525;
+            border: 1px solid var(--border-color);
+            border-radius: 0 0 4px 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        .search-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .search-item:hover {
+            background-color: #333;
+            color: var(--accent-color);
+        }
+
+        .performer-circle {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid #444;
+            background-color: #000;
+        }
+
+        .pill-circle {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid #555;
+        }
+
+        .filter-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+            padding: 0 40px;
+        }
+
+        .pill {
+            background-color: #2a2a2a;
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #444;
+        }
+
+        .pill-remove {
+            cursor: pointer;
+            color: #888;
+            font-weight: bold;
+        }
+
+        .pill-remove:hover {
+            color: var(--accent-color);
+        }
+
+        .container {
+            padding: 20px 40px 40px 40px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .homepage-new-scenes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            width: 100%;
+        }
+
+        .hns-scene-card {
+            background-color: var(--card-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .hns-scene-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
+        }
+
+        .hns-scene-card a {
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .hns-video-container {
+            width: 100%;
+            height: 160px;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        .hns-scene-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .hns-scene-info {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+
+        .hns-scene-title {
+            font-size: 1rem;
+            font-weight: bold;
+            margin: 0 0 6px 0;
+            color: var(--accent-color);
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.2;
+        }
+
+        .hns-scene-details {
+            font-size: 0.8rem;
+            color: #aaa;
+            margin: 0 0 3px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .copy-id-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid #444;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 5;
+        }
+
+        .hns-scene-card:hover .copy-id-btn {
+            opacity: 1;
+        }
+
+        .copy-id-btn:hover {
+            background: var(--accent-color);
+            color: #000;
+        }
+
+        .loading-state {
+            text-align: center;
+            font-size: 1.2rem;
+            color: #888;
+            margin-top: 50px;
+            grid-column: 1 / -1;
+        }
+
+        .cache-info {
+            font-size: 0.75rem;
+            color: #555;
+            margin-top: 2px;
+            text-align: right;
+        }
+
+        .stats-label {
+            font-size: 0.85rem;
+            color: #888;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="header-left">
+            <h1>🔥 New Scene Discovery</h1>
+        </div>
+        
+        <div class="search-container">
+            <input type="text" id="performer-search" class="search-input" placeholder="Search performers in feed..." oninput="handleSearchInput(this.value)" onfocus="handleSearchInput(this.value)">
+            <div id="search-results" class="search-dropdown"></div>
+        </div>
+
+        <div class="header-controls">
+            <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                <label class="toggle-container" title="Only show scenes featuring performers you have favorited">
+                    <input type="checkbox" id="favorite-toggle" onchange="applyFilters()">
+                    <svg aria-hidden="true" focusable="false" data-prefix="fas" data-icon="heart" class="svg-inline--fa fa-heart fa-icon" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="width: 18px; height: 18px;">
+                        <path fill="currentColor" d="M462.3 62.6C407.5 15.9 326 24.3 275.7 76.2L256 96.5l-19.7-20.3C186.1 24.3 104.5 15.9 49.7 62.6c-62.8 53.6-66.1 149.8-9.9 207.9l193.5 199.8c12.5 12.9 32.8 12.9 45.3 0l193.5-199.8c56.3-58.1 53-154.3-9.8-207.9z"></path>
+                    </svg>
+                </label>
+                <div id="cache-status" class="cache-info"></div>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                <span id="status-text" class="stats-label"></span>
+                <span id="perf-count-label" class="stats-label" style="font-size: 0.7rem;"></span>
+            </div>
+            <button class="refresh-btn" onclick="loadAndShowScenes(true)">Refresh</button>
+        </div>
+    </div>
+
+    <div id="pill-container" class="filter-pills"></div>
+
+    <div class="container">
+        <div class="homepage-new-scenes-grid" id="new-scenes-grid-content">
+            <div class="loading-state">Initializing...</div>
+        </div>
+    </div>
+
+    <script>
+        const config = {
+            localEndpoint: `${window.location.origin}/graphql`,
+            apiKey: localStorage.getItem('apiKey') || null,
+            stashDBApiKey: null,
+            defaultDateRange: 90,
+            maxScenes: 0,
+            defaultFavorites: false,
+        };
+
+        const CACHE_KEY = 'hns_cached_scenes_v5';
+        const CACHE_TTL = 12 * 60 * 60 * 1000;
+
+        let allFetchedScenes = [];
+        let localPerformerMap = new Map();
+        let selectedPerformerIds = new Set();
+        let performersInFeed = new Map();
+
+        const performGraphQLQuery = async (endpoint, query, variables = {}, apiKey = null) => {
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) headers['Apikey'] = apiKey;
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ query, variables }),
+                });
+                const data = await response.json();
+                if (data.errors) return null;
+                return data?.data || null;
+            } catch (error) {
+                return null;
+            }
+        };
+
+        const initConfig = async () => {
+            const query = `query Configuration { configuration { plugins general { stashBoxes { endpoint api_key name } } } }`;
+            const result = await performGraphQLQuery(config.localEndpoint, query, {}, config.apiKey);
+            const pluginConfig = result?.configuration?.plugins?.NewSceneDiscovery || result?.configuration?.plugins?.HomepageNewScenes;
+            if (pluginConfig) {
+                if (pluginConfig.Days) config.defaultDateRange = parseInt(pluginConfig.Days, 10);
+                if (pluginConfig.MaxScenes) config.maxScenes = parseInt(pluginConfig.MaxScenes, 10);
+                if (pluginConfig.DefaultFavorites !== undefined) config.defaultFavorites = pluginConfig.DefaultFavorites === true || pluginConfig.DefaultFavorites === 'true';
+            }
+            const stashBoxes = result?.configuration?.general?.stashBoxes || [];
+            const stashDB = stashBoxes.find(b => b.endpoint === 'https://stashdb.org/graphql');
+            if (stashDB) config.stashDBApiKey = stashDB.api_key;
+        };
+
+        const getPerformers = async () => {
+            const query = `query { findPerformers(filter: { per_page: -1 }) { performers { id name favorite image_path stash_ids { endpoint stash_id } } } }`;
+            const result = await performGraphQLQuery(config.localEndpoint, query, {}, config.apiKey);
+            if (!result?.findPerformers?.performers) return [];
+            const performers = result.findPerformers.performers.filter(p => p.stash_ids.some(s => s.endpoint === 'https://stashdb.org/graphql'));
+            localPerformerMap.clear();
+            performers.forEach(p => {
+                const sEntry = p.stash_ids.find(s => s.endpoint === 'https://stashdb.org/graphql');
+                if (sEntry) localPerformerMap.set(sEntry.stash_id, { id: p.id, name: p.name, favorite: p.favorite, stash_id: sEntry.stash_id, image: p.image_path });
+            });
+            document.getElementById('perf-count-label').textContent = `${performers.length} linked performers tracked`;
+            return performers;
+        };
+
+        const getOwnedScenes = async () => {
+            const query = `query { findScenes(filter: { per_page: -1 }) { scenes { stash_ids { endpoint stash_id } } } }`;
+            const result = await performGraphQLQuery(config.localEndpoint, query, {}, config.apiKey);
+            const owned = new Set();
+            if (result) {
+                result.findScenes.scenes.forEach(scene => {
+                    scene.stash_ids.forEach(sid => {
+                        if (sid.endpoint === 'https://stashdb.org/graphql') owned.add(sid.stash_id);
+                    });
+                });
+            }
+            return owned;
+        };
+
+        const getNewScenesFromStashDB = async (performerIds, cutoffDate) => {
+            const dateStr = cutoffDate.toISOString().split('T')[0];
+            const allScenes = [];
+            const chunkSize = 100; 
+            for (let i = 0; i < performerIds.length; i += chunkSize) {
+                const batchIds = performerIds.slice(i, i + chunkSize);
+                document.getElementById('status-text').textContent = `Querying StashDB (Batch ${Math.floor(i/chunkSize) + 1} of ${Math.ceil(performerIds.length/chunkSize)})...`;
+                let page = 1, hasMore = true;
+                while (hasMore) {
+                    const query = `query QueryScenes($input: SceneQueryInput!) { queryScenes(input: $input) { count scenes { id title release_date images { url } performers { performer { id name } } } } }`;
+                    const result = await performGraphQLQuery('https://stashdb.org/graphql', query, { input: { date: { value: dateStr, modifier: "GREATER_THAN" }, performers: { value: batchIds, modifier: "INCLUDES" }, sort: "DATE", direction: "DESC", page: page, per_page: 100 } }, config.stashDBApiKey);
+                    if (result?.queryScenes) {
+                        allScenes.push(...result.queryScenes.scenes);
+                        if (result.queryScenes.scenes.length < 100 || page >= 100) hasMore = false; else page++;
+                    } else hasMore = false;
+                }
+            }
+            return allScenes;
+        };
+
+        const copyToClipboard = (text, btn) => {
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.style.background = '#28a745';
+                setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1500);
+            });
+        };
+
+        const renderGrid = (scenes) => {
+            const grid = document.getElementById('new-scenes-grid-content');
+            grid.innerHTML = '';
+            if (scenes.length === 0) {
+                grid.innerHTML = '<div class="loading-state">No new scenes found with the current filters.</div>';
+                return;
+            }
+            scenes.forEach(scene => {
+                const card = document.createElement('div');
+                card.className = 'hns-scene-card';
+                const imageUrl = scene.images?.[0]?.url || '';
+                const title = scene.title || 'Untitled';
+
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'copy-id-btn';
+                copyBtn.textContent = 'Copy ID';
+                copyBtn.addEventListener('click', (e) => { e.preventDefault(); copyToClipboard(scene.id, copyBtn); });
+
+                const link = document.createElement('a');
+                link.href = `https://stashdb.org/scenes/${scene.id}`;
+                link.target = '_blank';
+
+                const videoContainer = document.createElement('div');
+                videoContainer.className = 'hns-video-container';
+                const img = document.createElement('img');
+                img.className = 'hns-scene-image';
+                img.src = imageUrl;
+                img.alt = title;
+                img.loading = 'lazy';
+                videoContainer.appendChild(img);
+
+                const info = document.createElement('div');
+                info.className = 'hns-scene-info';
+
+                const titleEl = document.createElement('h3');
+                titleEl.className = 'hns-scene-title';
+                titleEl.title = title;
+                titleEl.textContent = title;
+
+                const perfEl = document.createElement('p');
+                perfEl.className = 'hns-scene-details';
+                perfEl.title = scene.displayPerformers;
+                const perfBold = document.createElement('b');
+                perfBold.textContent = 'Performers: ';
+                perfEl.appendChild(perfBold);
+                perfEl.appendChild(document.createTextNode(scene.displayPerformers));
+
+                const dateEl = document.createElement('p');
+                dateEl.className = 'hns-scene-details';
+                const dateBold = document.createElement('b');
+                dateBold.textContent = 'Date: ';
+                dateEl.appendChild(dateBold);
+                dateEl.appendChild(document.createTextNode(scene.release_date));
+
+                info.appendChild(titleEl);
+                info.appendChild(perfEl);
+                info.appendChild(dateEl);
+                link.appendChild(videoContainer);
+                link.appendChild(info);
+                card.appendChild(copyBtn);
+                card.appendChild(link);
+                grid.appendChild(card);
+            });
+        };
+
+        const handleSearchInput = (value) => {
+            const dropdown = document.getElementById('search-results');
+            if (!value) { renderSearchResults(Array.from(performersInFeed.keys()).sort()); dropdown.style.display = 'block'; return; }
+            const matches = Array.from(performersInFeed.keys()).filter(n => n.toLowerCase().includes(value.toLowerCase())).sort();
+            renderSearchResults(matches);
+            dropdown.style.display = 'block';
+        };
+
+        const renderSearchResults = (names) => {
+            const dropdown = document.getElementById('search-results');
+            dropdown.innerHTML = '';
+            if (names.length === 0) { dropdown.innerHTML = '<div class="search-item" style="color: #666; cursor: default;">No performers found</div>'; return; }
+            names.forEach(name => {
+                const perfInfo = performersInFeed.get(name);
+                if (selectedPerformerIds.has(perfInfo.id)) return;
+                const item = document.createElement('div');
+                item.className = 'search-item';
+                const img = document.createElement('img');
+                img.className = 'performer-circle';
+                img.src = perfInfo.image || '';
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = name;
+                item.appendChild(img);
+                item.appendChild(nameSpan);
+                item.onclick = () => { selectedPerformerIds.add(perfInfo.id); document.getElementById('performer-search').value = ''; dropdown.style.display = 'none'; renderPills(); applyFilters(); };
+                dropdown.appendChild(item);
+            });
+        };
+
+        const renderPills = () => {
+            const container = document.getElementById('pill-container');
+            container.innerHTML = '';
+            selectedPerformerIds.forEach(id => {
+                let name = "Unknown", img = "";
+                for (const [n, info] of performersInFeed.entries()) if (info.id === id) { name = n; img = info.image; break; }
+                const pill = document.createElement('div');
+                pill.className = 'pill';
+                const pillImg = document.createElement('img');
+                pillImg.src = img; pillImg.className = 'pill-circle';
+                const pillName = document.createElement('span');
+                pillName.textContent = name;
+                const pillRemove = document.createElement('span');
+                pillRemove.className = 'pill-remove';
+                pillRemove.textContent = '✕';
+                pillRemove.addEventListener('click', () => { selectedPerformerIds.delete(id); renderPills(); applyFilters(); });
+                pill.appendChild(pillImg); pill.appendChild(pillName); pill.appendChild(pillRemove);
+                container.appendChild(pill);
+            });
+            if (selectedPerformerIds.size > 0) {
+                const clear = document.createElement('div');
+                clear.className = 'pill';
+                clear.style.cursor = 'pointer';
+                clear.style.borderColor = 'var(--accent-color)';
+                clear.innerHTML = `<span style="color: var(--accent-color)">Clear All</span>`;
+                clear.onclick = () => { selectedPerformerIds.clear(); renderPills(); applyFilters(); };
+                container.appendChild(clear);
+            }
+        };
+
+        document.addEventListener('click', (e) => { if (!e.target.closest('.search-container')) document.getElementById('search-results').style.display = 'none'; });
+
+        const applyFilters = () => {
+            const favoritesOnly = document.getElementById('favorite-toggle').checked;
+            let filtered = allFetchedScenes;
+            if (selectedPerformerIds.size > 0) filtered = filtered.filter(s => s.performers.some(p => selectedPerformerIds.has(p.performer.id)));
+            if (favoritesOnly) filtered = filtered.filter(s => s.isFavorite);
+            renderGrid(filtered);
+            document.getElementById('status-text').textContent = `Showing ${filtered.length} scenes`;
+        };
+
+        const loadAndShowScenes = async (force = false) => {
+            const statusText = document.getElementById('status-text'), cacheStatus = document.getElementById('cache-status'), grid = document.getElementById('new-scenes-grid-content');
+            grid.innerHTML = '<div class="loading-state">Loading...</div>';
+            statusText.textContent = ''; cacheStatus.textContent = '';
+            ['hns_cached_scenes', 'hns_cached_scenes_v2', 'hns_cached_scenes_v3', 'hns_cached_scenes_v4'].forEach(k => localStorage.removeItem(k));
+            try {
+                await initConfig();
+                document.getElementById('favorite-toggle').checked = config.defaultFavorites;
+                if (!config.stashDBApiKey) {
+                    grid.innerHTML = '<div class="loading-state">StashDB is not configured.<br>Go to Stash Settings → Metadata Providers → StashBox and add StashDB to use this feature.</div>';
+                    return;
+                }
+                if (!force) {
+                    const cached = localStorage.getItem(CACHE_KEY);
+                    if (cached) {
+                        const data = JSON.parse(cached);
+                        if ((Date.now() - data.timestamp) < CACHE_TTL && data.config.days === config.defaultDateRange) {
+                            allFetchedScenes = data.scenes;
+                            const m = Math.floor((Date.now() - data.timestamp) / 60000);
+                            cacheStatus.textContent = `Cached data from ${m > 60 ? Math.floor(m/60) + 'h' : m + 'm'} ago`;
+                            await getPerformers(); 
+                            performersInFeed.clear();
+                            allFetchedScenes.forEach(s => s.performers.forEach(p => { 
+                                const lp = localPerformerMap.get(p.performer.id);
+                                if (lp) performersInFeed.set(lp.name, { id: lp.stash_id, image: lp.image }); 
+                            }));
+                            applyFilters(); return;
+                        }
+                    }
+                }
+                const performers = await getPerformers();
+                if (performers.length === 0) { allFetchedScenes = []; applyFilters(); return; }
+                const ownedSceneIds = await getOwnedScenes();
+                const cutoffDate = new Date(); cutoffDate.setDate(cutoffDate.getDate() - config.defaultDateRange);
+                let allNewScenes = await getNewScenesFromStashDB(Array.from(localPerformerMap.keys()), cutoffDate);
+                const performerSceneCounts = {}, sceneMap = new Map(); performersInFeed.clear();
+                allNewScenes.sort((a, b) => new Date(b.release_date) - new Date(a.release_date));
+                allNewScenes.forEach(scene => {
+                    if (ownedSceneIds.has(scene.id)) return;
+                    if (!sceneMap.has(scene.id)) {
+                        const featuredLocal = scene.performers.map(p => localPerformerMap.get(p.performer.id)).filter(p => p);
+                        if (featuredLocal.length === 0) return;
+                        if (config.maxScenes > 0) {
+                            const pId = featuredLocal[0].id;
+                            performerSceneCounts[pId] = (performerSceneCounts[pId] || 0) + 1;
+                            if (performerSceneCounts[pId] > config.maxScenes) return;
+                        }
+                        featuredLocal.forEach(p => performersInFeed.set(p.name, { id: p.stash_id, image: p.image }));
+                        sceneMap.set(scene.id, { id: scene.id, title: scene.title, release_date: scene.release_date, images: scene.images, displayPerformers: featuredLocal.map(p => p.name).join(', '), performers: scene.performers, isFavorite: featuredLocal.some(p => p.favorite) });
+                    }
+                });
+                allFetchedScenes = Array.from(sceneMap.values()).sort((a,b) => new Date(b.release_date) - new Date(a.release_date));
+                localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), scenes: allFetchedScenes, config: { days: config.defaultDateRange } }));
+                applyFilters();
+            } catch (err) { console.error(err); grid.innerHTML = '<div class="loading-state">Error loading. Refresh page.</div>'; }
+        };
+        loadAndShowScenes();
+    </script>
+</body>
+</html>

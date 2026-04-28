@@ -1,0 +1,25 @@
+name: New Scene Discovery
+description: Discover recently released scenes from your performers in a dedicated tab.
+version: 1.3.0
+url: https://github.com/ordureconnoisseur/stash-new-scene-discovery
+ui:
+  assets:
+    /: .
+  javascript:
+    - sceneDiscovery.js
+  csp:
+      connect-src:
+      - https://stashdb.org/graphql
+settings:
+  Days:
+    displayName: New Releases (in Days)
+    description: Set how many days back the script should look for new releases from performers.
+    type: NUMBER
+  MaxScenes:
+    displayName: Max Scenes Per Performer
+    description: Limit the maximum number of new scenes shown per performer to prevent one from dominating the feed (0 for unlimited).
+    type: NUMBER
+  DefaultFavorites:
+    displayName: Default to Favorites Only
+    description: If checked, the Favorites Only toggle will be enabled by default when you open the page.
+    type: BOOLEAN
