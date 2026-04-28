@@ -36,8 +36,8 @@ class StashBoxInterface(GQLWrapper):
 		if not self.url:
 			raise Exception("REQUIRED key 'endpoint' not provided in connection dict")
 
-		host = urlparse(self.url).hostname
-		if host and (host == "theporndb.net" or host.endswith(".theporndb.net")):
+		parsed_host = (urlparse(self.url).hostname or "").lower()
+		if parsed_host == "theporndb.net" or parsed_host.endswith(".theporndb.net"):
 			self.log.warning("theporndb.net is not an actual Stash-Box instance, use their API (https://api.theporndb.net/docs/)")
 
 		if stash := conn.get("stash"):

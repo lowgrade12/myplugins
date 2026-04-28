@@ -8,7 +8,8 @@
 
     function tryInject(performerId) {
         if (document.querySelector('#perf-rating-trigger')) return true;
-        const ratingStars = document.querySelector('.quality-group .rating-stars');
+        const ratingStars = document.querySelector('.quality-group .rating-stars') ||
+            document.querySelector('.quality-group .rating-number');
         if (ratingStars) {
             injectTrigger(ratingStars, performerId);
             return true;
