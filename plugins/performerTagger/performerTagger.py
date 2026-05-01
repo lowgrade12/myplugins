@@ -302,6 +302,7 @@ def derive_tags(performer: dict) -> list[dict]:
     ft = performer.get("fake_tits")
     if ft is not None:
         ft_str = str(ft).lower().strip()
+        # Empty string means the field was not filled in ("no data") — skip it.
         if ft_str in ("no", "false", "natural"):
             derived.append({"tag_name": "Natural Tits", "category_name": "Bust Size"})
         elif ft_str not in ("", "unknown"):
