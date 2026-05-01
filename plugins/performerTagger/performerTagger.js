@@ -52,7 +52,7 @@
     },
     {
       category: "Height",
-      tags: ["Tall", "Average Height", "Small", "Tiny"],
+      tags: ["Tall", "Average", "Short", "Tiny"],
     },
   ];
 
@@ -438,13 +438,13 @@
     }
 
     // Height category
-    // Tall: >= 175 cm (5'9"+), Average: 168–174 cm (5'6"–5'8"),
-    // Small: 158–167 cm (5'2"–5'5"), Tiny: <= 157 cm (5'1" and below)
+    // Tall: >= 175 cm (5'9"+), Average: 165–174 cm (5'5"–5'8"),
+    // Short: 155–164 cm (5'1"–5'4"), Tiny: < 155 cm (under 5'1")
     if (performer.height_cm && performer.height_cm > 0) {
       let tagName = null;
       if (performer.height_cm >= 175) tagName = "Tall";
-      else if (performer.height_cm >= 168) tagName = "Average Height";
-      else if (performer.height_cm >= 158) tagName = "Small";
+      else if (performer.height_cm >= 165) tagName = "Average";
+      else if (performer.height_cm >= 155) tagName = "Short";
       else tagName = "Tiny";
       derived.push({ tagName, categoryName: "Height" });
     }
