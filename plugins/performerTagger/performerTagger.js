@@ -577,6 +577,49 @@
   }
 
   // ============================================
+  // BANNER HELPER — shared by batch operations
+  // ============================================
+
+  /**
+   * Show (or replace) the fixed bottom banner with a given message.
+   * Returns the banner element so the caller can update or remove it.
+   * @param {string} message - Text to display in the banner
+   * @returns {HTMLElement} The banner element
+   */
+  function createBanner(message) {
+    const existing = document.querySelector(".pt-task-queued-banner");
+    if (existing) existing.remove();
+    const banner = document.createElement("div");
+    banner.className = "pt-task-queued-banner";
+    banner.textContent = message;
+    document.body.appendChild(banner);
+    void banner.offsetWidth;
+    banner.classList.add("pt-task-queued-visible");
+    return banner;
+  }
+
+  /**
+   * Update the text content of a banner returned by createBanner.
+   * @param {HTMLElement} banner
+   * @param {string} message
+   */
+  function updateBanner(banner, message) {
+    banner.textContent = message;
+  }
+
+  /**
+   * Dismiss a banner after a delay.
+   * @param {HTMLElement} banner
+   * @param {number} delay - Milliseconds before starting fade-out
+   */
+  function dismissBanner(banner, delay) {
+    setTimeout(() => {
+      banner.classList.remove("pt-task-queued-visible");
+      setTimeout(() => banner.remove(), 500);
+    }, delay);
+  }
+
+  // ============================================
   // BATCH TAG TASK — triggers the Stash server-side task
   // ============================================
 
@@ -595,20 +638,88 @@
         }
       `);
       console.log("[PerformerTagger] Batch Tag Performers task queued successfully");
-      // Brief visual confirmation via a temporary banner
-      const banner = document.createElement("div");
-      banner.className = "pt-task-queued-banner";
-      banner.textContent = "✔ Batch Tag Performers task queued — check System → Tasks for progress.";
-      document.body.appendChild(banner);
-      void banner.offsetWidth;
-      banner.classList.add("pt-task-queued-visible");
-      setTimeout(() => {
-        banner.classList.remove("pt-task-queued-visible");
-        setTimeout(() => banner.remove(), 500);
-      }, 5000);
+      const banner = createBanner("✔ Batch Tag Performers task queued — check System → Tasks for progress.");
+      dismissBanner(banner, 5000);
     } catch (err) {
       console.error("[PerformerTagger] Failed to queue batch tag task:", err);
       alert("Failed to start Batch Tag Performers task.\nCheck the browser console for details.");
+    }
+  }
+
+  // ============================================
+  // CURRENT-PAGE BATCH TAG — client-side, respects active filters
+  // ============================================
+
+  /**
+   * Collect performer IDs from the card links currently rendered on the page.
+   * Works by scanning <a href="/performers/{id}"> elements in the document.
+   * @returns {string[]} Deduplicated array of performer ID strings
+   */
+  function getPerformerIdsFromPage() {
+    const ids = new Set();
+    // Prefer the main content area to avoid picking up nav/breadcrumb links.
+    const root = document.querySelector("main") || document;
+    root.querySelectorAll("a[href]").forEach((a) => {
+      const match = a.getAttribute("href").match(/\/performers\/(\d+)(?:\/|$)/);
+      if (match) {
+        ids.add(match[1]);
+      }
+    });
+    return Array.from(ids);
+  }
+
+  /**
+   * Tag only the performers visible on the current page of the performers list.
+   * Reads performer IDs from the rendered DOM (so it respects active filters and
+   * pagination without needing to parse URL parameters), then runs the same
+   * auto-tag logic used by the single-performer panel on each one.
+   *
+   * Progress is shown in the shared bottom banner; the button is disabled for
+   * the duration to prevent concurrent runs.
+   */
+  async function tagCurrentPagePerformers() {
+    const ids = getPerformerIdsFromPage();
+    if (ids.length === 0) {
+      alert("No performers found on the current page.");
+      return;
+    }
+
+    // Disable the on-page batch button while processing
+    const btn = document.getElementById("pt-batch-trigger");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "⏳ Tagging…";
+    }
+
+    const banner = createBanner(`Tagging performers on this page… (0 / ${ids.length})`);
+
+    let done = 0;
+    let failed = 0;
+
+    for (const id of ids) {
+      try {
+        const performer = await getPerformerFull(id);
+        const currentTagIds = new Set(performer.tags.map((t) => t.id));
+        await autoApplyDerivedTags(id, performer, currentTagIds);
+        done++;
+      } catch (err) {
+        console.error(`[PerformerTagger] Error tagging performer ${id}:`, err);
+        failed++;
+      }
+      updateBanner(banner, `Tagging performers on this page… (${done + failed} / ${ids.length})`);
+    }
+
+    const resultMsg = failed > 0
+      ? `✔ Tagged ${done} of ${ids.length} performers on this page (${failed} failed — see console).`
+      : `✔ Tagged ${done} performer${done !== 1 ? "s" : ""} on this page.`;
+
+    updateBanner(banner, resultMsg);
+    dismissBanner(banner, 5000);
+    console.log(`[PerformerTagger] Current-page batch tag complete: ${done} ok, ${failed} failed.`);
+
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "⚡ Batch Tag";
     }
   }
 
@@ -659,8 +770,8 @@
     btn.id = "pt-batch-trigger";
     btn.className = "pt-batch-trigger";
     btn.textContent = "⚡ Batch Tag";
-    btn.title = "Auto-apply attribute tags to all performers based on their Stash data fields";
-    btn.addEventListener("click", () => startBatchTag());
+    btn.title = "Auto-apply attribute tags to the performers on the current page (respects active filters and pagination)";
+    btn.addEventListener("click", () => tagCurrentPagePerformers());
     target.appendChild(btn);
     console.log("[PerformerTagger] Batch Tag button injected");
   }
@@ -1210,7 +1321,9 @@
 
   /**
    * Inject the "🏷️ Tag All" button into Stash's main navigation bar.
-   * Clicking it runs the batch tag task across all performers from any page.
+   * When on the performers list page the button tags only the performers currently
+   * visible (respecting filters and pagination); on all other pages it queues the
+   * server-side task that processes every performer.
    * @returns {boolean} True if the button is present (either already existed or was just injected), false if no navbar was found.
    */
   function addNavbarButton() {
@@ -1222,13 +1335,19 @@
     const container = document.createElement("div");
     container.className = "col-4 col-sm-3 col-md-2 col-lg-auto nav-link";
     container.innerHTML = `
-      <a href="javascript:void(0);" id="pt-nav-btn" class="pt-nav-btn minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center" title="Batch Tag All Performers">
+      <a href="javascript:void(0);" id="pt-nav-btn" class="pt-nav-btn minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center" title="Tag performers on this page / Batch Tag All Performers">
         <span class="d-block d-xl-inline mb-2 mb-xl-0" aria-hidden="true">🏷️</span>
         <span>Tag All</span>
       </a>
     `;
     const link = container.querySelector("#pt-nav-btn");
-    link.addEventListener("click", () => startBatchTag());
+    link.addEventListener("click", () => {
+      if (isOnPerformerListPage()) {
+        tagCurrentPagePerformers();
+      } else {
+        startBatchTag();
+      }
+    });
     navTarget.appendChild(container);
     console.log("[PerformerTagger] Navbar Tag All button injected");
     return true;

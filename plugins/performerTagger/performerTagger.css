@@ -286,6 +286,11 @@
   color: #b0dcff;
 }
 
+.pt-batch-trigger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ============================================
    BATCH TAG QUEUED NOTIFICATION BANNER
    ============================================ */
