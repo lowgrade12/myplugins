@@ -1144,8 +1144,24 @@
         pill.classList.remove("pt-pill-active");
         console.log(`[PerformerTagger] Removed tag "${tagName}" from performer ${performerId}`);
       } else {
-        // Tag is not set — add it
+        // Tag is not set — add it, and remove any other tags from the same category
+        // so that only one selection per group is active at a time (radio-button behavior).
         newSet = new Set(currentSet);
+
+        // Find sibling pills in the same category and remove their tags from the set
+        const panel = pill.closest("#pt-panel");
+        if (panel) {
+          panel.querySelectorAll(`.pt-pill[data-category-name="${CSS.escape(categoryName)}"]`).forEach((sibling) => {
+            if (sibling === pill) return;
+            const siblingId = tagIdCache.get(sibling.dataset.tagName.toLowerCase());
+            if (siblingId && newSet.has(siblingId)) {
+              newSet.delete(siblingId);
+              sibling.classList.remove("pt-pill-active");
+              console.log(`[PerformerTagger] Replaced tag "${sibling.dataset.tagName}" with "${tagName}" in category "${categoryName}" for performer ${performerId}`);
+            }
+          });
+        }
+
         newSet.add(tagId);
         pill.classList.add("pt-pill-active");
         console.log(`[PerformerTagger] Added tag "${tagName}" to performer ${performerId}`);
