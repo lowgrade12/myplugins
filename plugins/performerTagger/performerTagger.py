@@ -2,10 +2,10 @@
 """
 PerformerTagger - Batch Tag Performers (Stash task backend)
 
-Applies attribute tags (hair colour, ethnicity, age range, body type, bust)
+Applies attribute tags (hair colour, eye colour, ethnicity, body type, height, bust)
 to all performers based on their Stash data fields.  Only applies tags in
 categories that have no existing tags set on the performer, so manual tags
-are never overridden.
+are never overridden.  Male performers are skipped.
 
 Uses only the Python standard library — no pip dependencies.
 """
@@ -37,6 +37,10 @@ DEFAULT_TAG_GROUPS = [
         "tags": ["Blonde", "Brunette", "Black Hair", "Red Hair", "Auburn", "Gray Hair"],
     },
     {
+        "category": "Eye Color",
+        "tags": ["Blue Eyes", "Brown Eyes", "Green Eyes", "Hazel Eyes", "Gray Eyes", "Amber Eyes"],
+    },
+    {
         "category": "Body Type",
         "tags": ["Petite", "Slim", "Athletic", "Curvy", "BBW", "Busty"],
     },
@@ -49,8 +53,8 @@ DEFAULT_TAG_GROUPS = [
         "tags": ["Asian", "Latina", "Ebony", "Caucasian", "Mixed"],
     },
     {
-        "category": "Age Range",
-        "tags": ["Teen (18+)", "20s", "30s", "MILF", "Mature"],
+        "category": "Height",
+        "tags": ["Tall", "Average Height", "Small", "Tiny"],
     },
 ]
 
@@ -61,7 +65,6 @@ ALL_MANAGED_TAG_NAMES = {
     for t in group["tags"]
 }
 
-DAYS_PER_YEAR = 365.25
 BATCH_PAGE_SIZE = 100
 
 # ---------------------------------------------------------------------------
@@ -213,65 +216,6 @@ def get_or_create_category_tag(category_name: str) -> str | None:
 # Derived-tag logic — mirrors deriveTagsFromPerformerData() in JS
 # ---------------------------------------------------------------------------
 
-def parse_career_years(career_length: str | None) -> tuple[int | None, int | None]:
-    """Extract (start_year, end_year) from a career_length string like '2010 - 2020'."""
-    if not career_length:
-        return None, None
-    import re
-    years = re.findall(r"\d{4}", str(career_length))
-    if not years:
-        return None, None
-    start_year = int(years[0])
-    end_year = int(years[-1]) if len(years) >= 2 else None
-    return start_year, end_year
-
-
-def parse_birthdate(birthdate_str: str) -> float | None:
-    """
-    Parse a Stash birthdate string and return a Unix timestamp (seconds),
-    or None if the date is invalid.
-
-    Handles:
-      - "YYYY-MM-DD" (full ISO date)
-      - "YYYY-MM-00" / "YYYY-00-00" (partial date with zero month/day)
-      - "YYYY" (year only)
-    """
-    if not birthdate_str:
-        return None
-
-    import re
-    s = birthdate_str.strip()
-
-    # Full ISO date — but guard against zero month or day (Stash partial-date encoding)
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", s)
-    if m:
-        year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        # Zero month or day means "unknown" — fall back to year-only
-        if month == 0 or day == 0:
-            s = str(year)
-        else:
-            # Build an epoch timestamp using calendar arithmetic (no datetime module quirks)
-            try:
-                import calendar
-                ts = calendar.timegm((year, month, day, 0, 0, 0, 0, 0, 0))
-                return float(ts)
-            except Exception:
-                s = str(year)
-
-    # Year-only (or fell through from zero-month case above)
-    m2 = re.match(r"^(\d{4})$", s)
-    if m2:
-        year = int(m2.group(1))
-        try:
-            import calendar
-            ts = calendar.timegm((year, 1, 1, 0, 0, 0, 0, 0, 0))
-            return float(ts)
-        except Exception:
-            return None
-
-    return None
-
-
 def derive_tags(performer: dict) -> list[dict]:
     """
     Return a list of {tag_name, category_name} dicts inferred from *performer*'s
@@ -298,6 +242,25 @@ def derive_tags(performer: dict) -> list[dict]:
         if tag_name:
             derived.append({"tag_name": tag_name, "category_name": "Hair Color"})
 
+    # --- Eye Colour ---
+    ec = (performer.get("eye_color") or "").lower()
+    if ec:
+        tag_name = None
+        if "blue" in ec:
+            tag_name = "Blue Eyes"
+        elif "brown" in ec or "dark" in ec:
+            tag_name = "Brown Eyes"
+        elif "green" in ec:
+            tag_name = "Green Eyes"
+        elif "hazel" in ec:
+            tag_name = "Hazel Eyes"
+        elif "gray" in ec or "grey" in ec:
+            tag_name = "Gray Eyes"
+        elif "amber" in ec:
+            tag_name = "Amber Eyes"
+        if tag_name:
+            derived.append({"tag_name": tag_name, "category_name": "Eye Color"})
+
     # --- Ethnicity (check caucasian before asian to avoid false positive) ---
     eth = (performer.get("ethnicity") or "").lower()
     if eth:
@@ -315,50 +278,24 @@ def derive_tags(performer: dict) -> list[dict]:
         if tag_name:
             derived.append({"tag_name": tag_name, "category_name": "Ethnicity"})
 
-    # --- Age Range ---
-    birthdate_str = performer.get("birthdate")
-    birth_ts = parse_birthdate(birthdate_str) if birthdate_str else None
-    if birth_ts is not None:
-        import time
-        reference_ts = time.time()  # default: today
-
-        career_length = performer.get("career_length")
-        if career_length:
-            start_year, end_year = parse_career_years(career_length)
-            if start_year and end_year and end_year > start_year:
-                import calendar
-                mid_year = round((start_year + end_year) / 2)
-                # July 1 of mid_year (avoids timezone skew)
-                mid_ts = float(calendar.timegm((mid_year, 7, 1, 0, 0, 0, 0, 0, 0)))
-                mid_age = math.floor((mid_ts - birth_ts) / (86400 * DAYS_PER_YEAR))
-                if mid_age >= 18:
-                    reference_ts = mid_ts
-
-        age = math.floor((reference_ts - birth_ts) / (86400 * DAYS_PER_YEAR))
-        tag_name = None
-        if 18 <= age < 20:
-            tag_name = "Teen (18+)"
-        elif 20 <= age < 30:
-            tag_name = "20s"
-        elif 30 <= age < 40:
-            tag_name = "30s"
-        elif 40 <= age < 50:
-            tag_name = "MILF"
-        elif age >= 50:
-            tag_name = "Mature"
-
-        if tag_name:
-            derived.append({"tag_name": tag_name, "category_name": "Age Range"})
-        else:
-            log.LogDebug(
-                f"Performer {performer.get('id')} age={age}: "
-                "outside taggable range (< 18)"
-            )
-
     # --- Body Type (height) ---
     height_cm = performer.get("height_cm") or 0
     if height_cm > 0 and height_cm <= 160:
         derived.append({"tag_name": "Petite", "category_name": "Body Type"})
+
+    # --- Height category ---
+    # Tall: >= 175 cm (5'9"+), Average: 168-174 cm (5'6"-5'8"),
+    # Small: 158-167 cm (5'2"-5'5"), Tiny: <= 157 cm (5'1" and below)
+    if height_cm > 0:
+        if height_cm >= 175:
+            tag_name = "Tall"
+        elif height_cm >= 168:
+            tag_name = "Average Height"
+        elif height_cm >= 158:
+            tag_name = "Small"
+        else:
+            tag_name = "Tiny"
+        derived.append({"tag_name": tag_name, "category_name": "Height"})
 
     # --- Bust (fake_tits field) ---
     ft = performer.get("fake_tits")
@@ -407,11 +344,13 @@ def fetch_performer_page(page: int) -> dict:
           id
           name
           hair_color
+          eye_color
           ethnicity
           birthdate
           career_length
           height_cm
           fake_tits
+          gender
           tags { id name }
         }
       }
@@ -434,6 +373,11 @@ def process_performer(performer: dict) -> str:
     Returns 'tagged', 'skipped', or 'error'.
     """
     performer_id = performer["id"]
+
+    # Skip male performers
+    gender = (performer.get("gender") or "").upper()
+    if gender == "MALE":
+        return "skipped"
 
     # Pre-populate tag ID cache from this performer's existing tags
     current_tags = performer.get("tags", [])
