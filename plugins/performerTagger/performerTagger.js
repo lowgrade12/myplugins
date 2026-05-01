@@ -40,7 +40,7 @@
     },
     {
       category: "Body Type",
-      tags: ["Petite", "Slim", "Athletic", "Curvy", "BBW", "Busty"],
+      tags: ["Skinny", "Slim", "Athletic", "Average", "Curvy", "BBW", "Muscular"],
     },
     {
       category: "Bust Size",
@@ -364,6 +364,7 @@
           career_length
           height_cm
           fake_tits
+          measurements
           gender
         }
       }
@@ -371,7 +372,7 @@
       { id: performerId }
     );
     if (!result.findPerformer) {
-      return { tags: [], hair_color: null, eye_color: null, ethnicity: null, birthdate: null, career_length: null, height_cm: null, fake_tits: null, gender: null };
+      return { tags: [], hair_color: null, eye_color: null, ethnicity: null, birthdate: null, career_length: null, height_cm: null, fake_tits: null, measurements: null, gender: null };
     }
     const performer = result.findPerformer;
     // Pre-populate tag ID cache
@@ -381,7 +382,7 @@
 
   /**
    * Derive tag suggestions from a performer's raw Stash data fields.
-   * Maps hair_color, eye_color, ethnicity, height_cm and fake_tits to matching tag names in DEFAULT_TAG_GROUPS.
+   * Maps hair_color, eye_color, ethnicity, height_cm, fake_tits, and measurements to matching tag names in DEFAULT_TAG_GROUPS.
    * @param {Object} performer - Performer data object from getPerformerFull
    * @returns {Array<{tagName: string, categoryName: string}>}
    */
@@ -427,12 +428,12 @@
       if (tagName) derived.push({ tagName, categoryName: "Ethnicity" });
     }
 
-    // Body Type from height — suggest Petite for shorter performers.
+    // Body Type from height — suggest Skinny for shorter performers.
     // Only applied when the Body Type category has no existing tags.
     // Threshold: <= 160 cm (approx 5'3").
     if (performer.height_cm && performer.height_cm > 0) {
       if (performer.height_cm <= 160) {
-        derived.push({ tagName: "Petite", categoryName: "Body Type" });
+        derived.push({ tagName: "Skinny", categoryName: "Body Type" });
       }
     }
 
@@ -456,6 +457,29 @@
       } else if (ft !== "" && ft !== "unknown") {
         // Any non-empty, non-natural value indicates enhancement
         derived.push({ tagName: "Enhanced", categoryName: "Bust Size" });
+      }
+    }
+
+    // Bust size from measurements field (e.g. "34C-24-34").
+    // Parse the cup letter from the bust portion and map to Small/Medium/Large.
+    // Cup A–B → Small Bust, C–D → Medium Bust, DD/E and above → Large Bust.
+    if (performer.measurements) {
+      const mStr = String(performer.measurements).trim();
+      // Match an optional number followed by one or more letters at the start (bust measurement)
+      const cupMatch = mStr.match(/^\d*([A-Za-z]+)/);
+      if (cupMatch) {
+        const cup = cupMatch[1].toUpperCase();
+        let bustTag = null;
+        if (/^(A|B)$/.test(cup)) {
+          bustTag = "Small Bust";
+        } else if (/^(C|D)$/.test(cup)) {
+          bustTag = "Medium Bust";
+        } else if (/^(DD|DDD|E|F|FF|G|GG|H|HH|J|JJ|K)/.test(cup)) {
+          bustTag = "Large Bust";
+        }
+        if (bustTag) {
+          derived.push({ tagName: bustTag, categoryName: "Bust Size" });
+        }
       }
     }
 
