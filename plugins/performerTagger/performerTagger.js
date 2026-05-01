@@ -923,6 +923,56 @@
   }
 
   /**
+   * Handle the Auto Tag button click: re-run auto-tagging from performer data.
+   * @param {HTMLElement} btn - The auto-tag button element
+   * @param {HTMLElement} panel - The panel element
+   * @param {string} performerId - Performer ID
+   */
+  async function handleAutoTagClick(btn, panel, performerId) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "Running…";
+
+    try {
+      const performer = await getPerformerFull(performerId);
+      const currentTagIds = new Set(performer.tags.map((t) => t.id));
+      const { savedTagIds, suggestedTagIds } = await autoApplyDerivedTags(
+        performerId,
+        performer,
+        currentTagIds
+      );
+
+      const activeIds = savedTagIds.size >= suggestedTagIds.size ? savedTagIds : suggestedTagIds;
+      syncPillStates(panel, activeIds);
+
+      const added = savedTagIds.size - currentTagIds.size;
+      if (added > 0) {
+        showToast(panel, `Auto-applied ${added} tag(s) from performer data.`, "success");
+      } else if (suggestedTagIds.size > savedTagIds.size) {
+        syncPillStates(panel, suggestedTagIds);
+        showToast(panel, "Auto-save failed — click Save to apply the highlighted tags.", "error");
+      } else {
+        showToast(panel, "No new tags to apply — all categories already tagged.", "success");
+      }
+
+      btn.textContent = "✓ Done";
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }, 2000);
+    } catch (err) {
+      console.error("[PerformerTagger] Auto Tag failed:", err);
+      btn.textContent = "✗ Error";
+      showToast(panel, "Auto Tag failed — check the console for details.", "error");
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }, 2000);
+    }
+  }
+
+  /**
    * Build the quick-tag panel DOM element.
    * The panel contains one row per tag group with pill-style toggle buttons.
    *
@@ -957,11 +1007,24 @@
       handleSaveClick(saveBtn, panel, performerId);
     });
 
+    const autoTagBtn = document.createElement("button");
+    autoTagBtn.className = "pt-autotag-btn";
+    autoTagBtn.setAttribute("aria-label", "Auto-apply tags from performer data fields");
+    autoTagBtn.textContent = "⚡ Auto Tag";
+    autoTagBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleAutoTagClick(autoTagBtn, panel, performerId);
+    });
+
     const toggle = document.createElement("button");
     toggle.className = "pt-toggle";
     toggle.setAttribute("aria-label", "Toggle quick-tag panel");
     toggle.textContent = startCollapsed ? "▸" : "▾";
+    // Prevent toggle button clicks from bubbling to the header handler (avoid double-toggle)
+    toggle.addEventListener("click", (e) => e.stopPropagation());
 
+    headerRight.appendChild(autoTagBtn);
     headerRight.appendChild(saveBtn);
     headerRight.appendChild(toggle);
     header.appendChild(title);
@@ -1017,8 +1080,10 @@
 
     panel.appendChild(body);
 
-    // Collapse/expand toggle handler
-    toggle.addEventListener("click", () => {
+    // Clicking the header (anywhere except the buttons) expands/collapses the panel.
+    // The save/autoTag/toggle buttons already call e.stopPropagation() so they
+    // will not bubble up to this handler.
+    header.addEventListener("click", () => {
       const isCollapsed = body.classList.toggle("pt-body-collapsed");
       toggle.textContent = isCollapsed ? "▸" : "▾";
     });
