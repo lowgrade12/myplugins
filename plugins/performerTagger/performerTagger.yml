@@ -1,0 +1,18 @@
+name: PerformerTagger
+description: Injects a quick-tag panel on performer detail pages for one-click attribute tagging (hair color, body type, bust size, ethnicity, age range)
+version: 1.0.0
+url: https://github.com/lowgrade12/hotornottest.git
+ui:
+  javascript:
+    - performerTagger.js
+  css:
+    - performerTagger.css
+settings:
+  enabled:
+    displayName: Enable Performer Tagger
+    description: Show the quick-tag panel on performer detail pages. Enabled by default.
+    type: BOOLEAN
+  collapsed:
+    displayName: Start Collapsed
+    description: Start the quick-tag panel in a collapsed state. Disabled by default.
+    type: BOOLEAN
