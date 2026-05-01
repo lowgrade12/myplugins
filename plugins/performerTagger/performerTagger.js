@@ -311,7 +311,7 @@
    * Fetch performer tags AND raw data fields in a single query.
    * Used during panel injection to support auto-tagging from known performer attributes.
    * @param {string} performerId - Performer ID
-   * @returns {Promise<Object>} Performer object with tags, hair_color, ethnicity, birthdate, fake_tits
+   * @returns {Promise<Object>} Performer object with tags, hair_color, ethnicity, birthdate, height_cm, fake_tits
    */
   async function getPerformerFull(performerId) {
     const result = await graphqlQuery(
@@ -324,6 +324,7 @@
           ethnicity
           birthdate
           career_length
+          height_cm
           fake_tits
         }
       }
@@ -331,7 +332,7 @@
       { id: performerId }
     );
     if (!result.findPerformer) {
-      return { tags: [], hair_color: null, ethnicity: null, birthdate: null, fake_tits: null };
+      return { tags: [], hair_color: null, ethnicity: null, birthdate: null, career_length: null, height_cm: null, fake_tits: null };
     }
     const performer = result.findPerformer;
     // Pre-populate tag ID cache
@@ -399,16 +400,26 @@
     // worked in their 20s/30s is not mis-tagged as MILF/Mature based on current age.
     // Active performers (end year missing) and performers with no career_length still
     // use the current date as the reference.
+    // If the midpoint calculation produces an age below 18 (e.g. due to a performer
+    // whose career_length data pre-dates their legal adult content), we fall back to
+    // the current date so the performer still receives an age tag.
     if (performer.birthdate) {
       const birth = new Date(performer.birthdate);
       if (!isNaN(birth.getTime())) {
         let referenceDate = new Date();
         if (performer.career_length) {
           const { startYear, endYear } = parseCareerYears(performer.career_length);
-          if (startYear && endYear) {
+          if (startYear && endYear && endYear > startYear) {
             // Retired performer: assess age at the midpoint of their career
             const midYear = Math.round((startYear + endYear) / 2);
-            referenceDate = new Date(midYear, 6, 1); // July 1st of midpoint year
+            const midDate = new Date(Date.UTC(midYear, 6, 1)); // July 1st of midpoint year (UTC)
+            const midAgeMs = midDate.getTime() - birth.getTime();
+            const midAge = Math.floor(midAgeMs / (1000 * 60 * 60 * 24 * DAYS_PER_YEAR));
+            // Only use the midpoint if it yields a valid adult age; otherwise fall through
+            // to the current-date calculation below so we never skip the age tag entirely.
+            if (midAge >= 18) {
+              referenceDate = midDate;
+            }
           }
         }
         const ageMs = referenceDate.getTime() - birth.getTime();
@@ -420,6 +431,15 @@
         else if (age >= 40 && age < 50) tagName = "MILF";
         else if (age >= 50) tagName = "Mature";
         if (tagName) derived.push({ tagName, categoryName: "Age Range" });
+      }
+    }
+
+    // Body Type from height — suggest Petite for shorter performers.
+    // Only applied when the Body Type category has no existing tags.
+    // Threshold: <= 160 cm (approx 5'3").
+    if (performer.height_cm && performer.height_cm > 0) {
+      if (performer.height_cm <= 160) {
+        derived.push({ tagName: "Petite", categoryName: "Body Type" });
       }
     }
 
@@ -551,6 +571,7 @@
             ethnicity
             birthdate
             career_length
+            height_cm
             fake_tits
             tags { id name }
           }
@@ -800,6 +821,8 @@
       document.querySelector(".performers-page .grid-header") ||
       document.querySelector(".performers-page header") ||
       document.querySelector(".performers-page") ||
+      document.querySelector("main") ||
+      document.querySelector("#root") ||
       null
     );
   }
@@ -823,6 +846,35 @@
     btn.addEventListener("click", () => startBatchTag());
     target.appendChild(btn);
     console.log("[PerformerTagger] Batch Tag button injected");
+  }
+
+  /** Number of times the batch button injection has been retried on the current page. */
+  let batchButtonRetries = 0;
+  const BATCH_BUTTON_MAX_RETRIES = 8;
+
+  /**
+   * Try to inject the batch button, retrying at increasing intervals if the target
+   * DOM element is not yet present (React can be slow to render the page structure).
+   */
+  function injectBatchButtonWithRetry() {
+    batchButtonRetries = 0;
+
+    function attempt() {
+      if (!isOnPerformerListPage()) return;
+      if (document.getElementById("pt-batch-trigger")) return;
+
+      injectBatchButton();
+
+      // If the button still isn't there, schedule a retry
+      if (!document.getElementById("pt-batch-trigger") && batchButtonRetries < BATCH_BUTTON_MAX_RETRIES) {
+        batchButtonRetries++;
+        const delay = Math.min(500 * batchButtonRetries, 3000);
+        clearTimeout(batchButtonTimeout);
+        batchButtonTimeout = setTimeout(attempt, delay);
+      }
+    }
+
+    attempt();
   }
 
   // ============================================
@@ -1340,7 +1392,7 @@
 
     // Inject batch button if we start on the performers list
     if (isOnPerformerListPage()) {
-      setTimeout(() => injectBatchButton(), 800);
+      setTimeout(() => injectBatchButtonWithRetry(), 800);
     }
 
     // MutationObserver — handles React re-renders that swap out DOM nodes
@@ -1356,7 +1408,7 @@
         }, 600);
       } else if (isOnPerformerListPage()) {
         clearTimeout(batchButtonTimeout);
-        batchButtonTimeout = setTimeout(() => injectBatchButton(), 600);
+        batchButtonTimeout = setTimeout(() => injectBatchButtonWithRetry(), 600);
       }
     });
 
@@ -1369,6 +1421,7 @@
         clearTimeout(processingTimeout);
         clearTimeout(batchButtonTimeout);
         injectionInProgress = false; // Reset flag on navigation
+        batchButtonRetries = 0; // Reset retry counter on navigation
         pluginConfigCache = null; // Refresh settings on each navigation
 
         console.log("[PerformerTagger] Page changed:", e.detail.data.location.pathname);
@@ -1392,7 +1445,7 @@
         if (isOnSinglePerformerPage()) {
           setTimeout(() => injectPanel(), 500);
         } else if (isOnPerformerListPage()) {
-          setTimeout(() => injectBatchButton(), 800);
+          setTimeout(() => injectBatchButtonWithRetry(), 800);
         }
       });
     }
