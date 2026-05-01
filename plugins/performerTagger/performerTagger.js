@@ -209,11 +209,39 @@
       );
       const tags = result.findTags ? result.findTags.tags : [];
       const tag = tags.find((t) => t.name.toLowerCase() === name.toLowerCase()) || null;
-      const id = tag ? tag.id : null;
+      if (tag) {
+        tagIdCache.set(cacheKey, tag.id);
+        return tag.id;
+      }
+    } catch (e) {
+      console.error(`[PerformerTagger] Error finding tag "${name}":`, e);
+      return null;
+    }
+
+    // Not found by name — check if this name is used as an alias for another tag.
+    try {
+      const aliasResult = await graphqlQuery(
+        `
+        query FindTagByAlias($name: String!) {
+          findTags(
+            tag_filter: { aliases: { value: $name, modifier: EQUALS } }
+            filter: { per_page: -1 }
+          ) {
+            tags { id name aliases }
+          }
+        }
+      `,
+        { name }
+      );
+      const aliasTags = aliasResult.findTags ? aliasResult.findTags.tags : [];
+      const aliasTag = aliasTags.find(
+        (t) => t.aliases && t.aliases.some((a) => a.toLowerCase() === name.toLowerCase())
+      ) || null;
+      const id = aliasTag ? aliasTag.id : null;
       tagIdCache.set(cacheKey, id);
       return id;
     } catch (e) {
-      console.error(`[PerformerTagger] Error finding tag "${name}":`, e);
+      console.error(`[PerformerTagger] Error finding tag by alias "${name}":`, e);
       return null;
     }
   }
