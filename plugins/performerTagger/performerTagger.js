@@ -225,16 +225,18 @@
         query FindTagByAlias($name: String!) {
           findTags(
             tag_filter: { aliases: { value: $name, modifier: EQUALS } }
-            filter: { per_page: 1 }
+            filter: { per_page: -1 }
           ) {
-            tags { id name }
+            tags { id name aliases }
           }
         }
       `,
         { name }
       );
       const aliasTags = aliasResult.findTags ? aliasResult.findTags.tags : [];
-      const aliasTag = aliasTags.length > 0 ? aliasTags[0] : null;
+      const aliasTag = aliasTags.find(
+        (t) => t.aliases && t.aliases.some((a) => a.toLowerCase() === name.toLowerCase())
+      ) || null;
       const id = aliasTag ? aliasTag.id : null;
       tagIdCache.set(cacheKey, id);
       return id;
