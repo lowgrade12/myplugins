@@ -943,7 +943,9 @@
         currentTagIds
       );
 
-      const activeIds = savedTagIds.size >= suggestedTagIds.size ? savedTagIds : suggestedTagIds;
+      const activeIds = savedTagIds.size >= suggestedTagIds.size
+        ? savedTagIds  // save succeeded — use what was actually persisted
+        : suggestedTagIds; // save failed — still reflect what was attempted in UI
       syncPillStates(panel, activeIds);
 
       const added = savedTagIds.size - currentTagIds.size;
