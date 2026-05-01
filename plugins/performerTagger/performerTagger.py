@@ -3,9 +3,10 @@
 PerformerTagger - Batch Tag Performers (Stash task backend)
 
 Applies attribute tags (hair colour, eye colour, ethnicity, body type, height, bust)
-to all performers based on their Stash data fields.  Only applies tags in
-categories that have no existing tags set on the performer, so manual tags
-are never overridden.  Male performers are skipped.
+to all performers based on their Stash data fields.  For every category where a value
+can be derived, the correct tag is always applied and any wrong managed tags in that
+category are removed.  Categories for which no value can be derived are left untouched.
+Male performers are skipped.
 
 Uses only the Python standard library — no pip dependencies.
 """
@@ -420,50 +421,35 @@ def process_performer(performer: dict) -> str:
     new_ids = set(current_ids)
     log_items = []
 
-    # --- Height: always apply the correct tag, correcting any wrong existing height tag ---
-    # This allows stale/wrong height tags from previous runs to be fixed automatically.
-    derived_height = next((d for d in derived if d["category_name"] == "Height"), None)
-    if derived_height:
-        height_group = next((g for g in DEFAULT_TAG_GROUPS if g["category"] == "Height"), None)
-        correct_name_lower = derived_height["tag_name"].lower()
+    # --- All categories: always apply the correct tag, replacing any wrong managed tags ---
+    # For every category where a value can be derived from the performer's Stash data,
+    # ensure the correct tag is present and remove any incorrect managed tags in that
+    # category. Categories for which no value can be derived are left untouched.
+    derived_by_category = {d["category_name"]: d for d in derived}
+
+    for group in DEFAULT_TAG_GROUPS:
+        correct_derived = derived_by_category.get(group["category"])
+        if correct_derived is None:
+            continue  # no data for this category — leave alone
+
+        correct_name_lower = correct_derived["tag_name"].lower()
         has_correct_tag = False
-        if height_group:
-            for tag_name in height_group["tags"]:
-                tid = tag_id_cache.get(tag_name.lower())
-                if tid and tid in new_ids:
-                    if tag_name.lower() == correct_name_lower:
-                        has_correct_tag = True
-                    else:
-                        new_ids.discard(tid)  # remove wrong height tag
-                        log_items.append(f"Height: remove '{tag_name}'")
+
+        for tag_name in group["tags"]:
+            tid = tag_id_cache.get(tag_name.lower())
+            if tid and tid in new_ids:
+                if tag_name.lower() == correct_name_lower:
+                    has_correct_tag = True
+                else:
+                    new_ids.discard(tid)  # remove wrong tag
+                    log_items.append(f"{group['category']}: remove '{tag_name}'")
+
         if not has_correct_tag:
-            category_id = get_or_create_category_tag("Height")
-            tag_id = get_or_create_tag(derived_height["tag_name"], category_id)
+            category_id = get_or_create_category_tag(group["category"])
+            tag_id = get_or_create_tag(correct_derived["tag_name"], category_id)
             if tag_id:
                 new_ids.add(tag_id)
-                log_items.append(f"Height: {derived_height['tag_name']}")
-
-    # --- All other categories: skip if any managed tag already applied ---
-    categories_with_tags = set()
-    for group in DEFAULT_TAG_GROUPS:
-        if group["category"] == "Height":
-            continue
-        for tag_name in group["tags"]:
-            cached_id = tag_id_cache.get(tag_name.lower())
-            if cached_id and cached_id in current_ids:
-                categories_with_tags.add(group["category"])
-                break
-
-    to_apply = [
-        d for d in derived
-        if d["category_name"] not in categories_with_tags and d["category_name"] != "Height"
-    ]
-    for item in to_apply:
-        category_id = get_or_create_category_tag(item["category_name"])
-        tag_id = get_or_create_tag(item["tag_name"], category_id)
-        if tag_id:
-            new_ids.add(tag_id)
-            log_items.append(f"{item['category_name']}: {item['tag_name']}")
+                log_items.append(f"{group['category']}: {correct_derived['tag_name']}")
 
     if new_ids == current_ids:
         return "skipped"
