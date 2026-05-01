@@ -44,7 +44,11 @@
     },
     {
       category: "Bust Size",
-      tags: ["Small Bust", "Medium Bust", "Large Bust", "Natural Tits", "Enhanced"],
+      tags: ["Small Bust", "Medium Bust", "Large Bust"],
+    },
+    {
+      category: "Bust Type",
+      tags: ["Natural Tits", "Enhanced"],
     },
     {
       category: "Ethnicity",
@@ -453,10 +457,10 @@
     if (performer.fake_tits !== null && performer.fake_tits !== undefined) {
       const ft = String(performer.fake_tits).toLowerCase().trim();
       if (ft === "" || ft === "no" || ft === "false" || ft === "natural") {
-        derived.push({ tagName: "Natural Tits", categoryName: "Bust Size" });
+        derived.push({ tagName: "Natural Tits", categoryName: "Bust Type" });
       } else if (ft !== "" && ft !== "unknown") {
         // Any non-empty, non-natural value indicates enhancement
-        derived.push({ tagName: "Enhanced", categoryName: "Bust Size" });
+        derived.push({ tagName: "Enhanced", categoryName: "Bust Type" });
       }
     }
 
