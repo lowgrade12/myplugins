@@ -351,7 +351,7 @@ def derive_tags(performer: dict) -> list[dict]:
             derived.append({"tag_name": tag_name, "category_name": "Age Range"})
         else:
             log.LogDebug(
-                f"Performer {performer.get('id')} birthdate={birthdate_str!r} → age={age}: "
+                f"Performer {performer.get('id')} age={age}: "
                 "outside taggable range (< 18)"
             )
 
