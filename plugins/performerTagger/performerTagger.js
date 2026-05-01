@@ -412,7 +412,7 @@
           if (startYear && endYear && endYear > startYear) {
             // Retired performer: assess age at the midpoint of their career
             const midYear = Math.round((startYear + endYear) / 2);
-            const midDate = new Date(Date.UTC(midYear, 6, 1)); // July 1st of midpoint year (UTC)
+            const midDate = new Date(Date.UTC(midYear, 6, 1)); // UTC July 1st avoids local-timezone skew; July is the year's midpoint
             const midAgeMs = midDate.getTime() - birth.getTime();
             const midAge = Math.floor(midAgeMs / (1000 * 60 * 60 * 24 * DAYS_PER_YEAR));
             // Only use the midpoint if it yields a valid adult age; otherwise fall through
@@ -850,6 +850,8 @@
 
   /** Number of times the batch button injection has been retried on the current page. */
   let batchButtonRetries = 0;
+  // Up to 8 retries at 500 ms, 1000 ms, … capped at 3000 ms — total ceiling ~16 s.
+  // This covers slow React renders without retrying indefinitely.
   const BATCH_BUTTON_MAX_RETRIES = 8;
 
   /**
