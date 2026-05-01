@@ -12,6 +12,7 @@ Uses only the Python standard library — no pip dependencies.
 
 import json
 import math
+import re
 import ssl
 import sys
 import urllib.error
@@ -297,14 +298,34 @@ def derive_tags(performer: dict) -> list[dict]:
             tag_name = "tiny woman"
         derived.append({"tag_name": tag_name, "category_name": "Height"})
 
-    # --- Bust (fake_tits field) ---
+    # --- Bust type (fake_tits field) ---
     ft = performer.get("fake_tits")
     if ft is not None:
         ft_str = str(ft).lower().strip()
-        if ft_str in ("", "no", "false", "natural"):
+        # Empty string means the field was not filled in ("no data") — skip it.
+        if ft_str in ("no", "false", "natural"):
             derived.append({"tag_name": "Natural Tits", "category_name": "Bust Size"})
         elif ft_str not in ("", "unknown"):
             derived.append({"tag_name": "Enhanced", "category_name": "Bust Size"})
+
+    # --- Bust size from measurements field (e.g. "34C-24-34") ---
+    # Parse the cup letter from the bust portion and map to Small/Medium/Large.
+    # Cup A–B → Small Bust, C–D → Medium Bust, DD/E and above → Large Bust.
+    measurements = performer.get("measurements")
+    if measurements:
+        m_str = str(measurements).strip()
+        cup_match = re.match(r"^\d*([A-Za-z]+)", m_str)
+        if cup_match:
+            cup = cup_match.group(1).upper()
+            bust_tag = None
+            if re.match(r"^(A|B)$", cup):
+                bust_tag = "Small Bust"
+            elif re.match(r"^(C|D)$", cup):
+                bust_tag = "Medium Bust"
+            elif re.match(r"^(DD|DDD|E|F|FF|G|GG|H|HH|J|JJ|K)", cup):
+                bust_tag = "Large Bust"
+            if bust_tag:
+                derived.append({"tag_name": bust_tag, "category_name": "Bust Size"})
 
     return derived
 
@@ -350,6 +371,7 @@ def fetch_performer_page(page: int) -> dict:
           career_length
           height_cm
           fake_tits
+          measurements
           gender
           tags { id name }
         }
@@ -391,35 +413,63 @@ def process_performer(performer: dict) -> str:
     if not derived:
         return "skipped"
 
-    # Determine which categories already have at least one managed tag
+    new_ids = set(current_ids)
+    log_items = []
+
+    # --- Height: always apply the correct tag, correcting any wrong existing height tag ---
+    # This allows stale/wrong height tags from previous runs to be fixed automatically.
+    derived_height = next((d for d in derived if d["category_name"] == "Height"), None)
+    if derived_height:
+        height_group = next((g for g in DEFAULT_TAG_GROUPS if g["category"] == "Height"), None)
+        correct_name_lower = derived_height["tag_name"].lower()
+        has_correct_tag = False
+        if height_group:
+            for tag_name in height_group["tags"]:
+                tid = tag_id_cache.get(tag_name.lower())
+                if tid and tid in new_ids:
+                    if tag_name.lower() == correct_name_lower:
+                        has_correct_tag = True
+                    else:
+                        new_ids.discard(tid)  # remove wrong height tag
+                        log_items.append(f"Height: remove '{tag_name}'")
+        if not has_correct_tag:
+            category_id = get_or_create_category_tag("Height")
+            tag_id = get_or_create_tag(derived_height["tag_name"], category_id)
+            if tag_id:
+                new_ids.add(tag_id)
+                log_items.append(f"Height: {derived_height['tag_name']}")
+
+    # --- All other categories: skip if any managed tag already applied ---
     categories_with_tags = set()
     for group in DEFAULT_TAG_GROUPS:
+        if group["category"] == "Height":
+            continue
         for tag_name in group["tags"]:
             cached_id = tag_id_cache.get(tag_name.lower())
             if cached_id and cached_id in current_ids:
                 categories_with_tags.add(group["category"])
                 break
 
-    to_apply = [d for d in derived if d["category_name"] not in categories_with_tags]
-    if not to_apply:
-        return "skipped"
-
-    new_ids = set(current_ids)
+    to_apply = [
+        d for d in derived
+        if d["category_name"] not in categories_with_tags and d["category_name"] != "Height"
+    ]
     for item in to_apply:
         category_id = get_or_create_category_tag(item["category_name"])
         tag_id = get_or_create_tag(item["tag_name"], category_id)
         if tag_id:
             new_ids.add(tag_id)
+            log_items.append(f"{item['category_name']}: {item['tag_name']}")
 
-    if len(new_ids) > len(current_ids):
-        label = ", ".join(
-            f"{d['category_name']}: {d['tag_name']}" for d in to_apply
+    if new_ids == current_ids:
+        return "skipped"
+
+    if log_items:
+        log.LogDebug(
+            f"Performer {performer_id} ({performer.get('name', '?')}): [{', '.join(log_items)}]"
         )
-        log.LogDebug(f"Performer {performer_id} ({performer.get('name', '?')}): applying [{label}]")
-        success = update_performer_tags(performer_id, list(new_ids))
-        return "tagged" if success else "error"
-
-    return "skipped"
+    success = update_performer_tags(performer_id, list(new_ids))
+    return "tagged" if success else "error"
 
 
 def task_batch_tag_performers():
