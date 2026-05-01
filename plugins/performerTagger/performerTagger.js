@@ -35,6 +35,10 @@
       tags: ["Blonde", "Brunette", "Black Hair", "Red Hair", "Auburn", "Gray Hair"],
     },
     {
+      category: "Eye Color",
+      tags: ["Blue Eyes", "Brown Eyes", "Green Eyes", "Hazel Eyes", "Gray Eyes", "Amber Eyes"],
+    },
+    {
       category: "Body Type",
       tags: ["Petite", "Slim", "Athletic", "Curvy", "BBW", "Busty"],
     },
@@ -47,8 +51,8 @@
       tags: ["Asian", "Latina", "Ebony", "Caucasian", "Mixed"],
     },
     {
-      category: "Age Range",
-      tags: ["Teen (18+)", "20s", "30s", "MILF", "Mature"],
+      category: "Height",
+      tags: ["Tall", "Average Height", "Small", "Tiny"],
     },
   ];
 
@@ -316,7 +320,7 @@
    * Fetch performer tags AND raw data fields in a single query.
    * Used during panel injection to support auto-tagging from known performer attributes.
    * @param {string} performerId - Performer ID
-   * @returns {Promise<Object>} Performer object with tags, hair_color, ethnicity, birthdate, height_cm, fake_tits
+   * @returns {Promise<Object>} Performer object with tags, hair_color, eye_color, ethnicity, birthdate, height_cm, fake_tits, gender
    */
   async function getPerformerFull(performerId) {
     const result = await graphqlQuery(
@@ -326,18 +330,20 @@
           id
           tags { id name }
           hair_color
+          eye_color
           ethnicity
           birthdate
           career_length
           height_cm
           fake_tits
+          gender
         }
       }
     `,
       { id: performerId }
     );
     if (!result.findPerformer) {
-      return { tags: [], hair_color: null, ethnicity: null, birthdate: null, career_length: null, height_cm: null, fake_tits: null };
+      return { tags: [], hair_color: null, eye_color: null, ethnicity: null, birthdate: null, career_length: null, height_cm: null, fake_tits: null, gender: null };
     }
     const performer = result.findPerformer;
     // Pre-populate tag ID cache
@@ -345,28 +351,9 @@
     return performer;
   }
 
-  // Days per year used for age calculation
-  const DAYS_PER_YEAR = 365.25;
-
-  /**
-   * Parse a Stash career_length string (e.g. "2010 - 2020", "2010 -", "2010-2020")
-   * and return the numeric start and end years.
-   * Only 4-digit sequences are considered; formats like "2010 - present" yield no end year.
-   * @param {string} careerLength
-   * @returns {{ startYear: number|null, endYear: number|null }}
-   */
-  function parseCareerYears(careerLength) {
-    if (!careerLength) return { startYear: null, endYear: null };
-    const years = String(careerLength).match(/\d{4}/g);
-    if (!years || years.length === 0) return { startYear: null, endYear: null };
-    const startYear = parseInt(years[0], 10);
-    const endYear = years.length >= 2 ? parseInt(years[years.length - 1], 10) : null;
-    return { startYear, endYear };
-  }
-
   /**
    * Derive tag suggestions from a performer's raw Stash data fields.
-   * Maps hair_color, ethnicity, birthdate and fake_tits to matching tag names in DEFAULT_TAG_GROUPS.
+   * Maps hair_color, eye_color, ethnicity, height_cm and fake_tits to matching tag names in DEFAULT_TAG_GROUPS.
    * @param {Object} performer - Performer data object from getPerformerFull
    * @returns {Array<{tagName: string, categoryName: string}>}
    */
@@ -386,6 +373,19 @@
       if (tagName) derived.push({ tagName, categoryName: "Hair Color" });
     }
 
+    // Eye Color
+    if (performer.eye_color) {
+      const ec = String(performer.eye_color).toLowerCase();
+      let tagName = null;
+      if (ec.includes("blue")) tagName = "Blue Eyes";
+      else if (ec.includes("brown") || ec.includes("dark")) tagName = "Brown Eyes";
+      else if (ec.includes("green")) tagName = "Green Eyes";
+      else if (ec.includes("hazel")) tagName = "Hazel Eyes";
+      else if (ec.includes("gray") || ec.includes("grey")) tagName = "Gray Eyes";
+      else if (ec.includes("amber")) tagName = "Amber Eyes";
+      if (tagName) derived.push({ tagName, categoryName: "Eye Color" });
+    }
+
     // Ethnicity — check "caucasian" before "asian" to avoid the false-positive
     // where "caucasian".includes("asian") === true.
     if (performer.ethnicity) {
@@ -399,46 +399,6 @@
       if (tagName) derived.push({ tagName, categoryName: "Ethnicity" });
     }
 
-    // Age Range from birthdate
-    // For retired performers (career_length has both a start and end year) the age is
-    // assessed at the midpoint of their career rather than today, so a performer who
-    // worked in their 20s/30s is not mis-tagged as MILF/Mature based on current age.
-    // Active performers (end year missing) and performers with no career_length still
-    // use the current date as the reference.
-    // If the midpoint calculation produces an age below 18 (e.g. due to a performer
-    // whose career_length data pre-dates their legal adult content), we fall back to
-    // the current date so the performer still receives an age tag.
-    if (performer.birthdate) {
-      const birth = new Date(performer.birthdate);
-      if (!isNaN(birth.getTime())) {
-        let referenceDate = new Date();
-        if (performer.career_length) {
-          const { startYear, endYear } = parseCareerYears(performer.career_length);
-          if (startYear && endYear && endYear > startYear) {
-            // Retired performer: assess age at the midpoint of their career
-            const midYear = Math.round((startYear + endYear) / 2);
-            const midDate = new Date(Date.UTC(midYear, 6, 1)); // UTC July 1st avoids local-timezone skew; July is the year's midpoint
-            const midAgeMs = midDate.getTime() - birth.getTime();
-            const midAge = Math.floor(midAgeMs / (1000 * 60 * 60 * 24 * DAYS_PER_YEAR));
-            // Only use the midpoint if it yields a valid adult age; otherwise fall through
-            // to the current-date calculation below so we never skip the age tag entirely.
-            if (midAge >= 18) {
-              referenceDate = midDate;
-            }
-          }
-        }
-        const ageMs = referenceDate.getTime() - birth.getTime();
-        const age = Math.floor(ageMs / (1000 * 60 * 60 * 24 * DAYS_PER_YEAR));
-        let tagName = null;
-        if (age >= 18 && age < 20) tagName = "Teen (18+)";
-        else if (age >= 20 && age < 30) tagName = "20s";
-        else if (age >= 30 && age < 40) tagName = "30s";
-        else if (age >= 40 && age < 50) tagName = "MILF";
-        else if (age >= 50) tagName = "Mature";
-        if (tagName) derived.push({ tagName, categoryName: "Age Range" });
-      }
-    }
-
     // Body Type from height — suggest Petite for shorter performers.
     // Only applied when the Body Type category has no existing tags.
     // Threshold: <= 160 cm (approx 5'3").
@@ -446,6 +406,18 @@
       if (performer.height_cm <= 160) {
         derived.push({ tagName: "Petite", categoryName: "Body Type" });
       }
+    }
+
+    // Height category
+    // Tall: >= 175 cm (5'9"+), Average: 168–174 cm (5'6"–5'8"),
+    // Small: 158–167 cm (5'2"–5'5"), Tiny: <= 157 cm (5'1" and below)
+    if (performer.height_cm && performer.height_cm > 0) {
+      let tagName = null;
+      if (performer.height_cm >= 175) tagName = "Tall";
+      else if (performer.height_cm >= 168) tagName = "Average Height";
+      else if (performer.height_cm >= 158) tagName = "Small";
+      else tagName = "Tiny";
+      derived.push({ tagName, categoryName: "Height" });
     }
 
     // Bust type from fake_tits field (Stash stores cup size string or empty for natural)
@@ -1118,14 +1090,20 @@
       const performer = await getPerformerFull(performerId);
       if (navVersion !== navigationVersion) return;
 
+      // Skip male performers — this panel is for female/non-binary performers only
+      if (performer.gender && performer.gender.toUpperCase() === "MALE") {
+        console.log(`[PerformerTagger] Skipping male performer ${performerId}`);
+        return;
+      }
+
       let activeTagIds = new Set(performer.tags.map((t) => t.id));
 
       // Auto-apply tags derived from the performer's known Stash fields, but only
       // on the first injection for this performer in the current session.  Subsequent
       // re-injections (e.g. triggered by Stash's React re-rendering the page after a
-      // performer update) must NOT re-run auto-tagging, otherwise any age tag the user
-      // just removed via a pill click would be immediately re-derived from the birthdate
-      // and re-applied — making age tags appear completely non-interactive.
+      // performer update) must NOT re-run auto-tagging, otherwise any tag the user
+      // just removed via a pill click would be immediately re-derived and re-applied —
+      // making those tags appear completely non-interactive.
       let autoSaveFailed = false;
       let suggestedTagIds = activeTagIds;
 
