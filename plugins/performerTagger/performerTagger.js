@@ -590,12 +590,14 @@
       const ourPillTagNames = new Set(
         DEFAULT_TAG_GROUPS.flatMap((g) => g.tags.map((t) => t.toLowerCase()))
       );
+      // Build a reverse lookup (id -> name) once from the cache
+      const idToName = new Map([...tagIdCache.entries()].map(([name, id]) => [id, name]));
       // Remove previously quick-tagged entries for categories managed by this panel,
       // then add only the ones the user has selected right now.
       const mergedIds = new Set();
       currentSet.forEach((id) => {
         // Keep tags that are not managed by this panel
-        const name = [...tagIdCache.entries()].find(([, v]) => v === id)?.[0];
+        const name = idToName.get(id);
         if (!name || !ourPillTagNames.has(name)) {
           mergedIds.add(id);
         }
@@ -900,6 +902,7 @@
 
       // If auto-save failed, mark the suggested pills as active anyway (visual hint)
       // and show a toast so the user knows to use the Save button.
+      const originalTagCount = performer.tags.length;
       if (autoSaveFailed) {
         syncPillStates(panel, suggestedTagIds);
         showToast(
@@ -907,9 +910,9 @@
           "Auto-save failed — click Save to apply the highlighted tags.",
           "error"
         );
-      } else if (suggestedTagIds.size > new Set(performer.tags.map((t) => t.id)).size) {
+      } else if (suggestedTagIds.size > originalTagCount) {
         // Auto-save ran and added new tags — let the user know.
-        const added = suggestedTagIds.size - new Set(performer.tags.map((t) => t.id)).size;
+        const added = suggestedTagIds.size - originalTagCount;
         showToast(panel, `Auto-applied ${added} tag(s) from performer data.`, "success");
       }
 
