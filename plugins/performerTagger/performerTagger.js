@@ -492,8 +492,9 @@
 
   /**
    * Auto-apply tags derived from a performer's known Stash data fields.
-   * Only applies a derived tag in a category if that category has no tags already set.
-   * This prevents overriding existing user-set tags.
+   * Height is always corrected — any wrong height tag is removed and the correct one
+   * applied. All other categories are skipped if they already have any managed tag,
+   * so manual selections are never overridden.
    * @param {string} performerId - Performer ID
    * @param {Object} performer - Performer data from getPerformerFull
    * @param {Set<string>} currentTagIds - Current tag IDs on the performer
@@ -507,9 +508,47 @@
       return { savedTagIds: currentTagIds, suggestedTagIds: currentTagIds };
     }
 
-    // Determine which tag group categories already have at least one tag applied
+    const newTagIds = new Set(currentTagIds);
+    const logItems = [];
+
+    // --- Height: always apply the correct tag, replacing any wrong height tag ---
+    // Unlike other categories, height is deterministic from the performer's height_cm
+    // field and must always be kept in sync (e.g. when height_cm is updated).
+    const derivedHeight = derived.find((d) => d.categoryName === "Height");
+    if (derivedHeight) {
+      const heightGroup = DEFAULT_TAG_GROUPS.find((g) => g.category === "Height");
+      const correctNameLower = derivedHeight.tagName.toLowerCase();
+      let hasCorrectTag = false;
+
+      if (heightGroup) {
+        for (const tagName of heightGroup.tags) {
+          const cachedId = tagIdCache.get(tagName.toLowerCase());
+          if (cachedId && newTagIds.has(cachedId)) {
+            if (tagName.toLowerCase() === correctNameLower) {
+              hasCorrectTag = true;
+            } else {
+              newTagIds.delete(cachedId); // remove wrong height tag
+              logItems.push(`Height: remove "${tagName}"`);
+            }
+          }
+        }
+      }
+
+      if (!hasCorrectTag) {
+        const categoryId = await getOrCreateCategoryTag("Height");
+        const tagId = await getOrCreateTag(derivedHeight.tagName, categoryId);
+        if (tagId) {
+          newTagIds.add(tagId);
+          tagIdCache.set(derivedHeight.tagName.toLowerCase(), tagId);
+          logItems.push(`Height: ${derivedHeight.tagName}`);
+        }
+      }
+    }
+
+    // --- All other categories: skip if any managed tag already applied ---
     const categoriesWithTags = new Set();
     for (const group of DEFAULT_TAG_GROUPS) {
+      if (group.category === "Height") continue;
       for (const tagName of group.tags) {
         const cachedId = tagIdCache.get(tagName.toLowerCase());
         if (cachedId && currentTagIds.has(cachedId)) {
@@ -519,18 +558,9 @@
       }
     }
 
-    // Only auto-apply in categories that have no existing tags
-    const toApply = derived.filter((d) => !categoriesWithTags.has(d.categoryName));
-    if (toApply.length === 0) {
-      return { savedTagIds: currentTagIds, suggestedTagIds: currentTagIds };
-    }
-
-    console.log(
-      "[PerformerTagger] Auto-applying tags from performer data:",
-      toApply.map((d) => `${d.categoryName}: ${d.tagName}`).join(", ")
+    const toApply = derived.filter(
+      (d) => d.categoryName !== "Height" && !categoriesWithTags.has(d.categoryName)
     );
-
-    const newTagIds = new Set(currentTagIds);
 
     for (const { tagName, categoryName } of toApply) {
       const categoryId = await getOrCreateCategoryTag(categoryName);
@@ -538,25 +568,35 @@
       if (tagId) {
         newTagIds.add(tagId);
         tagIdCache.set(tagName.toLowerCase(), tagId);
+        logItems.push(`${categoryName}: ${tagName}`);
       }
     }
 
-    if (newTagIds.size > currentTagIds.size) {
-      try {
-        await updatePerformerTagIds(performerId, Array.from(newTagIds));
-        console.log(
-          `[PerformerTagger] Auto-applied ${newTagIds.size - currentTagIds.size} tag(s) to performer ${performerId}`
-        );
-        return { savedTagIds: newTagIds, suggestedTagIds: newTagIds };
-      } catch (err) {
-        console.error("[PerformerTagger] Auto-apply mutation failed:", err);
-        // Return current (unchanged) as saved, but pass newTagIds as suggestions
-        // so the panel can still visually indicate what was attempted.
-        return { savedTagIds: currentTagIds, suggestedTagIds: newTagIds };
-      }
+    if (logItems.length > 0) {
+      console.log("[PerformerTagger] Auto-applying tags from performer data:", logItems.join(", "));
     }
 
-    return { savedTagIds: newTagIds, suggestedTagIds: newTagIds };
+    // Detect whether the tag set actually changed (size OR membership).
+    // A height switch keeps the same count (remove one, add one) so a size-only
+    // check would incorrectly skip the save.
+    const changed =
+      newTagIds.size !== currentTagIds.size ||
+      [...newTagIds].some((id) => !currentTagIds.has(id));
+
+    if (!changed) {
+      return { savedTagIds: currentTagIds, suggestedTagIds: currentTagIds };
+    }
+
+    try {
+      await updatePerformerTagIds(performerId, Array.from(newTagIds));
+      console.log(`[PerformerTagger] Auto-applied tags to performer ${performerId}`);
+      return { savedTagIds: newTagIds, suggestedTagIds: newTagIds };
+    } catch (err) {
+      console.error("[PerformerTagger] Auto-apply mutation failed:", err);
+      // Return current (unchanged) as saved, but pass newTagIds as suggestions
+      // so the panel can still visually indicate what was attempted.
+      return { savedTagIds: currentTagIds, suggestedTagIds: newTagIds };
+    }
   }
 
   /**
