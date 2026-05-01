@@ -44,7 +44,11 @@
     },
     {
       category: "Bust Size",
-      tags: ["Small Bust", "Medium Bust", "Large Bust", "Natural Tits", "Enhanced"],
+      tags: ["Small Bust", "Medium Bust", "Large Bust"],
+    },
+    {
+      category: "Bust Type",
+      tags: ["Natural Tits", "Enhanced"],
     },
     {
       category: "Ethnicity",
@@ -453,10 +457,10 @@
     if (performer.fake_tits !== null && performer.fake_tits !== undefined) {
       const ft = String(performer.fake_tits).toLowerCase().trim();
       if (ft === "" || ft === "no" || ft === "false" || ft === "natural") {
-        derived.push({ tagName: "Natural Tits", categoryName: "Bust Size" });
+        derived.push({ tagName: "Natural Tits", categoryName: "Bust Type" });
       } else if (ft !== "" && ft !== "unknown") {
         // Any non-empty, non-natural value indicates enhancement
-        derived.push({ tagName: "Enhanced", categoryName: "Bust Size" });
+        derived.push({ tagName: "Enhanced", categoryName: "Bust Type" });
       }
     }
 
@@ -1144,8 +1148,24 @@
         pill.classList.remove("pt-pill-active");
         console.log(`[PerformerTagger] Removed tag "${tagName}" from performer ${performerId}`);
       } else {
-        // Tag is not set — add it
+        // Tag is not set — add it, and remove any other tags from the same category
+        // so that only one selection per group is active at a time (radio-button behavior).
         newSet = new Set(currentSet);
+
+        // Find sibling pills in the same category and remove their tags from the set
+        const panel = pill.closest("#pt-panel");
+        if (panel) {
+          panel.querySelectorAll(`.pt-pill[data-category-name="${CSS.escape(categoryName)}"]`).forEach((sibling) => {
+            if (sibling === pill) return;
+            const siblingId = tagIdCache.get(sibling.dataset.tagName.toLowerCase());
+            if (siblingId && newSet.has(siblingId)) {
+              newSet.delete(siblingId);
+              sibling.classList.remove("pt-pill-active");
+              console.log(`[PerformerTagger] Replaced tag "${sibling.dataset.tagName}" with "${tagName}" in category "${categoryName}" for performer ${performerId}`);
+            }
+          });
+        }
+
         newSet.add(tagId);
         pill.classList.add("pt-pill-active");
         console.log(`[PerformerTagger] Added tag "${tagName}" to performer ${performerId}`);
