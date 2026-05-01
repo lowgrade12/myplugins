@@ -54,7 +54,7 @@ DEFAULT_TAG_GROUPS = [
     },
     {
         "category": "Height",
-        "tags": ["Tall", "Average Height", "Small", "Tiny"],
+        "tags": ["tall woman", "average height woman", "short woman", "tiny woman"],
     },
 ]
 
@@ -269,7 +269,7 @@ def derive_tags(performer: dict) -> list[dict]:
             tag_name = "Caucasian"
         elif "asian" in eth:
             tag_name = "Asian"
-        elif "latina" in eth or "hispanic" in eth:
+        elif "latina" in eth or "hispanic" in eth or "latin" in eth:
             tag_name = "Latina"
         elif "black" in eth or "african" in eth or "ebony" in eth:
             tag_name = "Ebony"
@@ -288,13 +288,13 @@ def derive_tags(performer: dict) -> list[dict]:
     # Small: 158-167 cm (5'2"-5'5"), Tiny: <= 157 cm (5'1" and below)
     if height_cm > 0:
         if height_cm >= 175:
-            tag_name = "Tall"
+            tag_name = "tall woman"
         elif height_cm >= 168:
-            tag_name = "Average Height"
+            tag_name = "average height woman"
         elif height_cm >= 158:
-            tag_name = "Small"
+            tag_name = "short woman"
         else:
-            tag_name = "Tiny"
+            tag_name = "tiny woman"
         derived.append({"tag_name": tag_name, "category_name": "Height"})
 
     # --- Bust (fake_tits field) ---
