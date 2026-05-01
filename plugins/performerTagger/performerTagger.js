@@ -308,6 +308,156 @@
   }
 
   /**
+   * Fetch performer tags AND raw data fields in a single query.
+   * Used during panel injection to support auto-tagging from known performer attributes.
+   * @param {string} performerId - Performer ID
+   * @returns {Promise<Object>} Performer object with tags, hair_color, ethnicity, birthdate, fake_tits
+   */
+  async function getPerformerFull(performerId) {
+    const result = await graphqlQuery(
+      `
+      query FindPerformerFull($id: ID!) {
+        findPerformer(id: $id) {
+          id
+          tags { id name }
+          hair_color
+          ethnicity
+          birthdate
+          fake_tits
+        }
+      }
+    `,
+      { id: performerId }
+    );
+    if (!result.findPerformer) {
+      return { tags: [], hair_color: null, ethnicity: null, birthdate: null, fake_tits: null };
+    }
+    const performer = result.findPerformer;
+    // Pre-populate tag ID cache
+    performer.tags.forEach((t) => tagIdCache.set(t.name.toLowerCase(), t.id));
+    return performer;
+  }
+
+  // Days per year used for age calculation
+  const DAYS_PER_YEAR = 365.25;
+
+  /**
+   * Derive tag suggestions from a performer's raw Stash data fields.
+   * Maps hair_color, ethnicity, birthdate and fake_tits to matching tag names in DEFAULT_TAG_GROUPS.
+   * @param {Object} performer - Performer data object from getPerformerFull
+   * @returns {Array<{tagName: string, categoryName: string}>}
+   */
+  function deriveTagsFromPerformerData(performer) {
+    const derived = [];
+
+    // Hair Color
+    if (performer.hair_color) {
+      const hc = String(performer.hair_color).toLowerCase();
+      let tagName = null;
+      if (hc.includes("auburn")) tagName = "Auburn";
+      else if (hc.includes("blonde") || hc.includes("blond")) tagName = "Blonde";
+      else if (hc.includes("brunette") || hc.includes("brown")) tagName = "Brunette";
+      else if (hc.includes("black")) tagName = "Black Hair";
+      else if (hc.includes("red")) tagName = "Red Hair";
+      else if (hc.includes("gray") || hc.includes("grey") || hc.includes("silver")) tagName = "Gray Hair";
+      if (tagName) derived.push({ tagName, categoryName: "Hair Color" });
+    }
+
+    // Ethnicity
+    if (performer.ethnicity) {
+      const eth = String(performer.ethnicity).toLowerCase();
+      let tagName = null;
+      if (eth.includes("asian")) tagName = "Asian";
+      else if (eth.includes("latina") || eth.includes("hispanic")) tagName = "Latina";
+      else if (eth.includes("black") || eth.includes("african") || eth.includes("ebony")) tagName = "Ebony";
+      else if (eth.includes("caucasian") || eth.includes("white")) tagName = "Caucasian";
+      else if (eth.includes("mixed") || eth.includes("biracial")) tagName = "Mixed";
+      if (tagName) derived.push({ tagName, categoryName: "Ethnicity" });
+    }
+
+    // Age Range from birthdate
+    if (performer.birthdate) {
+      const birth = new Date(performer.birthdate);
+      if (!isNaN(birth.getTime())) {
+        const ageMs = Date.now() - birth.getTime();
+        const age = Math.floor(ageMs / (1000 * 60 * 60 * 24 * DAYS_PER_YEAR));
+        let tagName = null;
+        if (age >= 18 && age < 20) tagName = "Teen (18+)";
+        else if (age >= 20 && age < 30) tagName = "20s";
+        else if (age >= 30 && age < 40) tagName = "30s";
+        else if (age >= 40 && age < 50) tagName = "MILF";
+        else if (age >= 50) tagName = "Mature";
+        if (tagName) derived.push({ tagName, categoryName: "Age Range" });
+      }
+    }
+
+    // Bust type from fake_tits field (Stash stores cup size string or empty for natural)
+    if (performer.fake_tits !== null && performer.fake_tits !== undefined) {
+      const ft = String(performer.fake_tits).toLowerCase().trim();
+      if (ft === "" || ft === "no" || ft === "false" || ft === "natural") {
+        derived.push({ tagName: "Natural Tits", categoryName: "Bust Size" });
+      } else if (ft !== "" && ft !== "unknown") {
+        // Any non-empty, non-natural value indicates enhancement
+        derived.push({ tagName: "Enhanced", categoryName: "Bust Size" });
+      }
+    }
+
+    return derived;
+  }
+
+  /**
+   * Auto-apply tags derived from a performer's known Stash data fields.
+   * Only applies a derived tag in a category if that category has no tags already set.
+   * This prevents overriding existing user-set tags.
+   * @param {string} performerId - Performer ID
+   * @param {Object} performer - Performer data from getPerformerFull
+   * @param {Set<string>} currentTagIds - Current tag IDs on the performer
+   * @returns {Promise<Set<string>>} Updated set of tag IDs (may be unchanged)
+   */
+  async function autoApplyDerivedTags(performerId, performer, currentTagIds) {
+    const derived = deriveTagsFromPerformerData(performer);
+    if (derived.length === 0) return currentTagIds;
+
+    // Determine which tag group categories already have at least one tag applied
+    const categoriesWithTags = new Set();
+    for (const group of DEFAULT_TAG_GROUPS) {
+      for (const tagName of group.tags) {
+        const cachedId = tagIdCache.get(tagName.toLowerCase());
+        if (cachedId && currentTagIds.has(cachedId)) {
+          categoriesWithTags.add(group.category);
+          break;
+        }
+      }
+    }
+
+    // Only auto-apply in categories that have no existing tags
+    const toApply = derived.filter((d) => !categoriesWithTags.has(d.categoryName));
+    if (toApply.length === 0) return currentTagIds;
+
+    console.log(
+      "[PerformerTagger] Auto-applying tags from performer data:",
+      toApply.map((d) => `${d.categoryName}: ${d.tagName}`).join(", ")
+    );
+
+    const newTagIds = new Set(currentTagIds);
+
+    for (const { tagName, categoryName } of toApply) {
+      const categoryId = await getOrCreateCategoryTag(categoryName);
+      const tagId = await getOrCreateTag(tagName, categoryId);
+      if (tagId) {
+        newTagIds.add(tagId);
+        tagIdCache.set(tagName.toLowerCase(), tagId);
+      }
+    }
+
+    if (newTagIds.size > currentTagIds.size) {
+      await updatePerformerTagIds(performerId, Array.from(newTagIds));
+    }
+
+    return newTagIds;
+  }
+
+  /**
    * Update the full tag list on a performer.
    * NOTE: performerUpdate replaces the entire tag list; always pass the full merged set.
    * @param {string} performerId - Performer ID
@@ -584,11 +734,15 @@
         existing.remove();
       }
 
-      // Fetch the performer's current tags (also pre-populates tagIdCache with names)
-      const currentTags = await getPerformerTags(performerId);
+      // Fetch performer tags and raw data fields (also pre-populates tagIdCache with tag names)
+      const performer = await getPerformerFull(performerId);
       if (navVersion !== navigationVersion) return;
 
-      const activeTagIds = new Set(currentTags.map((t) => t.id));
+      let activeTagIds = new Set(performer.tags.map((t) => t.id));
+
+      // Auto-apply tags derived from the performer's known Stash fields
+      activeTagIds = await autoApplyDerivedTags(performerId, performer, activeTagIds);
+      if (navVersion !== navigationVersion) return;
 
       const collapsed = await shouldStartCollapsed();
       if (navVersion !== navigationVersion) return;

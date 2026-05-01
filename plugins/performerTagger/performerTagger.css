@@ -5,9 +5,9 @@
 /* Panel container */
 .pt-panel {
   margin: 12px 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.35);
   font-size: 0.85rem;
   overflow: hidden;
 }
@@ -18,7 +18,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.1);
   cursor: default;
   user-select: none;
 }
@@ -26,14 +26,14 @@
 .pt-title {
   font-weight: 600;
   letter-spacing: 0.03em;
-  color: #c8c8d0;
+  color: #e0e0ea;
 }
 
 /* Collapse/expand toggle button */
 .pt-toggle {
   background: none;
   border: none;
-  color: #a0a0b0;
+  color: #c0c0d0;
   cursor: pointer;
   font-size: 0.9rem;
   padding: 0 2px;
@@ -73,7 +73,7 @@
 /* Category label */
 .pt-group-label {
   min-width: 90px;
-  color: #9090a0;
+  color: #b8b8cc;
   font-size: 0.78rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -93,9 +93,9 @@
 .pt-pill {
   padding: 3px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
-  color: #c0c0cc;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.1);
+  color: #d8d8e8;
   font-size: 0.8rem;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
@@ -104,8 +104,8 @@
 }
 
 .pt-pill:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
   color: #ffffff;
   transform: scale(1.04);
 }
@@ -184,20 +184,20 @@
 
 @media (prefers-color-scheme: light) {
   .pt-panel {
-    background: rgba(0, 0, 0, 0.04);
-    border-color: rgba(0, 0, 0, 0.12);
+    background: rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.2);
   }
 
   .pt-header {
-    background: rgba(0, 0, 0, 0.04);
+    background: rgba(0, 0, 0, 0.07);
   }
 
   .pt-title {
-    color: #404050;
+    color: #202030;
   }
 
   .pt-toggle {
-    color: #606070;
+    color: #404050;
   }
 
   .pt-toggle:hover {
@@ -205,18 +205,18 @@
   }
 
   .pt-group-label {
-    color: #606070;
-  }
-
-  .pt-pill {
-    border-color: rgba(0, 0, 0, 0.2);
-    background: rgba(0, 0, 0, 0.05);
     color: #404050;
   }
 
+  .pt-pill {
+    border-color: rgba(0, 0, 0, 0.28);
+    background: rgba(0, 0, 0, 0.07);
+    color: #202030;
+  }
+
   .pt-pill:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.1);
-    border-color: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.14);
+    border-color: rgba(0, 0, 0, 0.45);
     color: #000000;
   }
 
