@@ -421,7 +421,7 @@
       let tagName = null;
       if (eth.includes("caucasian") || eth.includes("white")) tagName = "Caucasian";
       else if (eth.includes("asian")) tagName = "Asian";
-      else if (eth.includes("latina") || eth.includes("hispanic")) tagName = "Latina";
+      else if (eth.includes("latin") || eth.includes("hispanic")) tagName = "Latina";
       else if (eth.includes("black") || eth.includes("african") || eth.includes("ebony")) tagName = "Ebony";
       else if (eth.includes("mixed") || eth.includes("biracial")) tagName = "Mixed";
       if (tagName) derived.push({ tagName, categoryName: "Ethnicity" });
