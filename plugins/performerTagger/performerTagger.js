@@ -323,6 +323,7 @@
           hair_color
           ethnicity
           birthdate
+          career_length
           fake_tits
         }
       }
@@ -340,6 +341,22 @@
 
   // Days per year used for age calculation
   const DAYS_PER_YEAR = 365.25;
+
+  /**
+   * Parse a Stash career_length string (e.g. "2010 - 2020", "2010 -", "2010-2020")
+   * and return the numeric start and end years.
+   * Only 4-digit sequences are considered; formats like "2010 - present" yield no end year.
+   * @param {string} careerLength
+   * @returns {{ startYear: number|null, endYear: number|null }}
+   */
+  function parseCareerYears(careerLength) {
+    if (!careerLength) return { startYear: null, endYear: null };
+    const years = String(careerLength).match(/\d{4}/g);
+    if (!years || years.length === 0) return { startYear: null, endYear: null };
+    const startYear = parseInt(years[0], 10);
+    const endYear = years.length >= 2 ? parseInt(years[years.length - 1], 10) : null;
+    return { startYear, endYear };
+  }
 
   /**
    * Derive tag suggestions from a performer's raw Stash data fields.
@@ -377,10 +394,24 @@
     }
 
     // Age Range from birthdate
+    // For retired performers (career_length has both a start and end year) the age is
+    // assessed at the midpoint of their career rather than today, so a performer who
+    // worked in their 20s/30s is not mis-tagged as MILF/Mature based on current age.
+    // Active performers (end year missing) and performers with no career_length still
+    // use the current date as the reference.
     if (performer.birthdate) {
       const birth = new Date(performer.birthdate);
       if (!isNaN(birth.getTime())) {
-        const ageMs = Date.now() - birth.getTime();
+        let referenceDate = new Date();
+        if (performer.career_length) {
+          const { startYear, endYear } = parseCareerYears(performer.career_length);
+          if (startYear && endYear) {
+            // Retired performer: assess age at the midpoint of their career
+            const midYear = Math.round((startYear + endYear) / 2);
+            referenceDate = new Date(midYear, 6, 1); // July 1st of midpoint year
+          }
+        }
+        const ageMs = referenceDate.getTime() - birth.getTime();
         const age = Math.floor(ageMs / (1000 * 60 * 60 * 24 * DAYS_PER_YEAR));
         let tagName = null;
         if (age >= 18 && age < 20) tagName = "Teen (18+)";
@@ -519,6 +550,7 @@
             hair_color
             ethnicity
             birthdate
+            career_length
             fake_tits
             tags { id name }
           }
