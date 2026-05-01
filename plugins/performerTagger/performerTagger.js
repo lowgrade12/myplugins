@@ -492,9 +492,9 @@
 
   /**
    * Auto-apply tags derived from a performer's known Stash data fields.
-   * Height is always corrected — any wrong height tag is removed and the correct one
-   * applied. All other categories are skipped if they already have any managed tag,
-   * so manual selections are never overridden.
+   * For every category that has a derivable value, the correct tag is always applied
+   * and any wrong managed tags in that category are removed. Categories for which no
+   * data can be derived are left untouched.
    * @param {string} performerId - Performer ID
    * @param {Object} performer - Performer data from getPerformerFull
    * @param {Set<string>} currentTagIds - Current tag IDs on the performer
@@ -511,64 +511,39 @@
     const newTagIds = new Set(currentTagIds);
     const logItems = [];
 
-    // --- Height: always apply the correct tag, replacing any wrong height tag ---
-    // Unlike other categories, height is deterministic from the performer's height_cm
-    // field and must always be kept in sync (e.g. when height_cm is updated).
-    const derivedHeight = derived.find((d) => d.categoryName === "Height");
-    if (derivedHeight) {
-      const heightGroup = DEFAULT_TAG_GROUPS.find((g) => g.category === "Height");
-      const correctNameLower = derivedHeight.tagName.toLowerCase();
+    // --- All categories: always apply the correct tag, replacing any wrong managed tags ---
+    // For every category where a value can be derived from the performer's Stash data,
+    // ensure the correct tag is present and remove any incorrect managed tags in that
+    // category. Categories for which no value can be derived are left untouched.
+    const derivedByCategory = new Map(derived.map((d) => [d.categoryName, d]));
+
+    for (const group of DEFAULT_TAG_GROUPS) {
+      const correctDerived = derivedByCategory.get(group.category);
+      if (!correctDerived) continue; // no data for this category — leave alone
+
+      const correctNameLower = correctDerived.tagName.toLowerCase();
       let hasCorrectTag = false;
 
-      if (heightGroup) {
-        for (const tagName of heightGroup.tags) {
-          const cachedId = tagIdCache.get(tagName.toLowerCase());
-          if (cachedId && newTagIds.has(cachedId)) {
-            if (tagName.toLowerCase() === correctNameLower) {
-              hasCorrectTag = true;
-            } else {
-              newTagIds.delete(cachedId); // remove wrong height tag
-              logItems.push(`Height: remove "${tagName}"`);
-            }
+      for (const tagName of group.tags) {
+        const cachedId = tagIdCache.get(tagName.toLowerCase());
+        if (cachedId && newTagIds.has(cachedId)) {
+          if (tagName.toLowerCase() === correctNameLower) {
+            hasCorrectTag = true;
+          } else {
+            newTagIds.delete(cachedId); // remove wrong tag
+            logItems.push(`${group.category}: remove "${tagName}"`);
           }
         }
       }
 
       if (!hasCorrectTag) {
-        const categoryId = await getOrCreateCategoryTag("Height");
-        const tagId = await getOrCreateTag(derivedHeight.tagName, categoryId);
+        const categoryId = await getOrCreateCategoryTag(group.category);
+        const tagId = await getOrCreateTag(correctDerived.tagName, categoryId);
         if (tagId) {
           newTagIds.add(tagId);
-          tagIdCache.set(derivedHeight.tagName.toLowerCase(), tagId);
-          logItems.push(`Height: ${derivedHeight.tagName}`);
+          tagIdCache.set(correctDerived.tagName.toLowerCase(), tagId);
+          logItems.push(`${group.category}: ${correctDerived.tagName}`);
         }
-      }
-    }
-
-    // --- All other categories: skip if any managed tag already applied ---
-    const categoriesWithTags = new Set();
-    for (const group of DEFAULT_TAG_GROUPS) {
-      if (group.category === "Height") continue;
-      for (const tagName of group.tags) {
-        const cachedId = tagIdCache.get(tagName.toLowerCase());
-        if (cachedId && currentTagIds.has(cachedId)) {
-          categoriesWithTags.add(group.category);
-          break;
-        }
-      }
-    }
-
-    const toApply = derived.filter(
-      (d) => d.categoryName !== "Height" && !categoriesWithTags.has(d.categoryName)
-    );
-
-    for (const { tagName, categoryName } of toApply) {
-      const categoryId = await getOrCreateCategoryTag(categoryName);
-      const tagId = await getOrCreateTag(tagName, categoryId);
-      if (tagId) {
-        newTagIds.add(tagId);
-        tagIdCache.set(tagName.toLowerCase(), tagId);
-        logItems.push(`${categoryName}: ${tagName}`);
       }
     }
 
