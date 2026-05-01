@@ -410,111 +410,28 @@
 }
 
 /* ============================================
-   LIGHT THEME OVERRIDES
+   NAVBAR BUTTON
    ============================================ */
 
-@media (prefers-color-scheme: light) {
-  .pt-panel {
-    background: rgba(0, 0, 0, 0.08);
-    border-color: rgba(0, 0, 0, 0.28);
-  }
+.pt-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(75, 160, 255, 0.5);
+  background: rgba(75, 160, 255, 0.14);
+  color: #7dc8ff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  text-decoration: none;
+}
 
-  .pt-header {
-    background: rgba(0, 0, 0, 0.1);
-  }
-
-  .pt-title {
-    color: #101020;
-  }
-
-  .pt-toggle {
-    color: #303040;
-  }
-
-  .pt-toggle:hover {
-    color: #000000;
-  }
-
-  .pt-group-label {
-    color: #303040;
-  }
-
-  .pt-pill {
-    border-color: rgba(0, 0, 0, 0.32);
-    background: rgba(0, 0, 0, 0.08);
-    color: #101020;
-  }
-
-  .pt-pill:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.16);
-    border-color: rgba(0, 0, 0, 0.5);
-    color: #000000;
-  }
-
-  .pt-pill-active {
-    background: rgba(0, 100, 220, 0.15);
-    border-color: rgba(0, 100, 220, 0.5);
-    color: #0055bb;
-  }
-
-  .pt-save-btn {
-    background: rgba(0, 100, 220, 0.12);
-    border-color: rgba(0, 100, 220, 0.45);
-    color: #0055bb;
-  }
-
-  .pt-save-btn:hover:not(:disabled) {
-    background: rgba(0, 100, 220, 0.22);
-    border-color: rgba(0, 100, 220, 0.7);
-    color: #003a99;
-  }
-
-  .pt-autotag-btn {
-    background: rgba(0, 140, 80, 0.12);
-    border-color: rgba(0, 140, 80, 0.45);
-    color: #006630;
-  }
-
-  .pt-autotag-btn:hover:not(:disabled) {
-    background: rgba(0, 140, 80, 0.22);
-    border-color: rgba(0, 140, 80, 0.7);
-    color: #004a22;
-  }
-
-  .pt-batch-trigger {
-    background: rgba(0, 100, 220, 0.1);
-    border-color: rgba(0, 100, 220, 0.4);
-    color: #0055bb;
-  }
-
-  .pt-batch-trigger:hover {
-    background: rgba(0, 100, 220, 0.2);
-    border-color: rgba(0, 100, 220, 0.65);
-    color: #003a99;
-  }
-
-  .pt-batch-dialog {
-    background: #f4f4f8;
-    border-color: rgba(0, 0, 0, 0.18);
-  }
-
-  .pt-batch-title {
-    color: #202030;
-  }
-
-  .pt-batch-desc {
-    color: #505060;
-  }
-
-  .pt-batch-progress-wrap {
-    background: rgba(0, 0, 0, 0.1);
-  }
-
-  .pt-batch-status {
-    color: #303040;
-  }
-
-  .pt-batch-stats {
-    color: #606070;
-  }
+.pt-nav-btn:hover {
+  background: rgba(75, 160, 255, 0.28);
+  border-color: rgba(75, 160, 255, 0.8);
+  color: #b0dcff;
 }
