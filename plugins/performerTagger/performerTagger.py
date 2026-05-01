@@ -43,11 +43,15 @@ DEFAULT_TAG_GROUPS = [
     },
     {
         "category": "Body Type",
-        "tags": ["Petite", "Slim", "Athletic", "Curvy", "BBW", "Busty"],
+        "tags": ["Skinny", "Slim", "Athletic", "Average", "Curvy", "BBW", "Muscular"],
     },
     {
         "category": "Bust Size",
-        "tags": ["Small Bust", "Medium Bust", "Large Bust", "Natural Tits", "Enhanced"],
+        "tags": ["Small Bust", "Medium Bust", "Large Bust"],
+    },
+    {
+        "category": "Bust Type",
+        "tags": ["Natural Tits", "Enhanced"],
     },
     {
         "category": "Ethnicity",
@@ -55,7 +59,7 @@ DEFAULT_TAG_GROUPS = [
     },
     {
         "category": "Height",
-        "tags": ["tall woman", "average height woman", "short woman", "tiny woman"],
+        "tags": ["Tall", "Average", "Short", "Tiny"],
     },
 ]
 
@@ -282,20 +286,20 @@ def derive_tags(performer: dict) -> list[dict]:
     # --- Body Type (height) ---
     height_cm = performer.get("height_cm") or 0
     if height_cm > 0 and height_cm <= 160:
-        derived.append({"tag_name": "Petite", "category_name": "Body Type"})
+        derived.append({"tag_name": "Skinny", "category_name": "Body Type"})
 
     # --- Height category ---
-    # Tall: >= 175 cm (5'9"+), Average: 168-174 cm (5'6"-5'8"),
-    # Small: 158-167 cm (5'2"-5'5"), Tiny: <= 157 cm (5'1" and below)
+    # Tall: >= 175 cm (5'9"+), Average: 165–174 cm (5'5"–5'8"),
+    # Short: 155–164 cm (5'1"–5'4"), Tiny: < 155 cm (under 5'1")
     if height_cm > 0:
         if height_cm >= 175:
-            tag_name = "tall woman"
-        elif height_cm >= 168:
-            tag_name = "average height woman"
-        elif height_cm >= 158:
-            tag_name = "short woman"
+            tag_name = "Tall"
+        elif height_cm >= 165:
+            tag_name = "Average"
+        elif height_cm >= 155:
+            tag_name = "Short"
         else:
-            tag_name = "tiny woman"
+            tag_name = "Tiny"
         derived.append({"tag_name": tag_name, "category_name": "Height"})
 
     # --- Bust type (fake_tits field) ---
@@ -304,9 +308,9 @@ def derive_tags(performer: dict) -> list[dict]:
         ft_str = str(ft).lower().strip()
         # Empty string means the field was not filled in ("no data") — skip it.
         if ft_str in ("no", "false", "natural"):
-            derived.append({"tag_name": "Natural Tits", "category_name": "Bust Size"})
+            derived.append({"tag_name": "Natural Tits", "category_name": "Bust Type"})
         elif ft_str not in ("", "unknown"):
-            derived.append({"tag_name": "Enhanced", "category_name": "Bust Size"})
+            derived.append({"tag_name": "Enhanced", "category_name": "Bust Type"})
 
     # --- Bust size from measurements field (e.g. "34C-24-34") ---
     # Parse the cup letter from the bust portion and map to Small/Medium/Large.
