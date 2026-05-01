@@ -16,6 +16,11 @@
   const tagIdCache = new Map();
   // Maps category name (lowercase) -> parent tag ID
   const categoryIdCache = new Map();
+  // Performer IDs for which auto-tagging has already run this session.
+  // Prevents autoApplyDerivedTags from re-firing on every panel re-injection
+  // (e.g. after Stash's React re-renders the page following a performer update),
+  // which would keep overriding tags the user manually changed.
+  const autoTaggedPerformers = new Set();
 
   // ============================================
   // DEFAULT TAG GROUPS
@@ -1115,17 +1120,24 @@
 
       let activeTagIds = new Set(performer.tags.map((t) => t.id));
 
-      // Auto-apply tags derived from the performer's known Stash fields
-      const { savedTagIds, suggestedTagIds } = await autoApplyDerivedTags(
-        performerId,
-        performer,
-        activeTagIds
-      );
-      if (navVersion !== navigationVersion) return;
+      // Auto-apply tags derived from the performer's known Stash fields, but only
+      // on the first injection for this performer in the current session.  Subsequent
+      // re-injections (e.g. triggered by Stash's React re-rendering the page after a
+      // performer update) must NOT re-run auto-tagging, otherwise any age tag the user
+      // just removed via a pill click would be immediately re-derived from the birthdate
+      // and re-applied — making age tags appear completely non-interactive.
+      let autoSaveFailed = false;
+      let suggestedTagIds = activeTagIds;
 
-      // Use saved IDs for pill active state; suggestedTagIds may differ only on save failure.
-      activeTagIds = savedTagIds;
-      const autoSaveFailed = suggestedTagIds.size > savedTagIds.size;
+      if (!autoTaggedPerformers.has(performerId)) {
+        const result = await autoApplyDerivedTags(performerId, performer, activeTagIds);
+        if (navVersion !== navigationVersion) return;
+
+        autoTaggedPerformers.add(performerId);
+        activeTagIds = result.savedTagIds;
+        suggestedTagIds = result.suggestedTagIds;
+        autoSaveFailed = suggestedTagIds.size > activeTagIds.size;
+      }
 
       const collapsed = await shouldStartCollapsed();
       if (navVersion !== navigationVersion) return;
@@ -1141,7 +1153,6 @@
 
       // If auto-save failed, mark the suggested pills as active anyway (visual hint)
       // and show a toast so the user knows to use the Save button.
-      const originalTagCount = performer.tags.length;
       if (autoSaveFailed) {
         syncPillStates(panel, suggestedTagIds);
         showToast(
@@ -1149,9 +1160,9 @@
           "Auto-save failed — click Save to apply the highlighted tags.",
           "error"
         );
-      } else if (suggestedTagIds.size > originalTagCount) {
+      } else if (suggestedTagIds.size > performer.tags.length) {
         // Auto-save ran and added new tags — let the user know.
-        const added = suggestedTagIds.size - originalTagCount;
+        const added = suggestedTagIds.size - performer.tags.length;
         showToast(panel, `Auto-applied ${added} tag(s) from performer data.`, "success");
       }
 
