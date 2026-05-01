@@ -363,14 +363,15 @@
       if (tagName) derived.push({ tagName, categoryName: "Hair Color" });
     }
 
-    // Ethnicity
+    // Ethnicity — check "caucasian" before "asian" to avoid the false-positive
+    // where "caucasian".includes("asian") === true.
     if (performer.ethnicity) {
       const eth = String(performer.ethnicity).toLowerCase();
       let tagName = null;
-      if (eth.includes("asian")) tagName = "Asian";
+      if (eth.includes("caucasian") || eth.includes("white")) tagName = "Caucasian";
+      else if (eth.includes("asian")) tagName = "Asian";
       else if (eth.includes("latina") || eth.includes("hispanic")) tagName = "Latina";
       else if (eth.includes("black") || eth.includes("african") || eth.includes("ebony")) tagName = "Ebony";
-      else if (eth.includes("caucasian") || eth.includes("white")) tagName = "Caucasian";
       else if (eth.includes("mixed") || eth.includes("biracial")) tagName = "Mixed";
       if (tagName) derived.push({ tagName, categoryName: "Ethnicity" });
     }
@@ -493,6 +494,303 @@
     `,
       { id: performerId, tag_ids: tagIds }
     );
+  }
+
+  // ============================================
+  // BATCH TAG TASK
+  // ============================================
+
+  const BATCH_PAGE_SIZE = 100;
+
+  /**
+   * Fetch one page of performers with the fields needed for auto-tagging.
+   * @param {number} page - 1-based page number
+   * @returns {Promise<{count: number, performers: Array}>}
+   */
+  async function fetchPerformerPage(page) {
+    const result = await graphqlQuery(
+      `
+      query FindPerformersBatch($filter: FindFilterType) {
+        findPerformers(filter: $filter) {
+          count
+          performers {
+            id
+            name
+            hair_color
+            ethnicity
+            birthdate
+            fake_tits
+            tags { id name }
+          }
+        }
+      }
+    `,
+      { filter: { page, per_page: BATCH_PAGE_SIZE, sort: "id", direction: "ASC" } }
+    );
+    return result.findPerformers;
+  }
+
+  /**
+   * Run the batch tag task over all performers.
+   * For each performer, auto-applies tags derived from their Stash data fields,
+   * skipping any category that already has at least one tag set.
+   * @param {function} onProgress - Called with progress state after each performer
+   * @param {AbortSignal} signal - Abort signal for user cancellation
+   * @returns {Promise<{processed: number, total: number, tagged: number, skipped: number, errors: number}>}
+   */
+  async function batchTagPerformers(onProgress, signal) {
+    let processed = 0;
+    let tagged = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    const processPerformers = async (performers, total) => {
+      for (const performer of performers) {
+        if (signal.aborted) return;
+        try {
+          // Pre-populate tag ID cache so autoApplyDerivedTags can detect existing categories
+          performer.tags.forEach((t) => tagIdCache.set(t.name.toLowerCase(), t.id));
+          const currentTagIds = new Set(performer.tags.map((t) => t.id));
+          const { savedTagIds } = await autoApplyDerivedTags(performer.id, performer, currentTagIds);
+          if (savedTagIds.size > currentTagIds.size) {
+            tagged++;
+          } else {
+            skipped++;
+          }
+        } catch (err) {
+          console.error(`[PerformerTagger] Batch error for performer ${performer.id}:`, err);
+          errors++;
+        }
+        processed++;
+        onProgress({ processed, total, tagged, skipped, errors });
+      }
+    };
+
+    // Fetch first page to get total count
+    const first = await fetchPerformerPage(1);
+    const total = first.count;
+    const totalPages = Math.ceil(total / BATCH_PAGE_SIZE);
+    onProgress({ processed, total, tagged, skipped, errors });
+
+    await processPerformers(first.performers, total);
+
+    for (let page = 2; page <= totalPages; page++) {
+      if (signal.aborted) break;
+      const data = await fetchPerformerPage(page);
+      await processPerformers(data.performers, total);
+    }
+
+    return { processed, total, tagged, skipped, errors };
+  }
+
+  // ============================================
+  // BATCH MODAL UI
+  // ============================================
+
+  let batchAbortController = null;
+
+  /**
+   * Build the batch task modal overlay element.
+   * @returns {HTMLElement}
+   */
+  function buildBatchModal() {
+    const overlay = document.createElement("div");
+    overlay.id = "pt-batch-overlay";
+    overlay.className = "pt-batch-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "pt-batch-dialog";
+
+    const title = document.createElement("h3");
+    title.className = "pt-batch-title";
+    title.textContent = "Batch Tag Performers";
+    dialog.appendChild(title);
+
+    const desc = document.createElement("p");
+    desc.className = "pt-batch-desc";
+    desc.textContent =
+      "Scanning all performers and auto-applying tags based on their hair color, ethnicity, age and breast data. " +
+      "Only applies tags in categories that have no existing tags set on the performer.";
+    dialog.appendChild(desc);
+
+    const progressWrap = document.createElement("div");
+    progressWrap.className = "pt-batch-progress-wrap";
+    const progressBar = document.createElement("div");
+    progressBar.className = "pt-batch-progress-bar";
+    progressBar.id = "pt-batch-bar";
+    progressWrap.appendChild(progressBar);
+    dialog.appendChild(progressWrap);
+
+    const status = document.createElement("div");
+    status.className = "pt-batch-status";
+    status.id = "pt-batch-status";
+    status.textContent = "Starting…";
+    dialog.appendChild(status);
+
+    const stats = document.createElement("div");
+    stats.className = "pt-batch-stats";
+    stats.id = "pt-batch-stats";
+    dialog.appendChild(stats);
+
+    const btnRow = document.createElement("div");
+    btnRow.className = "pt-batch-buttons";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "pt-batch-btn pt-batch-cancel";
+    cancelBtn.id = "pt-batch-cancel-btn";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", () => {
+      if (batchAbortController) {
+        batchAbortController.abort();
+      }
+      overlay.remove();
+      batchAbortController = null;
+    });
+
+    btnRow.appendChild(cancelBtn);
+    dialog.appendChild(btnRow);
+    overlay.appendChild(dialog);
+
+    return overlay;
+  }
+
+  /**
+   * Update progress display inside the batch modal.
+   * @param {HTMLElement} overlay
+   * @param {{processed: number, total: number, tagged: number, skipped: number, errors: number}} progress
+   */
+  function updateBatchModal(overlay, { processed, total, tagged, skipped, errors }) {
+    const bar = overlay.querySelector("#pt-batch-bar");
+    const statusEl = overlay.querySelector("#pt-batch-status");
+    const statsEl = overlay.querySelector("#pt-batch-stats");
+    const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+    if (bar) bar.style.width = `${pct}%`;
+    if (statusEl) {
+      statusEl.textContent =
+        total > 0
+          ? `Processing ${processed} / ${total} performers (${pct}%)`
+          : "Counting performers…";
+    }
+    if (statsEl) {
+      statsEl.textContent =
+        `Tagged: ${tagged}  ·  Skipped: ${skipped}` +
+        (errors > 0 ? `  ·  Errors: ${errors}` : "");
+    }
+  }
+
+  /**
+   * Finalise the batch modal after completion or cancellation.
+   * @param {HTMLElement} overlay
+   * @param {{processed: number, total: number, tagged: number, skipped: number, errors: number}} result
+   * @param {boolean} cancelled
+   */
+  function finaliseBatchModal(overlay, result, cancelled) {
+    const statusEl = overlay.querySelector("#pt-batch-status");
+    const cancelBtn = overlay.querySelector("#pt-batch-cancel-btn");
+
+    if (statusEl) {
+      statusEl.textContent = cancelled
+        ? `Cancelled after ${result.processed} of ${result.total} performers.`
+        : `Done! Processed all ${result.processed} performers.`;
+    }
+
+    if (cancelBtn) {
+      // Clone node (shallow — no children) to strip the old Cancel listener, then wire up Close
+      const closeBtn = cancelBtn.cloneNode(false);
+      closeBtn.textContent = "Close";
+      closeBtn.className = "pt-batch-btn pt-batch-close";
+      closeBtn.addEventListener("click", () => {
+        overlay.remove();
+        batchAbortController = null;
+      });
+      cancelBtn.replaceWith(closeBtn);
+    }
+  }
+
+  /**
+   * Start the batch tag operation and show the progress modal.
+   * Debounces so only one run can be active at a time.
+   */
+  async function startBatchTag() {
+    if (batchAbortController) return;
+
+    batchAbortController = new AbortController();
+    const { signal } = batchAbortController;
+
+    const overlay = buildBatchModal();
+    document.body.appendChild(overlay);
+
+    let lastResult = { processed: 0, total: 0, tagged: 0, skipped: 0, errors: 0 };
+    let cancelled = false;
+
+    try {
+      const result = await batchTagPerformers((progress) => {
+        if (signal.aborted) return;
+        lastResult = progress;
+        updateBatchModal(overlay, progress);
+      }, signal);
+      lastResult = result;
+      cancelled = signal.aborted;
+    } catch (err) {
+      console.error("[PerformerTagger] Batch task error:", err);
+      const statusEl = overlay.querySelector("#pt-batch-status");
+      if (statusEl) statusEl.textContent = "Error: " + (err.message || "Unknown error");
+      cancelled = true;
+    }
+
+    batchAbortController = null;
+    finaliseBatchModal(overlay, lastResult, cancelled);
+  }
+
+  // ============================================
+  // BATCH BUTTON — PERFORMERS LIST PAGE
+  // ============================================
+
+  let batchButtonTimeout = null;
+
+  /**
+   * Check if the current page is the performers list.
+   * @returns {boolean}
+   */
+  function isOnPerformerListPage() {
+    return /^\/performers\/?$/.test(window.location.pathname);
+  }
+
+  /**
+   * Find a suitable DOM anchor to attach the Batch Tag button.
+   * Tries several selectors used across different Stash versions/themes.
+   * @returns {HTMLElement|null}
+   */
+  function findBatchButtonTarget() {
+    return (
+      document.querySelector(".performers-page .operations-list") ||
+      document.querySelector(".performers-page .filter-options .btn-toolbar") ||
+      document.querySelector(".performers-page .grid-header") ||
+      document.querySelector(".performers-page header") ||
+      document.querySelector(".performers-page") ||
+      null
+    );
+  }
+
+  /**
+   * Inject the "Batch Tag" button into the performers list page toolbar.
+   * Skips silently if the button already exists or no suitable target is found.
+   */
+  function injectBatchButton() {
+    if (!isOnPerformerListPage()) return;
+    if (document.getElementById("pt-batch-trigger")) return;
+
+    const target = findBatchButtonTarget();
+    if (!target) return;
+
+    const btn = document.createElement("button");
+    btn.id = "pt-batch-trigger";
+    btn.className = "pt-batch-trigger";
+    btn.textContent = "⚡ Batch Tag";
+    btn.title = "Auto-apply attribute tags to all performers based on their Stash data fields";
+    btn.addEventListener("click", () => startBatchTag());
+    target.appendChild(btn);
+    console.log("[PerformerTagger] Batch Tag button injected");
   }
 
   // ============================================
@@ -941,19 +1239,26 @@
       setTimeout(() => injectPanel(), 500);
     }
 
+    // Inject batch button if we start on the performers list
+    if (isOnPerformerListPage()) {
+      setTimeout(() => injectBatchButton(), 800);
+    }
+
     // MutationObserver — handles React re-renders that swap out DOM nodes
     const observer = new MutationObserver(() => {
-      if (!isOnSinglePerformerPage()) {
-        return;
+      if (isOnSinglePerformerPage()) {
+        // Debounce to avoid hammering on rapid DOM changes
+        clearTimeout(processingTimeout);
+        processingTimeout = setTimeout(() => {
+          const existing = document.getElementById("pt-panel");
+          if (!existing) {
+            injectPanel();
+          }
+        }, 600);
+      } else if (isOnPerformerListPage()) {
+        clearTimeout(batchButtonTimeout);
+        batchButtonTimeout = setTimeout(() => injectBatchButton(), 600);
       }
-      // Debounce to avoid hammering on rapid DOM changes
-      clearTimeout(processingTimeout);
-      processingTimeout = setTimeout(() => {
-        const existing = document.getElementById("pt-panel");
-        if (!existing) {
-          injectPanel();
-        }
-      }, 600);
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
@@ -963,6 +1268,7 @@
       PluginApi.Event.addEventListener("stash:location", (e) => {
         navigationVersion++;
         clearTimeout(processingTimeout);
+        clearTimeout(batchButtonTimeout);
         injectionInProgress = false; // Reset flag on navigation
         pluginConfigCache = null; // Refresh settings on each navigation
 
@@ -974,8 +1280,20 @@
           existing.remove();
         }
 
+        // Abort any running batch task when navigating away
+        if (batchAbortController) {
+          batchAbortController.abort();
+          batchAbortController = null;
+        }
+        const batchOverlay = document.getElementById("pt-batch-overlay");
+        if (batchOverlay) {
+          batchOverlay.remove();
+        }
+
         if (isOnSinglePerformerPage()) {
           setTimeout(() => injectPanel(), 500);
+        } else if (isOnPerformerListPage()) {
+          setTimeout(() => injectBatchButton(), 800);
         }
       });
     }
