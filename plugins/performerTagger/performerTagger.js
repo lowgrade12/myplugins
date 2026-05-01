@@ -412,11 +412,15 @@
    * @param {string} performerId - Performer ID
    * @param {Object} performer - Performer data from getPerformerFull
    * @param {Set<string>} currentTagIds - Current tag IDs on the performer
-   * @returns {Promise<Set<string>>} Updated set of tag IDs (may be unchanged)
+   * @returns {Promise<{savedTagIds: Set<string>, suggestedTagIds: Set<string>}>}
+   *   savedTagIds: IDs actually persisted to Stash (use for pill active state)
+   *   suggestedTagIds: IDs that would have been applied (for UI hints even on failure)
    */
   async function autoApplyDerivedTags(performerId, performer, currentTagIds) {
     const derived = deriveTagsFromPerformerData(performer);
-    if (derived.length === 0) return currentTagIds;
+    if (derived.length === 0) {
+      return { savedTagIds: currentTagIds, suggestedTagIds: currentTagIds };
+    }
 
     // Determine which tag group categories already have at least one tag applied
     const categoriesWithTags = new Set();
@@ -432,7 +436,9 @@
 
     // Only auto-apply in categories that have no existing tags
     const toApply = derived.filter((d) => !categoriesWithTags.has(d.categoryName));
-    if (toApply.length === 0) return currentTagIds;
+    if (toApply.length === 0) {
+      return { savedTagIds: currentTagIds, suggestedTagIds: currentTagIds };
+    }
 
     console.log(
       "[PerformerTagger] Auto-applying tags from performer data:",
@@ -451,10 +457,21 @@
     }
 
     if (newTagIds.size > currentTagIds.size) {
-      await updatePerformerTagIds(performerId, Array.from(newTagIds));
+      try {
+        await updatePerformerTagIds(performerId, Array.from(newTagIds));
+        console.log(
+          `[PerformerTagger] Auto-applied ${newTagIds.size - currentTagIds.size} tag(s) to performer ${performerId}`
+        );
+        return { savedTagIds: newTagIds, suggestedTagIds: newTagIds };
+      } catch (err) {
+        console.error("[PerformerTagger] Auto-apply mutation failed:", err);
+        // Return current (unchanged) as saved, but pass newTagIds as suggestions
+        // so the panel can still visually indicate what was attempted.
+        return { savedTagIds: currentTagIds, suggestedTagIds: newTagIds };
+      }
     }
 
-    return newTagIds;
+    return { savedTagIds: newTagIds, suggestedTagIds: newTagIds };
   }
 
   /**
@@ -500,8 +517,110 @@
   }
 
   // ============================================
+  // TOAST NOTIFICATION
+  // ============================================
+
+  /**
+   * Show a brief toast notification inside the plugin panel.
+   * @param {HTMLElement} panel - The panel element to attach the toast to
+   * @param {string} message - Message text
+   * @param {"success"|"error"} type - Visual style
+   */
+  function showToast(panel, message, type) {
+    const existing = panel.querySelector(".pt-toast");
+    if (existing) {
+      existing.remove();
+    }
+    const toast = document.createElement("div");
+    toast.className = `pt-toast pt-toast-${type}`;
+    toast.textContent = message;
+    panel.appendChild(toast);
+    // Trigger animation by forcing a reflow before adding the visible class
+    void toast.offsetWidth;
+    toast.classList.add("pt-toast-visible");
+    setTimeout(() => {
+      toast.classList.remove("pt-toast-visible");
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  }
+
+  // ============================================
   // PANEL UI
   // ============================================
+
+  /**
+   * Collect all currently active pill tag IDs from the panel.
+   * @param {HTMLElement} panel - The panel element
+   * @returns {string[]} Array of tag IDs that are currently active
+   */
+  function getActivePillTagIds(panel) {
+    const ids = [];
+    panel.querySelectorAll(".pt-pill.pt-pill-active").forEach((pill) => {
+      const cachedId = tagIdCache.get(pill.dataset.tagName.toLowerCase());
+      if (cachedId) {
+        ids.push(cachedId);
+      }
+    });
+    return ids;
+  }
+
+  /**
+   * Handle the Save button click: persist all currently active pills to the performer.
+   * @param {HTMLElement} saveBtn - The save button element
+   * @param {HTMLElement} panel - The panel element
+   * @param {string} performerId - Performer ID
+   */
+  async function handleSaveClick(saveBtn, panel, performerId) {
+    if (saveBtn.disabled) {
+      return;
+    }
+    saveBtn.disabled = true;
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = "Saving…";
+
+    try {
+      // Collect IDs for all currently active pills
+      const activePillIds = getActivePillTagIds(panel);
+
+      // Fetch the performer's current tags fresh to avoid clobbering unrelated tags
+      const currentTags = await getPerformerTags(performerId);
+      const currentSet = new Set(currentTags.map((t) => t.id));
+
+      // Build a merged set: existing tags that are NOT in our pill groups, plus the active pills
+      const ourPillTagNames = new Set(
+        DEFAULT_TAG_GROUPS.flatMap((g) => g.tags.map((t) => t.toLowerCase()))
+      );
+      // Remove previously quick-tagged entries for categories managed by this panel,
+      // then add only the ones the user has selected right now.
+      const mergedIds = new Set();
+      currentSet.forEach((id) => {
+        // Keep tags that are not managed by this panel
+        const name = [...tagIdCache.entries()].find(([, v]) => v === id)?.[0];
+        if (!name || !ourPillTagNames.has(name)) {
+          mergedIds.add(id);
+        }
+      });
+      activePillIds.forEach((id) => mergedIds.add(id));
+
+      await updatePerformerTagIds(performerId, Array.from(mergedIds));
+
+      saveBtn.textContent = "✓ Saved";
+      showToast(panel, `Saved ${activePillIds.length} tag(s) to performer.`, "success");
+      console.log(`[PerformerTagger] Saved ${activePillIds.length} tag(s) to performer ${performerId}`);
+      setTimeout(() => {
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
+      }, 2000);
+    } catch (err) {
+      console.error("[PerformerTagger] Save failed:", err);
+      saveBtn.textContent = "✗ Error";
+      showToast(panel, "Save failed — check the console for details.", "error");
+      setTimeout(() => {
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
+      }, 2000);
+    }
+  }
 
   /**
    * Build the quick-tag panel DOM element.
@@ -525,13 +644,28 @@
     title.className = "pt-title";
     title.textContent = "Quick Tags";
 
+    const headerRight = document.createElement("div");
+    headerRight.className = "pt-header-right";
+
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "pt-save-btn";
+    saveBtn.setAttribute("aria-label", "Save quick-tag selections to performer");
+    saveBtn.textContent = "Save";
+    saveBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleSaveClick(saveBtn, panel, performerId);
+    });
+
     const toggle = document.createElement("button");
     toggle.className = "pt-toggle";
     toggle.setAttribute("aria-label", "Toggle quick-tag panel");
     toggle.textContent = startCollapsed ? "▸" : "▾";
 
+    headerRight.appendChild(saveBtn);
+    headerRight.appendChild(toggle);
     header.appendChild(title);
-    header.appendChild(toggle);
+    header.appendChild(headerRight);
     panel.appendChild(header);
 
     // --- Body ---
@@ -741,8 +875,16 @@
       let activeTagIds = new Set(performer.tags.map((t) => t.id));
 
       // Auto-apply tags derived from the performer's known Stash fields
-      activeTagIds = await autoApplyDerivedTags(performerId, performer, activeTagIds);
+      const { savedTagIds, suggestedTagIds } = await autoApplyDerivedTags(
+        performerId,
+        performer,
+        activeTagIds
+      );
       if (navVersion !== navigationVersion) return;
+
+      // Use saved IDs for pill active state; suggestedTagIds may differ only on save failure.
+      activeTagIds = savedTagIds;
+      const autoSaveFailed = suggestedTagIds.size > savedTagIds.size;
 
       const collapsed = await shouldStartCollapsed();
       if (navVersion !== navigationVersion) return;
@@ -755,6 +897,21 @@
 
       const target = findInjectionTarget();
       target.appendChild(panel);
+
+      // If auto-save failed, mark the suggested pills as active anyway (visual hint)
+      // and show a toast so the user knows to use the Save button.
+      if (autoSaveFailed) {
+        syncPillStates(panel, suggestedTagIds);
+        showToast(
+          panel,
+          "Auto-save failed — click Save to apply the highlighted tags.",
+          "error"
+        );
+      } else if (suggestedTagIds.size > new Set(performer.tags.map((t) => t.id)).size) {
+        // Auto-save ran and added new tags — let the user know.
+        const added = suggestedTagIds.size - new Set(performer.tags.map((t) => t.id)).size;
+        showToast(panel, `Auto-applied ${added} tag(s) from performer data.`, "success");
+      }
 
       console.log(`[PerformerTagger] Injected quick-tag panel for performer ${performerId}`);
     } catch (err) {

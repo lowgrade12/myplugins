@@ -10,6 +10,7 @@
   background: rgba(0, 0, 0, 0.35);
   font-size: 0.85rem;
   overflow: hidden;
+  position: relative;
 }
 
 /* Header row */
@@ -27,6 +28,39 @@
   font-weight: 600;
   letter-spacing: 0.03em;
   color: #e0e0ea;
+}
+
+/* Right-side header controls: Save button + collapse toggle */
+.pt-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Save button */
+.pt-save-btn {
+  background: rgba(75, 160, 255, 0.18);
+  border: 1px solid rgba(75, 160, 255, 0.5);
+  color: #7dc8ff;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  line-height: 1.6;
+}
+
+.pt-save-btn:hover:not(:disabled) {
+  background: rgba(75, 160, 255, 0.32);
+  border-color: rgba(75, 160, 255, 0.8);
+  color: #b0dcff;
+}
+
+.pt-save-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
 }
 
 /* Collapse/expand toggle button */
@@ -164,6 +198,41 @@
 }
 
 /* ============================================
+   TOAST NOTIFICATION
+   ============================================ */
+
+.pt-toast {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%) translateY(6px);
+  padding: 5px 14px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 9999;
+}
+
+.pt-toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.pt-toast-success {
+  background: rgba(80, 200, 120, 0.85);
+  color: #0d2a18;
+}
+
+.pt-toast-error {
+  background: rgba(220, 80, 80, 0.85);
+  color: #2a0d0d;
+}
+
+/* ============================================
    RESPONSIVE
    ============================================ */
 
@@ -224,5 +293,17 @@
     background: rgba(0, 100, 220, 0.15);
     border-color: rgba(0, 100, 220, 0.5);
     color: #0055bb;
+  }
+
+  .pt-save-btn {
+    background: rgba(0, 100, 220, 0.12);
+    border-color: rgba(0, 100, 220, 0.45);
+    color: #0055bb;
+  }
+
+  .pt-save-btn:hover:not(:disabled) {
+    background: rgba(0, 100, 220, 0.22);
+    border-color: rgba(0, 100, 220, 0.7);
+    color: #003a99;
   }
 }
