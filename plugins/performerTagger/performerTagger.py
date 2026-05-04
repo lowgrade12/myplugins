@@ -522,6 +522,106 @@ def task_batch_tag_performers():
 
 
 # ---------------------------------------------------------------------------
+# Remove all managed tags
+# ---------------------------------------------------------------------------
+
+def fetch_performer_page_tags_only(page: int) -> dict:
+    """Fetch one page of performers with only id, name, gender, and tags."""
+    query = """
+    query FindPerformersTags($filter: FindFilterType) {
+      findPerformers(filter: $filter) {
+        count
+        performers {
+          id
+          name
+          gender
+          tags { id name }
+        }
+      }
+    }
+    """
+    data = stash_graphql(query, {
+        "filter": {
+            "page": page,
+            "per_page": BATCH_PAGE_SIZE,
+            "sort": "id",
+            "direction": "ASC",
+        }
+    })
+    return (data or {}).get("findPerformers", {"count": 0, "performers": []})
+
+
+def task_remove_performer_tags():
+    """
+    Remove every managed attribute tag from all performers so the batch-tag
+    task can re-apply correct tags from scratch.
+    """
+    log.LogInfo("PerformerTagger: Remove All Performer Tags starting…")
+
+    first_page = fetch_performer_page_tags_only(1)
+    total = first_page.get("count", 0)
+    total_pages = math.ceil(total / BATCH_PAGE_SIZE) if total else 0
+
+    log.LogInfo(f"PerformerTagger: {total} performer(s) to scan across {total_pages} page(s)")
+
+    processed = 0
+    cleared = 0
+    skipped = 0
+    errors = 0
+
+    def handle_page(performers):
+        nonlocal processed, cleared, skipped, errors
+        for performer in performers:
+            performer_id = performer["id"]
+            current_tags = performer.get("tags", [])
+
+            # Keep only tags that are NOT managed by this plugin
+            kept_ids = [
+                t["id"] for t in current_tags
+                if t["name"].lower() not in ALL_MANAGED_TAG_NAMES
+            ]
+
+            managed_present = len(current_tags) - len(kept_ids)
+            processed += 1
+
+            if managed_present == 0:
+                skipped += 1
+            else:
+                success = update_performer_tags(performer_id, kept_ids)
+                if success:
+                    cleared += 1
+                    log.LogDebug(
+                        f"Performer {performer_id} ({performer.get('name', '?')}): "
+                        f"removed {managed_present} managed tag(s)"
+                    )
+                else:
+                    errors += 1
+
+            progress = processed / total if total else 1.0
+            log.LogProgress(progress)
+
+    handle_page(first_page.get("performers", []))
+
+    for page in range(2, total_pages + 1):
+        page_data = fetch_performer_page_tags_only(page)
+        handle_page(page_data.get("performers", []))
+
+    summary = (
+        f"PerformerTagger: Done. "
+        f"Processed {processed}, cleared {cleared}, skipped {skipped}"
+        + (f", errors {errors}" if errors else "")
+        + "."
+    )
+    log.LogInfo(summary)
+    return {
+        "processed": processed,
+        "cleared": cleared,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -537,6 +637,11 @@ def main():
 
     if mode == "batch_tag":
         output = task_batch_tag_performers()
+        print(json.dumps({"output": output}))
+        return
+
+    if mode == "remove_all_tags":
+        output = task_remove_performer_tags()
         print(json.dumps({"output": output}))
         return
 
