@@ -1442,6 +1442,9 @@
         injectionInProgress = false; // Reset flag on navigation
         batchButtonRetries = 0; // Reset retry counter on navigation
         pluginConfigCache = null; // Refresh settings on each navigation
+        // Clear the "already auto-tagged" guard so that returning to a performer
+        // page later in the same session still re-runs auto-tag with fresh data.
+        autoTaggedPerformers.clear();
 
         console.log("[PerformerTagger] Page changed:", e.detail.data.location.pathname);
 

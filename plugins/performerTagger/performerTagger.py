@@ -413,6 +413,10 @@ def process_performer(performer: dict) -> str:
 
     current_ids = {t["id"] for t in current_tags}
 
+    # Build a per-performer name→id map directly from current tags.
+    # Used for wrong-tag detection to avoid any stale global-cache issues.
+    current_tag_name_to_id = {t["name"].lower(): t["id"] for t in current_tags}
+
     # Derive tag suggestions from data fields
     derived = derive_tags(performer)
     if not derived:
@@ -436,7 +440,9 @@ def process_performer(performer: dict) -> str:
         has_correct_tag = False
 
         for tag_name in group["tags"]:
-            tid = tag_id_cache.get(tag_name.lower())
+            # Use the performer's own tag map so we never miss a tag due to a
+            # stale None entry in the shared global cache.
+            tid = current_tag_name_to_id.get(tag_name.lower())
             if tid and tid in new_ids:
                 if tag_name.lower() == correct_name_lower:
                     has_correct_tag = True
