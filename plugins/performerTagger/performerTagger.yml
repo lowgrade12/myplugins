@@ -34,8 +34,7 @@ tasks:
       mode: batch_tag
   - name: Remove All Performer Tags
     description: >
-      Remove every managed attribute tag (hair colour, eye colour, ethnicity,
-      body type, height, bust size, bust type) from all performers.
-      Use this to reset tags so the Batch Tag task can re-apply correct ones.
+      Remove ALL tags from every performer, including any unrecognised leftover
+      tags, so the Batch Tag task can re-apply correct ones from a clean slate.
     defaultArgs:
       mode: remove_all_tags
