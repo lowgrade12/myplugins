@@ -553,8 +553,8 @@ def fetch_performer_page_tags_only(page: int) -> dict:
 
 def task_remove_performer_tags():
     """
-    Remove every managed attribute tag from all performers so the batch-tag
-    task can re-apply correct tags from scratch.
+    Remove ALL tags from every performer so the batch-tag task can re-apply
+    correct tags from a clean slate.
     """
     log.LogInfo("PerformerTagger: Remove All Performer Tags starting…")
 
@@ -575,24 +575,18 @@ def task_remove_performer_tags():
             performer_id = performer["id"]
             current_tags = performer.get("tags", [])
 
-            # Keep only tags that are NOT managed by this plugin
-            kept_ids = [
-                t["id"] for t in current_tags
-                if t["name"].lower() not in ALL_MANAGED_TAG_NAMES
-            ]
-
-            managed_present = len(current_tags) - len(kept_ids)
             processed += 1
 
-            if managed_present == 0:
+            if not current_tags:
                 skipped += 1
             else:
-                success = update_performer_tags(performer_id, kept_ids)
+                # Remove every tag — pass an empty list to wipe the performer clean
+                success = update_performer_tags(performer_id, [])
                 if success:
                     cleared += 1
                     log.LogDebug(
                         f"Performer {performer_id} ({performer.get('name', '?')}): "
-                        f"removed {managed_present} managed tag(s)"
+                        f"removed {len(current_tags)} tag(s)"
                     )
                 else:
                     errors += 1
