@@ -150,7 +150,9 @@ category_id_cache: dict[str, str | None] = {}
 
 
 def find_tag_by_name(name: str) -> str | None:
-    """Return the Stash tag ID for *name* (exact, case-insensitive), or None."""
+    """Return the Stash tag ID for *name* (exact, case-insensitive), or None.
+    Falls back to alias search when not found by primary name, mirroring the
+    JS findTagByName() behaviour so the batch process handles the same tags."""
     key = name.lower()
     if key in tag_id_cache:
         return tag_id_cache[key]
@@ -169,11 +171,43 @@ def find_tag_by_name(name: str) -> str | None:
         data = stash_graphql(query, {"name": name})
         tags = (data or {}).get("findTags", {}).get("tags", [])
         tag = next((t for t in tags if t["name"].lower() == key), None)
-        tag_id = tag["id"] if tag else None
+        if tag:
+            tag_id_cache[key] = tag["id"]
+            return tag["id"]
+    except Exception as exc:
+        log.LogError(f'Error finding tag "{name}": {exc}')
+        return None
+
+    # Not found by primary name — check if this name is stored as an alias on
+    # another tag.  This mirrors the JS findTagByName() alias fallback so both
+    # the one-page and the all-performer batch processes behave identically.
+    alias_query = """
+    query FindTagByAlias($name: String!) {
+      findTags(
+        tag_filter: { aliases: { value: $name, modifier: EQUALS } }
+        filter: { per_page: -1 }
+      ) {
+        tags { id name aliases }
+      }
+    }
+    """
+    try:
+        alias_data = stash_graphql(alias_query, {"name": name})
+        alias_tags = (alias_data or {}).get("findTags", {}).get("tags", [])
+        # Stash's EQUALS modifier may be case-sensitive depending on the
+        # underlying DB collation, so we do a final case-insensitive Python
+        # check (mirrors JS findTagByName).  In practice the query returns at
+        # most one matching tag, so the nested any() is not expensive.
+        alias_tag = next(
+            (t for t in alias_tags
+             if t.get("aliases") and any(a.lower() == key for a in t["aliases"])),
+            None,
+        )
+        tag_id = alias_tag["id"] if alias_tag else None
         tag_id_cache[key] = tag_id
         return tag_id
     except Exception as exc:
-        log.LogError(f'Error finding tag "{name}": {exc}')
+        log.LogError(f'Error finding tag by alias "{name}": {exc}')
         return None
 
 
@@ -201,11 +235,24 @@ def create_tag(name: str, parent_id: str | None = None) -> str | None:
 
 
 def get_or_create_tag(name: str, parent_id: str | None = None) -> str | None:
-    """Return the ID of *name*, creating it (with *parent_id*) if absent."""
+    """Return the ID of *name*, creating it (with *parent_id*) if absent.
+
+    If tag creation fails because the tag already exists (Stash returns a
+    GraphQL error for a duplicate name), the function clears any stale cache
+    entry and does one more lookup so the existing tag's ID is returned rather
+    than None.  This prevents the batch task from logging spurious creation
+    errors and then silently failing to apply the tag to performers."""
     existing = find_tag_by_name(name)
     if existing:
         return existing
-    return create_tag(name, parent_id)
+    created = create_tag(name, parent_id)
+    if created:
+        return created
+    # Creation returned None — most likely because the tag already exists and
+    # Stash rejected the duplicate.  Clear any stale cache entry (it may hold
+    # None from the earlier failed find) and retry the lookup once.
+    tag_id_cache.pop(name.lower(), None)
+    return find_tag_by_name(name)
 
 
 def get_or_create_category_tag(category_name: str) -> str | None:
