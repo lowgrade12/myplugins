@@ -1,6 +1,6 @@
 name: PerformerTagger
 description: Injects a quick-tag panel on performer detail pages for one-click attribute tagging (hair color, body type, bust size, ethnicity, age range). Also provides a server-side batch task that auto-tags all performers from Stash's Task Queue.
-version: 1.3.0
+version: 1.4.0
 url: https://github.com/lowgrade12/hotornottest.git
 ui:
   javascript:
@@ -32,3 +32,10 @@ tasks:
       Only applies tags in categories that have no existing tags set.
     defaultArgs:
       mode: batch_tag
+  - name: Remove All Performer Tags
+    description: >
+      Remove every managed attribute tag (hair colour, eye colour, ethnicity,
+      body type, height, bust size, bust type) from all performers.
+      Use this to reset tags so the Batch Tag task can re-apply correct ones.
+    defaultArgs:
+      mode: remove_all_tags
