@@ -194,6 +194,10 @@ def find_tag_by_name(name: str) -> str | None:
     try:
         alias_data = stash_graphql(alias_query, {"name": name})
         alias_tags = (alias_data or {}).get("findTags", {}).get("tags", [])
+        # Stash's EQUALS modifier may be case-sensitive depending on the
+        # underlying DB collation, so we do a final case-insensitive Python
+        # check (mirrors JS findTagByName).  In practice the query returns at
+        # most one matching tag, so the nested any() is not expensive.
         alias_tag = next(
             (t for t in alias_tags
              if t.get("aliases") and any(a.lower() == key for a in t["aliases"])),
