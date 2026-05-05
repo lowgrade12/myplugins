@@ -1313,44 +1313,6 @@
   }
 
   // ============================================
-  // NAVBAR BUTTON — ALL PAGES
-  // ============================================
-
-  /**
-   * Inject the "🏷️ Tag All" button into Stash's main navigation bar.
-   * When on the performers list page the button tags only the performers currently
-   * visible (respecting filters and pagination); on all other pages it queues the
-   * server-side task that processes every performer.
-   * @returns {boolean} True if the button is present (either already existed or was just injected), false if no navbar was found.
-   */
-  function addNavbarButton() {
-    if (document.getElementById("pt-nav-btn")) return true;
-
-    const navTarget = document.querySelector(".navbar-nav");
-    if (!navTarget) return false;
-
-    const container = document.createElement("div");
-    container.className = "col-4 col-sm-3 col-md-2 col-lg-auto nav-link";
-    container.innerHTML = `
-      <a href="javascript:void(0);" id="pt-nav-btn" class="pt-nav-btn minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center" title="Tag performers on this page / Batch Tag All Performers">
-        <span class="d-block d-xl-inline mb-2 mb-xl-0" aria-hidden="true">🏷️</span>
-        <span>Tag All</span>
-      </a>
-    `;
-    const link = container.querySelector("#pt-nav-btn");
-    link.addEventListener("click", () => {
-      if (isOnPerformerListPage()) {
-        tagCurrentPagePerformers();
-      } else {
-        startBatchTag();
-      }
-    });
-    navTarget.appendChild(container);
-    console.log("[PerformerTagger] Navbar Tag All button injected");
-    return true;
-  }
-
-  // ============================================
   // INITIALISATION
   // ============================================
 
@@ -1361,9 +1323,6 @@
    */
   function init() {
     console.log("[PerformerTagger] Plugin initialised");
-
-    // Inject the persistent navbar button (runs on any page)
-    addNavbarButton();
 
     // Inject immediately if we start on a performer detail page
     if (isOnSinglePerformerPage()) {
@@ -1377,7 +1336,6 @@
 
     // MutationObserver — handles React re-renders that swap out DOM nodes
     const observer = new MutationObserver(() => {
-      addNavbarButton();
       if (isOnSinglePerformerPage()) {
         // Debounce to avoid hammering on rapid DOM changes
         clearTimeout(processingTimeout);
