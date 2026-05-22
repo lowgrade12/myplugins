@@ -324,7 +324,7 @@
   function buildSceneCardHtml(scene, stashBase) {
     const title = scene.title || `Scene #${scene.id}`;
     const date = scene.date || "";
-    const duration = formatDuration(scene.files && scene.files[0] ? scene.files[0].duration : null);
+    const duration = formatDuration(scene.files?.[0]?.duration);
     const studio = scene.studio ? scene.studio.name : "No studio";
     const performers = Array.isArray(scene.performers) && scene.performers.length > 0
       ? scene.performers.map((p) => p.name).join(", ")
