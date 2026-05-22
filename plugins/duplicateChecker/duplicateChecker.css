@@ -33,36 +33,15 @@
    ============================================ */
 
 .dc-btn-wrapper {
-  display: inline-block;
-  margin: 4px 8px 4px 0;
-  vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
 }
 
 .dc-find-dupes-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  background-color: var(--dc-bg-input);
-  color: var(--dc-white);
-  border: 1px solid var(--dc-gray-dark);
-  border-radius: var(--dc-radius);
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
   white-space: nowrap;
-}
-
-.dc-find-dupes-btn:hover {
-  background-color: var(--dc-primary);
-  border-color: var(--dc-primary);
-  color: var(--dc-white);
-}
-
-.dc-find-dupes-btn:active {
-  background-color: var(--dc-primary-dark);
-  border-color: var(--dc-primary-dark);
 }
 
 /* ============================================
