@@ -580,13 +580,20 @@
     if (groups.length === 0) {
       const empty = document.createElement("div");
       empty.className = "dc-empty";
-      empty.innerHTML = `
-        <p>No duplicate scenes found for <strong>${escapeHtml(contextLabel)}</strong>.</p>
-        <p class="dc-empty-hint">
-          Make sure Stash has scanned with fingerprinting enabled, or try adjusting the 
-          Distance setting in the plugin configuration.
-        </p>
-      `;
+
+      const noResultsP = document.createElement("p");
+      noResultsP.textContent = "No duplicate scenes found for ";
+      const noResultsStrong = document.createElement("strong");
+      noResultsStrong.textContent = contextLabel;
+      noResultsP.appendChild(noResultsStrong);
+      noResultsP.appendChild(document.createTextNode("."));
+      empty.appendChild(noResultsP);
+
+      const hintP = document.createElement("p");
+      hintP.className = "dc-empty-hint";
+      hintP.textContent = "Make sure Stash has scanned with fingerprinting enabled, or try adjusting the Distance setting in the plugin configuration.";
+      empty.appendChild(hintP);
+
       const link = document.createElement("a");
       link.className = "dc-checker-link";
       link.href = duplicateCheckerUrl;
@@ -602,7 +609,15 @@
 
       const summary = document.createElement("p");
       summary.className = "dc-result-summary";
-      summary.innerHTML = `Found <strong>${groups.length}</strong> duplicate group${groups.length !== 1 ? "s" : ""} for <strong>${escapeHtml(contextLabel)}</strong>.`;
+      summary.appendChild(document.createTextNode("Found "));
+      const countStrong = document.createElement("strong");
+      countStrong.textContent = String(groups.length);
+      summary.appendChild(countStrong);
+      summary.appendChild(document.createTextNode(` duplicate group${groups.length !== 1 ? "s" : ""} for `));
+      const labelStrong = document.createElement("strong");
+      labelStrong.textContent = contextLabel;
+      summary.appendChild(labelStrong);
+      summary.appendChild(document.createTextNode("."));
       resultsHeader.appendChild(summary);
 
       const allLink = document.createElement("a");
@@ -624,7 +639,11 @@
 
         const groupHeader = document.createElement("div");
         groupHeader.className = "dc-group-header";
-        groupHeader.innerHTML = `Duplicate Group ${i + 1} <span class="dc-group-count">(${group.length} scenes)</span>`;
+        groupHeader.appendChild(document.createTextNode(`Duplicate Group ${i + 1} `));
+        const countSpan = document.createElement("span");
+        countSpan.className = "dc-group-count";
+        countSpan.textContent = `(${group.length} scenes)`;
+        groupHeader.appendChild(countSpan);
         groupEl.appendChild(groupHeader);
 
         const scenesContainer = document.createElement("div");
