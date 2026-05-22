@@ -1,0 +1,500 @@
+/* ============================================
+   DUPLICATE CHECKER PLUGIN STYLES
+   Dark theme, matches Stash UI aesthetic.
+   All classes prefixed with "dc-" to avoid
+   conflicts with other plugins.
+   ============================================ */
+
+/* --- CSS Custom Properties --- */
+:root {
+  --dc-primary: #0d6efd;
+  --dc-primary-dark: #0a58ca;
+  --dc-primary-hover: #3d8bfd;
+  --dc-danger: #dc3545;
+  --dc-warning: #ffc107;
+  --dc-success: #28a745;
+  --dc-white: #fff;
+  --dc-gray-light: #aaa;
+  --dc-gray: #888;
+  --dc-gray-mid: #666;
+  --dc-gray-dark: #444;
+  --dc-bg-page: #121212;
+  --dc-bg-card: #1a1a1a;
+  --dc-bg-group: #1e1e1e;
+  --dc-bg-header: #242424;
+  --dc-bg-input: #2a2a2a;
+  --dc-border: rgba(255, 255, 255, 0.08);
+  --dc-shadow: rgba(0, 0, 0, 0.7);
+  --dc-radius: 8px;
+}
+
+/* ============================================
+   INJECT BUTTON
+   ============================================ */
+
+.dc-btn-wrapper {
+  display: inline-block;
+  margin: 4px 8px 4px 0;
+  vertical-align: middle;
+}
+
+.dc-find-dupes-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background-color: var(--dc-bg-input);
+  color: var(--dc-white);
+  border: 1px solid var(--dc-gray-dark);
+  border-radius: var(--dc-radius);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+
+.dc-find-dupes-btn:hover {
+  background-color: var(--dc-primary);
+  border-color: var(--dc-primary);
+  color: var(--dc-white);
+}
+
+.dc-find-dupes-btn:active {
+  background-color: var(--dc-primary-dark);
+  border-color: var(--dc-primary-dark);
+}
+
+/* ============================================
+   MODAL OVERLAY
+   ============================================ */
+
+#dc-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dc-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+/* ============================================
+   DIALOG CONTAINER
+   ============================================ */
+
+.dc-dialog {
+  position: relative;
+  background: var(--dc-bg-page);
+  border-radius: 12px;
+  box-shadow: 0 16px 60px var(--dc-shadow);
+  width: 90vw;
+  max-width: 1200px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dc-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px 14px;
+  background: var(--dc-bg-header);
+  border-bottom: 1px solid var(--dc-border);
+  flex-shrink: 0;
+}
+
+.dc-dialog-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--dc-white);
+}
+
+.dc-close {
+  background: transparent;
+  border: none;
+  color: var(--dc-gray);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  transition: color 0.2s;
+}
+
+.dc-close:hover {
+  color: var(--dc-white);
+}
+
+.dc-dialog-body {
+  overflow-y: auto;
+  padding: 20px 24px;
+  flex: 1;
+}
+
+/* Scrollbar styling */
+.dc-dialog-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dc-dialog-body::-webkit-scrollbar-track {
+  background: var(--dc-bg-card);
+}
+
+.dc-dialog-body::-webkit-scrollbar-thumb {
+  background: var(--dc-gray-dark);
+  border-radius: 4px;
+}
+
+.dc-dialog-body::-webkit-scrollbar-thumb:hover {
+  background: var(--dc-gray-mid);
+}
+
+/* ============================================
+   LOADING MODAL
+   ============================================ */
+
+.dc-dialog-loading {
+  width: auto;
+  min-width: 320px;
+  padding: 40px;
+  align-items: center;
+  text-align: center;
+}
+
+.dc-loading-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.dc-spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid var(--dc-gray-dark);
+  border-top-color: var(--dc-primary);
+  border-radius: 50%;
+  animation: dc-spin 0.8s linear infinite;
+}
+
+@keyframes dc-spin {
+  to { transform: rotate(360deg); }
+}
+
+.dc-loading-text {
+  color: var(--dc-gray-light);
+  font-size: 0.95rem;
+  margin: 0;
+  max-width: 320px;
+}
+
+/* ============================================
+   ERROR MODAL
+   ============================================ */
+
+.dc-dialog-error .dc-dialog-body {
+  padding: 24px;
+}
+
+.dc-error-text {
+  color: var(--dc-danger);
+  font-size: 1rem;
+  margin: 0;
+}
+
+/* ============================================
+   RESULTS HEADER
+   ============================================ */
+
+.dc-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--dc-border);
+}
+
+.dc-result-summary {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--dc-gray-light);
+}
+
+.dc-result-summary strong {
+  color: var(--dc-white);
+}
+
+.dc-checker-link {
+  font-size: 0.85rem;
+  color: var(--dc-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+
+.dc-checker-link:hover {
+  color: var(--dc-primary-hover);
+  text-decoration: underline;
+}
+
+/* ============================================
+   EMPTY STATE
+   ============================================ */
+
+.dc-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--dc-gray-light);
+}
+
+.dc-empty strong {
+  color: var(--dc-white);
+}
+
+.dc-empty-hint {
+  font-size: 0.88rem;
+  color: var(--dc-gray);
+  margin: 12px 0 20px;
+}
+
+/* ============================================
+   DUPLICATE GROUPS
+   ============================================ */
+
+.dc-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.dc-group {
+  background: var(--dc-bg-group);
+  border: 1px solid var(--dc-border);
+  border-radius: var(--dc-radius);
+  overflow: hidden;
+}
+
+.dc-group-header {
+  padding: 10px 16px;
+  background: var(--dc-bg-header);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--dc-gray-light);
+  border-bottom: 1px solid var(--dc-border);
+}
+
+.dc-group-count {
+  font-weight: 400;
+  color: var(--dc-gray);
+}
+
+.dc-group-scenes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 12px;
+  gap: 12px;
+}
+
+/* ============================================
+   SCENE CARDS
+   ============================================ */
+
+.dc-scene-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--dc-bg-card);
+  border: 1px solid var(--dc-border);
+  border-radius: var(--dc-radius);
+  overflow: hidden;
+  flex: 1 1 260px;
+  min-width: 220px;
+  max-width: 420px;
+  transition: border-color 0.2s;
+}
+
+.dc-scene-card:hover {
+  border-color: var(--dc-gray-mid);
+}
+
+.dc-scene-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: var(--dc-bg-input);
+}
+
+.dc-scene-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: var(--dc-gray);
+  background: var(--dc-bg-input);
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.dc-scene-info {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.dc-scene-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--dc-white);
+  text-decoration: none;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.dc-scene-title:hover {
+  color: var(--dc-primary-hover);
+  text-decoration: underline;
+}
+
+.dc-scene-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dc-meta-item {
+  font-size: 0.78rem;
+  color: var(--dc-gray);
+  background: var(--dc-bg-input);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.dc-scene-performers {
+  font-size: 0.82rem;
+  color: var(--dc-gray-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================
+   FILE INFO
+   ============================================ */
+
+.dc-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  flex: 1;
+}
+
+.dc-file-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+  background: var(--dc-bg-input);
+  border-radius: 4px;
+  font-size: 0.76rem;
+}
+
+.dc-file-path {
+  color: var(--dc-gray-light);
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.dc-file-meta {
+  color: var(--dc-gray);
+}
+
+.dc-file-no-info {
+  color: var(--dc-gray-mid);
+  font-style: italic;
+}
+
+/* ============================================
+   OPEN SCENE BUTTON
+   ============================================ */
+
+.dc-open-btn {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 5px 12px;
+  background: var(--dc-primary);
+  color: var(--dc-white);
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: center;
+  transition: background-color 0.2s;
+  align-self: flex-start;
+}
+
+.dc-open-btn:hover {
+  background: var(--dc-primary-dark);
+  color: var(--dc-white);
+  text-decoration: none;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 768px) {
+  .dc-dialog {
+    width: 97vw;
+    max-height: 95vh;
+  }
+
+  .dc-dialog-header {
+    padding: 14px 16px 12px;
+  }
+
+  .dc-dialog-title {
+    font-size: 1.1rem;
+  }
+
+  .dc-dialog-body {
+    padding: 14px 16px;
+  }
+
+  .dc-results-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dc-group-scenes {
+    flex-direction: column;
+  }
+
+  .dc-scene-card {
+    max-width: 100%;
+  }
+}
