@@ -442,9 +442,16 @@
    OPEN SCENE BUTTON
    ============================================ */
 
+.dc-scene-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .dc-open-btn {
   display: inline-block;
-  margin-top: 8px;
   padding: 5px 12px;
   background: var(--dc-primary);
   color: var(--dc-white);
@@ -454,13 +461,35 @@
   font-weight: 500;
   text-align: center;
   transition: background-color 0.2s;
-  align-self: flex-start;
 }
 
 .dc-open-btn:hover {
   background: var(--dc-primary-dark);
   color: var(--dc-white);
   text-decoration: none;
+}
+
+.dc-delete-btn {
+  display: inline-block;
+  padding: 5px 12px;
+  background: transparent;
+  color: var(--dc-danger);
+  border: 1px solid var(--dc-danger);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.dc-delete-btn:hover {
+  background: var(--dc-danger);
+  color: var(--dc-white);
+}
+
+.dc-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ============================================
