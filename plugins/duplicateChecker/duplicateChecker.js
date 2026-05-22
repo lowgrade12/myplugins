@@ -102,7 +102,6 @@
         id
         title
         date
-        duration
         studio {
           id
           name
@@ -114,6 +113,7 @@
         files {
           path
           size
+          duration
           width
           height
           video_codec
@@ -324,7 +324,7 @@
   function buildSceneCardHtml(scene, stashBase) {
     const title = scene.title || `Scene #${scene.id}`;
     const date = scene.date || "";
-    const duration = formatDuration(scene.duration);
+    const duration = formatDuration(scene.files?.[0]?.duration);
     const studio = scene.studio ? scene.studio.name : "No studio";
     const performers = Array.isArray(scene.performers) && scene.performers.length > 0
       ? scene.performers.map((p) => p.name).join(", ")
