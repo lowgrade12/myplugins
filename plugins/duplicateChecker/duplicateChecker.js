@@ -152,6 +152,12 @@
     }
   `;
 
+  const SCENE_DESTROY_MUTATION = `
+    mutation SceneDestroy($id: ID!, $delete_file: Boolean, $delete_generated: Boolean) {
+      sceneDestroy(input: { id: $id, delete_file: $delete_file, delete_generated: $delete_generated })
+    }
+  `;
+
   // ============================================
   // PLUGIN SETTINGS
   // ============================================
@@ -316,12 +322,12 @@
   // ============================================
 
   /**
-   * Build the HTML for a single scene card within a duplicate group.
+   * Build a scene card DOM element within a duplicate group, including a delete button.
    * @param {Object} scene
    * @param {string} stashBase
-   * @returns {string} HTML string
+   * @returns {HTMLElement}
    */
-  function buildSceneCardHtml(scene, stashBase) {
+  function buildSceneCard(scene, stashBase) {
     const title = scene.title || `Scene #${scene.id}`;
     const date = scene.date || "";
     const duration = formatDuration(scene.files?.[0]?.duration);
@@ -334,48 +340,182 @@
       : "";
     const sceneUrl = `${stashBase}/scenes/${scene.id}`;
 
-    // Build file info rows
-    const fileRows = Array.isArray(scene.files) && scene.files.length > 0
-      ? scene.files.map((f) => {
-          const path = f.path || "Unknown path";
-          const size = formatFileSize(f.size);
-          const resolution = f.width && f.height ? `${f.width}×${f.height}` : "";
-          const codec = f.video_codec || "";
-          const bitrate = f.bit_rate ? `${Math.round(f.bit_rate / 1000)} kbps` : "";
-          const meta = [resolution, codec, bitrate].filter(Boolean).join(" · ");
-          return `
-            <div class="dc-file-row">
-              <span class="dc-file-path" title="${escapeHtml(path)}">${escapeHtml(path)}</span>
-              <span class="dc-file-meta">${escapeHtml(size)}${meta ? " · " + escapeHtml(meta) : ""}</span>
-            </div>
-          `;
-        }).join("")
-      : `<div class="dc-file-row dc-file-no-info">No file info available</div>`;
+    const card = document.createElement("div");
+    card.className = "dc-scene-card";
+    card.dataset.sceneId = scene.id;
 
-    const thumbHtml = screenshot
-      ? `<a href="${sceneUrl}" target="_blank" rel="noopener">
-           <img class="dc-scene-thumb" src="${screenshot}" alt="${escapeHtml(title)}" loading="lazy" />
-         </a>`
-      : `<a href="${sceneUrl}" target="_blank" rel="noopener">
-           <div class="dc-scene-thumb dc-scene-thumb-placeholder">No preview</div>
-         </a>`;
+    // Thumbnail
+    const thumbLink = document.createElement("a");
+    thumbLink.href = sceneUrl;
+    thumbLink.target = "_blank";
+    thumbLink.rel = "noopener";
+    if (screenshot) {
+      const img = document.createElement("img");
+      img.className = "dc-scene-thumb";
+      img.src = screenshot;
+      img.alt = title;
+      img.loading = "lazy";
+      thumbLink.appendChild(img);
+    } else {
+      const placeholder = document.createElement("div");
+      placeholder.className = "dc-scene-thumb dc-scene-thumb-placeholder";
+      placeholder.textContent = "No preview";
+      thumbLink.appendChild(placeholder);
+    }
+    card.appendChild(thumbLink);
 
-    return `
-      <div class="dc-scene-card">
-        ${thumbHtml}
-        <div class="dc-scene-info">
-          <a class="dc-scene-title" href="${sceneUrl}" target="_blank" rel="noopener">${escapeHtml(title)}</a>
-          <div class="dc-scene-meta">
-            ${date ? `<span class="dc-meta-item">${escapeHtml(date)}</span>` : ""}
-            <span class="dc-meta-item">${escapeHtml(duration)}</span>
-            <span class="dc-meta-item">${escapeHtml(studio)}</span>
-          </div>
-          <div class="dc-scene-performers" title="${escapeHtml(performers)}">${escapeHtml(performers)}</div>
-          <div class="dc-file-list">${fileRows}</div>
-          <a class="dc-open-btn" href="${sceneUrl}" target="_blank" rel="noopener">Open Scene ↗</a>
-        </div>
-      </div>
-    `;
+    // Info section
+    const info = document.createElement("div");
+    info.className = "dc-scene-info";
+
+    const titleLink = document.createElement("a");
+    titleLink.className = "dc-scene-title";
+    titleLink.href = sceneUrl;
+    titleLink.target = "_blank";
+    titleLink.rel = "noopener";
+    titleLink.textContent = title;
+    info.appendChild(titleLink);
+
+    const meta = document.createElement("div");
+    meta.className = "dc-scene-meta";
+    if (date) {
+      const dateSpan = document.createElement("span");
+      dateSpan.className = "dc-meta-item";
+      dateSpan.textContent = date;
+      meta.appendChild(dateSpan);
+    }
+    const durSpan = document.createElement("span");
+    durSpan.className = "dc-meta-item";
+    durSpan.textContent = duration;
+    meta.appendChild(durSpan);
+    const studioSpan = document.createElement("span");
+    studioSpan.className = "dc-meta-item";
+    studioSpan.textContent = studio;
+    meta.appendChild(studioSpan);
+    info.appendChild(meta);
+
+    const perfDiv = document.createElement("div");
+    perfDiv.className = "dc-scene-performers";
+    perfDiv.title = performers;
+    perfDiv.textContent = performers;
+    info.appendChild(perfDiv);
+
+    const fileList = document.createElement("div");
+    fileList.className = "dc-file-list";
+    if (Array.isArray(scene.files) && scene.files.length > 0) {
+      scene.files.forEach((f) => {
+        const row = document.createElement("div");
+        row.className = "dc-file-row";
+        const pathSpan = document.createElement("span");
+        pathSpan.className = "dc-file-path";
+        pathSpan.title = f.path || "Unknown path";
+        pathSpan.textContent = f.path || "Unknown path";
+        const size = formatFileSize(f.size);
+        const resolution = f.width && f.height ? `${f.width}×${f.height}` : "";
+        const codec = f.video_codec || "";
+        const bitrate = f.bit_rate ? `${Math.round(f.bit_rate / 1000)} kbps` : "";
+        const metaStr = [resolution, codec, bitrate].filter(Boolean).join(" · ");
+        const metaSpan = document.createElement("span");
+        metaSpan.className = "dc-file-meta";
+        metaSpan.textContent = size + (metaStr ? " · " + metaStr : "");
+        row.appendChild(pathSpan);
+        row.appendChild(metaSpan);
+        fileList.appendChild(row);
+      });
+    } else {
+      const noInfo = document.createElement("div");
+      noInfo.className = "dc-file-row dc-file-no-info";
+      noInfo.textContent = "No file info available";
+      fileList.appendChild(noInfo);
+    }
+    info.appendChild(fileList);
+
+    // Action buttons row
+    const actions = document.createElement("div");
+    actions.className = "dc-scene-actions";
+
+    const openBtn = document.createElement("a");
+    openBtn.className = "dc-open-btn";
+    openBtn.href = sceneUrl;
+    openBtn.target = "_blank";
+    openBtn.rel = "noopener";
+    openBtn.textContent = "Open Scene ↗";
+    actions.appendChild(openBtn);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "dc-delete-btn";
+    deleteBtn.title = "Delete this scene";
+    deleteBtn.textContent = "🗑 Delete";
+    deleteBtn.addEventListener("click", () => handleDeleteScene(scene.id, card));
+    actions.appendChild(deleteBtn);
+
+    info.appendChild(actions);
+    card.appendChild(info);
+
+    return card;
+  }
+
+  /**
+   * Handle deleting a scene. Prompts user for confirmation (and whether to delete
+   * the underlying file), then calls the sceneDestroy mutation and removes the card.
+   * If the group becomes empty or has only one scene left, removes the group element.
+   * @param {string} sceneId
+   * @param {HTMLElement} cardEl - The scene card DOM element
+   */
+  async function handleDeleteScene(sceneId, cardEl) {
+    if (!window.confirm("Delete this scene from Stash?")) return;
+    const deleteFile = window.confirm(
+      "Also permanently delete the video file from disk?\n\nOK = yes, delete file · Cancel = keep file"
+    );
+
+    const deleteBtn = cardEl.querySelector(".dc-delete-btn");
+    if (deleteBtn) {
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = "Deleting…";
+    }
+
+    try {
+      await graphqlQuery(SCENE_DESTROY_MUTATION, {
+        id: sceneId,
+        delete_file: deleteFile,
+        delete_generated: true,
+      });
+      console.log(`${PLUGIN_NAME} Deleted scene ${sceneId}`);
+
+      // Remove the card from the group
+      const groupScenes = cardEl.closest(".dc-group-scenes");
+      cardEl.remove();
+
+      // If the group now has 0 or 1 scene, remove the entire group
+      if (groupScenes) {
+        const remaining = groupScenes.querySelectorAll(".dc-scene-card");
+        if (remaining.length < 2) {
+          const group = groupScenes.closest(".dc-group");
+          if (group) group.remove();
+        }
+      }
+
+      // Update the summary count
+      const modal = document.getElementById("dc-modal");
+      if (modal) {
+        const groupsList = modal.querySelector(".dc-groups-list");
+        if (groupsList) {
+          const remainingGroups = groupsList.querySelectorAll(".dc-group").length;
+          const summaryEl = modal.querySelector(".dc-result-summary");
+          if (summaryEl) {
+            const strong = summaryEl.querySelector("strong");
+            if (strong) strong.textContent = String(remainingGroups);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`${PLUGIN_NAME} Failed to delete scene ${sceneId}:`, err);
+      if (deleteBtn) {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = "🗑 Delete";
+      }
+      window.alert(`Failed to delete scene: ${err.message}`);
+    }
   }
 
   /**
@@ -406,65 +546,104 @@
     const stashBase = getStashBaseUrl();
     const duplicateCheckerUrl = `${stashBase}/sceneDuplicateChecker`;
 
-    let bodyHtml;
-    if (groups.length === 0) {
-      bodyHtml = `
-        <div class="dc-empty">
-          <p>No duplicate scenes found for <strong>${escapeHtml(contextLabel)}</strong>.</p>
-          <p class="dc-empty-hint">
-            Make sure Stash has scanned with fingerprinting enabled, or try adjusting the 
-            Distance setting in the plugin configuration.
-          </p>
-          <a class="dc-checker-link" href="${duplicateCheckerUrl}" target="_blank" rel="noopener">
-            View All Duplicates in Stash Duplicate Checker ↗
-          </a>
-        </div>
-      `;
-    } else {
-      const groupsHtml = groups.map((group, i) => {
-        const scenesHtml = group.map((scene) => buildSceneCardHtml(scene, stashBase)).join("");
-        return `
-          <div class="dc-group">
-            <div class="dc-group-header">Duplicate Group ${i + 1} <span class="dc-group-count">(${group.length} scenes)</span></div>
-            <div class="dc-group-scenes">${scenesHtml}</div>
-          </div>
-        `;
-      }).join("");
-
-      bodyHtml = `
-        <div class="dc-results-header">
-          <p class="dc-result-summary">
-            Found <strong>${groups.length}</strong> duplicate group${groups.length !== 1 ? "s" : ""} 
-            for <strong>${escapeHtml(contextLabel)}</strong>.
-          </p>
-          <a class="dc-checker-link" href="${duplicateCheckerUrl}" target="_blank" rel="noopener">
-            View All Duplicates in Stash ↗
-          </a>
-        </div>
-        <div class="dc-groups-list">${groupsHtml}</div>
-      `;
-    }
-
     const modal = document.createElement("div");
     modal.id = "dc-modal";
-    modal.innerHTML = `
-      <div class="dc-backdrop"></div>
-      <div class="dc-dialog" role="dialog" aria-modal="true" aria-label="Duplicate Scenes">
-        <div class="dc-dialog-header">
-          <h2 class="dc-dialog-title">🔍 Duplicate Scenes</h2>
-          <button class="dc-close" aria-label="Close">✕</button>
-        </div>
-        <div class="dc-dialog-body">
-          ${bodyHtml}
-        </div>
-      </div>
-    `;
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "dc-backdrop";
+    modal.appendChild(backdrop);
+
+    const dialog = document.createElement("div");
+    dialog.className = "dc-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-label", "Duplicate Scenes");
+    modal.appendChild(dialog);
+
+    const header = document.createElement("div");
+    header.className = "dc-dialog-header";
+    const titleEl = document.createElement("h2");
+    titleEl.className = "dc-dialog-title";
+    titleEl.textContent = "🔍 Duplicate Scenes";
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "dc-close";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.textContent = "✕";
+    header.appendChild(titleEl);
+    header.appendChild(closeBtn);
+    dialog.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "dc-dialog-body";
+    dialog.appendChild(body);
+
+    if (groups.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "dc-empty";
+      empty.innerHTML = `
+        <p>No duplicate scenes found for <strong>${escapeHtml(contextLabel)}</strong>.</p>
+        <p class="dc-empty-hint">
+          Make sure Stash has scanned with fingerprinting enabled, or try adjusting the 
+          Distance setting in the plugin configuration.
+        </p>
+      `;
+      const link = document.createElement("a");
+      link.className = "dc-checker-link";
+      link.href = duplicateCheckerUrl;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "View All Duplicates in Stash Duplicate Checker ↗";
+      empty.appendChild(link);
+      body.appendChild(empty);
+    } else {
+      // Results header
+      const resultsHeader = document.createElement("div");
+      resultsHeader.className = "dc-results-header";
+
+      const summary = document.createElement("p");
+      summary.className = "dc-result-summary";
+      summary.innerHTML = `Found <strong>${groups.length}</strong> duplicate group${groups.length !== 1 ? "s" : ""} for <strong>${escapeHtml(contextLabel)}</strong>.`;
+      resultsHeader.appendChild(summary);
+
+      const allLink = document.createElement("a");
+      allLink.className = "dc-checker-link";
+      allLink.href = duplicateCheckerUrl;
+      allLink.target = "_blank";
+      allLink.rel = "noopener";
+      allLink.textContent = "View All Duplicates in Stash ↗";
+      resultsHeader.appendChild(allLink);
+
+      body.appendChild(resultsHeader);
+
+      const groupsList = document.createElement("div");
+      groupsList.className = "dc-groups-list";
+
+      groups.forEach((group, i) => {
+        const groupEl = document.createElement("div");
+        groupEl.className = "dc-group";
+
+        const groupHeader = document.createElement("div");
+        groupHeader.className = "dc-group-header";
+        groupHeader.innerHTML = `Duplicate Group ${i + 1} <span class="dc-group-count">(${group.length} scenes)</span>`;
+        groupEl.appendChild(groupHeader);
+
+        const scenesContainer = document.createElement("div");
+        scenesContainer.className = "dc-group-scenes";
+        group.forEach((scene) => {
+          scenesContainer.appendChild(buildSceneCard(scene, stashBase));
+        });
+        groupEl.appendChild(scenesContainer);
+        groupsList.appendChild(groupEl);
+      });
+
+      body.appendChild(groupsList);
+    }
 
     document.body.appendChild(modal);
 
     const closeModal = () => modal.remove();
-    modal.querySelector(".dc-backdrop").addEventListener("click", closeModal);
-    modal.querySelector(".dc-close").addEventListener("click", closeModal);
+    backdrop.addEventListener("click", closeModal);
+    closeBtn.addEventListener("click", closeModal);
 
     // Close on Escape key
     const onKeydown = (e) => {
@@ -542,17 +721,19 @@
 
   /**
    * Find a suitable injection target in the Stash detail page header.
-   * Tries several known Stash UI selectors.
+   * Uses the same selectors as the missingScenes plugin so both buttons
+   * appear in the same container.
    * @returns {HTMLElement|null}
    */
   function findInjectionTarget() {
-    // Try the details/actions area where Stash renders Edit/Merge buttons
     return (
+      document.querySelector(".detail-header-buttons") ||
+      document.querySelector('[class*="detail"] [class*="button"]')?.parentElement ||
+      document.querySelector(".performer-head") ||
+      document.querySelector(".studio-head") ||
       document.querySelector(".detail-header-group .details-edit") ||
       document.querySelector(".details-edit") ||
       document.querySelector(".detail-header") ||
-      document.querySelector(".performer-head") ||
-      document.querySelector(".studio-details") ||
       document.querySelector(".detail-container") ||
       document.querySelector("h2")?.parentElement ||
       null
@@ -678,12 +859,20 @@
     wrapper.className = "dc-btn-wrapper";
     wrapper.appendChild(btn);
 
-    // Prefer inserting before existing action buttons, fall back to appending
-    const firstBtn = target.querySelector("button, .btn, a.edit-button");
-    if (firstBtn) {
-      target.insertBefore(wrapper, firstBtn);
-    } else {
+    // Prefer inserting right after the Missing Scenes button so both appear together
+    const missingBtn = target.querySelector(".ms-search-button");
+    if (missingBtn && missingBtn.nextSibling) {
+      target.insertBefore(wrapper, missingBtn.nextSibling);
+    } else if (missingBtn) {
       target.appendChild(wrapper);
+    } else {
+      // Fall back: insert before existing action buttons
+      const firstBtn = target.querySelector("button, .btn, a.edit-button");
+      if (firstBtn) {
+        target.insertBefore(wrapper, firstBtn);
+      } else {
+        target.appendChild(wrapper);
+      }
     }
 
     console.log(`${PLUGIN_NAME} Injected button for ${performerId ? "performer" : "studio"} ${performerId || studioId}`);
