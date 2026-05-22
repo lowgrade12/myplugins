@@ -1,0 +1,18 @@
+name: DuplicateChecker
+description: Adds a "Find Duplicate Scenes" button to performer and studio pages, showing duplicate scenes filtered to that performer or studio.
+version: 1.0.0
+url: https://github.com/lowgrade12/myplugins
+ui:
+  javascript:
+    - duplicateChecker.js
+  css:
+    - duplicateChecker.css
+settings:
+  durationMult:
+    displayName: Duration Multiplier
+    description: "How strict to be on scene duration matching. 1.0 = exact duration required. Values less than 1.0 (e.g. 0.9) allow scenes within that fraction of each other's duration to match. Default: 1.0"
+    type: NUMBER
+  distance:
+    displayName: Phash Distance
+    description: "Perceptual hash distance threshold for visual duplicate matching. 0 = exact match only, higher values find more (but less precise) duplicates. Default: 10"
+    type: NUMBER
