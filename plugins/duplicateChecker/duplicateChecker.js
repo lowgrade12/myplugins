@@ -97,8 +97,8 @@
   // ============================================
 
   const FIND_DUPLICATE_SCENES_QUERY = `
-    query FindDuplicateScenes($duration_mult: Float, $distance: Int) {
-      findDuplicateScenes(duration_mult: $duration_mult, distance: $distance) {
+    query FindDuplicateScenes($duration_diff: Float, $distance: Int) {
+      findDuplicateScenes(duration_diff: $duration_diff, distance: $distance) {
         id
         title
         date
@@ -159,7 +159,7 @@
   /**
    * Fetch plugin settings from Stash configuration.
    * Returns cached values after the first successful fetch.
-   * @returns {Promise<{durationMult: number, distance: number}>}
+   * @returns {Promise<{durationDiff: number, distance: number}>}
    */
   async function getPluginConfig() {
     if (pluginConfigCache) return pluginConfigCache;
@@ -169,12 +169,12 @@
       const plugins = data?.configuration?.plugins;
       const config = plugins?.DuplicateChecker || {};
       pluginConfigCache = {
-        durationMult: typeof config.durationMult === "number" ? config.durationMult : 1.0,
+        durationDiff: typeof config.durationDiff === "number" ? config.durationDiff : 10,
         distance: typeof config.distance === "number" ? Math.round(config.distance) : 10,
       };
     } catch (err) {
       console.warn(`${PLUGIN_NAME} Could not load plugin config, using defaults:`, err);
-      pluginConfigCache = { durationMult: 1.0, distance: 10 };
+      pluginConfigCache = { durationDiff: 10, distance: 10 };
     }
 
     return pluginConfigCache;
@@ -233,7 +233,7 @@
   async function findDuplicateScenesForPerformer(performerId) {
     const config = await getPluginConfig();
     const data = await graphqlQuery(FIND_DUPLICATE_SCENES_QUERY, {
-      duration_mult: config.durationMult,
+      duration_diff: config.durationDiff,
       distance: config.distance,
     });
 
@@ -257,7 +257,7 @@
   async function findDuplicateScenesForStudio(studioId) {
     const config = await getPluginConfig();
     const data = await graphqlQuery(FIND_DUPLICATE_SCENES_QUERY, {
-      duration_mult: config.durationMult,
+      duration_diff: config.durationDiff,
       distance: config.distance,
     });
 

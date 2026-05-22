@@ -8,9 +8,9 @@ ui:
   css:
     - duplicateChecker.css
 settings:
-  durationMult:
-    displayName: Duration Multiplier
-    description: "How strict to be on scene duration matching. 1.0 = exact duration required. Values less than 1.0 (e.g. 0.9) allow scenes within that fraction of each other's duration to match. Default: 1.0"
+  durationDiff:
+    displayName: Duration Diff (seconds)
+    description: "Max difference in seconds between scene durations to be considered for duplicate matching. E.g. 10 allows scenes within 10 seconds of each other to be compared. Default: 10"
     type: NUMBER
   distance:
     displayName: Phash Distance
