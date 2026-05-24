@@ -139,19 +139,48 @@
 }
 
 @media (max-width: 1200px) {
-  .hon-vs-container {
-    grid-template-columns: 1fr;
-    gap: 30px;
-  }
-
-  .hon-vs-divider {
-    display: flex;
-    justify-content: center;
-    padding: 10px 0;
-  }
-  
   .hon-scene-card {
     min-height: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .hon-vs-container {
+    gap: 6px;
+  }
+
+  .hon-vs-text {
+    font-size: 1.5rem;
+  }
+
+  .hon-scene-image-container,
+  .hon-performer-image-container,
+  .hon-scene-image,
+  .hon-performer-image {
+    max-height: 28vh;
+  }
+
+  .hon-scene-info {
+    padding: 8px;
+  }
+
+  .hon-scene-title {
+    font-size: 0.85rem;
+  }
+
+  .hon-scene-meta {
+    font-size: 0.75rem;
+    gap: 3px;
+    margin-bottom: 6px;
+  }
+
+  .hon-tags-row {
+    display: none;
+  }
+
+  .hon-choose-btn {
+    padding: 10px 8px;
+    font-size: 0.85rem;
   }
 }
 
