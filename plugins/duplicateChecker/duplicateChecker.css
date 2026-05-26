@@ -291,7 +291,6 @@
 .dc-group-scenes {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
   padding: 12px;
   gap: 12px;
 }
