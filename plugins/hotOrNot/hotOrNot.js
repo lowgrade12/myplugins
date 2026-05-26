@@ -1449,20 +1449,22 @@
     
     // Apply scene count weighting for performers (Swiss/tournament only)
     // Calibration skips this — performers need full movement to converge quickly
+    // More scenes → higher multiplier so high-scene performers climb faster
     if (!isCalibration && sceneCount !== null && sceneCount !== undefined && sceneCount > 0) {
       let sceneMultiplier = 1.0;
       
       if (sceneCount >= 100) {
-        sceneMultiplier = 0.6;
+        sceneMultiplier = 1.4;
       } else if (sceneCount >= 50) {
-        sceneMultiplier = 0.7;
+        sceneMultiplier = 1.3;
       } else if (sceneCount >= 20) {
-        sceneMultiplier = 0.85;
+        sceneMultiplier = 1.2;
       } else if (sceneCount >= 10) {
-        sceneMultiplier = 0.9;
+        sceneMultiplier = 1.1;
       }
       
-      baseKFactor = Math.max(4, Math.round(baseKFactor * sceneMultiplier));
+      // Cap at 24 in Swiss/tournament mode to prevent runaway rating inflation
+      baseKFactor = Math.min(24, Math.max(4, Math.round(baseKFactor * sceneMultiplier)));
     }
     
     return baseKFactor;
@@ -1701,8 +1703,8 @@
       }
     }
     
-    const newLeftRating = Math.min(100, Math.max(1, leftRating + leftChange));
-    const newRightRating = Math.min(100, Math.max(1, rightRating + rightChange));
+    let newLeftRating = Math.min(100, Math.max(1, leftRating + leftChange));
+    let newRightRating = Math.min(100, Math.max(1, rightRating + rightChange));
     
     console.log(`[HotOrNot] Skip (Draw): Left ${leftRating} -> ${newLeftRating} (${leftChange >= 0 ? '+' : ''}${leftChange}), Right ${rightRating} -> ${newRightRating} (${rightChange >= 0 ? '+' : ''}${rightChange})`);
     
