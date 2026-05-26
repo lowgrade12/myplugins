@@ -1385,6 +1385,19 @@
   }
 
   /**
+   * Return the minimum rating a performer should hold based on their scene count.
+   * Performers with more scenes are more "proven" and should not sit at very low ratings.
+   * @param {number|null} sceneCount - Number of scenes the performer is in
+   * @returns {number} Minimum rating floor (1 if no floor applies)
+   */
+  function getSceneRatingFloor(sceneCount) {
+    if (!sceneCount || sceneCount < 10) return 1;
+    if (sceneCount >= 100) return 60;
+    if (sceneCount >= 50) return 55;
+    return 45; // 10–49 scenes
+  }
+
+  /**
    * Calculate K-factor based on match count (experience) and scene count.
    * Calibration mode uses full USCF/FIDE K-factors and skips scene dampening
    * for unrestricted rating movement during binary search placement.
@@ -1449,20 +1462,22 @@
     
     // Apply scene count weighting for performers (Swiss/tournament only)
     // Calibration skips this — performers need full movement to converge quickly
+    // More scenes → higher multiplier so high-scene performers climb faster
     if (!isCalibration && sceneCount !== null && sceneCount !== undefined && sceneCount > 0) {
       let sceneMultiplier = 1.0;
       
       if (sceneCount >= 100) {
-        sceneMultiplier = 0.6;
+        sceneMultiplier = 1.4;
       } else if (sceneCount >= 50) {
-        sceneMultiplier = 0.7;
+        sceneMultiplier = 1.3;
       } else if (sceneCount >= 20) {
-        sceneMultiplier = 0.85;
+        sceneMultiplier = 1.2;
       } else if (sceneCount >= 10) {
-        sceneMultiplier = 0.9;
+        sceneMultiplier = 1.1;
       }
       
-      baseKFactor = Math.max(4, Math.round(baseKFactor * sceneMultiplier));
+      // Cap at 24 in Swiss/tournament mode to prevent runaway rating inflation
+      baseKFactor = Math.min(24, Math.max(4, Math.round(baseKFactor * sceneMultiplier)));
     }
     
     return baseKFactor;
@@ -1571,6 +1586,12 @@
     
     let newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));
     let newLoserRating = Math.min(100, Math.max(1, loserRating - loserLoss));
+    
+    // Apply scene-based rating floor so high-scene performers don't drop too low
+    if (battleType === "performers") {
+      newWinnerRating = Math.max(newWinnerRating, getSceneRatingFloor(winnerSceneCount));
+      newLoserRating = Math.max(newLoserRating, getSceneRatingFloor(loserSceneCount));
+    }
     
     // Ensure the winner moves to at least the same ranking as the loser (or higher)
     // If the ELO movement alone doesn't achieve this, adjust the ratings to ensure
@@ -1701,8 +1722,14 @@
       }
     }
     
-    const newLeftRating = Math.min(100, Math.max(1, leftRating + leftChange));
-    const newRightRating = Math.min(100, Math.max(1, rightRating + rightChange));
+    let newLeftRating = Math.min(100, Math.max(1, leftRating + leftChange));
+    let newRightRating = Math.min(100, Math.max(1, rightRating + rightChange));
+    
+    // Apply scene-based rating floor so high-scene performers don't drop too low
+    if (battleType === "performers") {
+      newLeftRating = Math.max(newLeftRating, getSceneRatingFloor(leftSceneCount));
+      newRightRating = Math.max(newRightRating, getSceneRatingFloor(rightSceneCount));
+    }
     
     console.log(`[HotOrNot] Skip (Draw): Left ${leftRating} -> ${newLeftRating} (${leftChange >= 0 ? '+' : ''}${leftChange}), Right ${rightRating} -> ${newRightRating} (${rightChange >= 0 ? '+' : ''}${rightChange})`);
     
