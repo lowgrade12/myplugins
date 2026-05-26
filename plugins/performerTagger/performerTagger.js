@@ -11,6 +11,10 @@
   // Track whether Apollo client has failed (skip after first failure to reduce noise)
   let apolloFailed = false;
 
+  // Tracks performer IDs that have already been auto-tagged this session.
+  // Cleared on each navigation so revisiting a page re-runs auto-tag.
+  const autoTaggedPerformers = new Set();
+
   // In-memory caches (cleared on page reload but persist across SPA navigation).
   // Maps tag name (lowercase) -> tag ID
   const tagIdCache = new Map();
