@@ -6,7 +6,7 @@
 :root {
   --hon-primary: #0d6efd;
   --hon-primary-dark: #0a58ca;
-  --hon-success: #28a745;
+  --hon-success: #198754;
   --hon-danger: #dc3545;
   --hon-warning: #ffc107;
   --hon-white: #fff;
@@ -835,7 +835,7 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: 8px;
-  background: var(--hon-card-bg, var(--hon-white));
+  background: var(--hon-card-bg, var(--hon-bg-card));
   box-shadow: var(--hon-card-shadow, 0 2px 8px rgba(0,0,0,0.06));
 }
 
@@ -859,13 +859,13 @@
   margin: 0 0 6px 0;
   font-size: 1rem;
   line-height: 1.2;
-  color: var(--hon-title-color, #111);
+  color: var(--hon-title-color, var(--hon-white));
 }
 
 .hon-performer-meta .hon-meta-item {
   margin-bottom: 4px;
   font-size: 0.85rem;
-  color: var(--hon-meta-color, #555);
+  color: var(--hon-meta-color, var(--hon-gray-light));
 }
 
 .hon-performer-rank {
