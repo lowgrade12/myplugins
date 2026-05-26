@@ -344,7 +344,10 @@
     card.className = "dc-scene-card";
     card.dataset.sceneId = scene.id;
 
-    // Thumbnail
+    // Thumbnail wrapper (needed for checkbox overlay positioning)
+    const thumbWrap = document.createElement("div");
+    thumbWrap.className = "dc-scene-thumb-wrap";
+
     const thumbLink = document.createElement("a");
     thumbLink.href = sceneUrl;
     thumbLink.target = "_blank";
@@ -362,7 +365,29 @@
       placeholder.textContent = "No preview";
       thumbLink.appendChild(placeholder);
     }
-    card.appendChild(thumbLink);
+    thumbWrap.appendChild(thumbLink);
+
+    // Checkbox overlay for bulk selection
+    const checkLabel = document.createElement("label");
+    checkLabel.className = "dc-scene-checkbox-label";
+    checkLabel.title = "Select for bulk delete";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "dc-scene-checkbox";
+    checkbox.dataset.sceneId = scene.id;
+    const checkmark = document.createElement("span");
+    checkmark.className = "dc-scene-checkmark";
+    checkmark.setAttribute("aria-hidden", "true");
+    checkmark.textContent = "✓";
+    checkLabel.appendChild(checkbox);
+    checkLabel.appendChild(checkmark);
+    thumbWrap.appendChild(checkLabel);
+
+    checkbox.addEventListener("change", () => {
+      card.classList.toggle("dc-scene-card--selected", checkbox.checked);
+    });
+
+    card.appendChild(thumbWrap);
 
     // Info section
     const info = document.createElement("div");
@@ -506,6 +531,14 @@
             const strong = summaryEl.querySelector("strong");
             if (strong) strong.textContent = String(remainingGroups);
           }
+
+          // Sync bulk delete button count
+          const bulkBtn = modal.querySelector(".dc-bulk-delete-btn");
+          if (bulkBtn) {
+            const checkedCount = groupsList.querySelectorAll(".dc-scene-checkbox:checked").length;
+            bulkBtn.textContent = `🗑 Delete Selected (${checkedCount})`;
+            bulkBtn.disabled = checkedCount === 0;
+          }
         }
       }
     } catch (err) {
@@ -628,6 +661,13 @@
       allLink.textContent = "View All Duplicates in Stash ↗";
       resultsHeader.appendChild(allLink);
 
+      const bulkDeleteBtn = document.createElement("button");
+      bulkDeleteBtn.className = "dc-bulk-delete-btn";
+      bulkDeleteBtn.type = "button";
+      bulkDeleteBtn.textContent = "🗑 Delete Selected (0)";
+      bulkDeleteBtn.disabled = true;
+      resultsHeader.appendChild(bulkDeleteBtn);
+
       body.appendChild(resultsHeader);
 
       const groupsList = document.createElement("div");
@@ -644,6 +684,13 @@
         countSpan.className = "dc-group-count";
         countSpan.textContent = `(${group.length} scenes)`;
         groupHeader.appendChild(countSpan);
+
+        const selectAllBtn = document.createElement("button");
+        selectAllBtn.className = "dc-group-select-btn";
+        selectAllBtn.type = "button";
+        selectAllBtn.textContent = "Select All";
+        groupHeader.appendChild(selectAllBtn);
+
         groupEl.appendChild(groupHeader);
 
         const scenesContainer = document.createElement("div");
@@ -652,10 +699,101 @@
           scenesContainer.appendChild(buildSceneCard(scene, stashBase));
         });
         groupEl.appendChild(scenesContainer);
+
+        selectAllBtn.addEventListener("click", () => {
+          const checkboxes = scenesContainer.querySelectorAll(".dc-scene-checkbox");
+          const allChecked = checkboxes.length > 0 && Array.from(checkboxes).every((cb) => cb.checked);
+          const newState = !allChecked;
+          checkboxes.forEach((cb) => {
+            if (cb.checked !== newState) {
+              cb.checked = newState;
+              cb.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+        });
+
         groupsList.appendChild(groupEl);
       });
 
       body.appendChild(groupsList);
+
+      // Checkbox change event delegation — updates bulk delete button count and select-all text
+      groupsList.addEventListener("change", (e) => {
+        if (!e.target.classList.contains("dc-scene-checkbox")) return;
+        const checkedCount = groupsList.querySelectorAll(".dc-scene-checkbox:checked").length;
+        bulkDeleteBtn.textContent = `🗑 Delete Selected (${checkedCount})`;
+        bulkDeleteBtn.disabled = checkedCount === 0;
+
+        // Sync "Select All / Deselect All" text in each group header
+        groupsList.querySelectorAll(".dc-group").forEach((grp) => {
+          const btn = grp.querySelector(".dc-group-select-btn");
+          const cbs = grp.querySelectorAll(".dc-scene-checkbox");
+          if (btn && cbs.length > 0) {
+            const allChecked = Array.from(cbs).every((cb) => cb.checked);
+            btn.textContent = allChecked ? "Deselect All" : "Select All";
+          }
+        });
+      });
+
+      // Bulk delete handler
+      bulkDeleteBtn.addEventListener("click", async () => {
+        const checkedBoxes = Array.from(groupsList.querySelectorAll(".dc-scene-checkbox:checked"));
+        if (checkedBoxes.length === 0) return;
+
+        const sceneWord = checkedBoxes.length !== 1 ? "scenes" : "scene";
+        if (!window.confirm(`Delete ${checkedBoxes.length} selected ${sceneWord} from Stash?`)) return;
+        const deleteFile = window.confirm(
+          "Also permanently delete the video files from disk?\n\nOK = yes, delete files · Cancel = keep files"
+        );
+
+        bulkDeleteBtn.disabled = true;
+        bulkDeleteBtn.textContent = "Deleting…";
+
+        let failed = 0;
+        for (const cb of checkedBoxes) {
+          const sceneId = cb.dataset.sceneId;
+          const cardEl = cb.closest(".dc-scene-card");
+          try {
+            await graphqlQuery(SCENE_DESTROY_MUTATION, {
+              id: sceneId,
+              delete_file: deleteFile,
+              delete_generated: true,
+            });
+            console.log(`${PLUGIN_NAME} Bulk deleted scene ${sceneId}`);
+            if (cardEl) {
+              const groupScenes = cardEl.closest(".dc-group-scenes");
+              cardEl.remove();
+              if (groupScenes) {
+                const remaining = groupScenes.querySelectorAll(".dc-scene-card");
+                if (remaining.length < 2) {
+                  const group = groupScenes.closest(".dc-group");
+                  if (group) group.remove();
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`${PLUGIN_NAME} Failed to bulk delete scene ${sceneId}:`, err);
+            failed++;
+          }
+        }
+
+        // Update summary count
+        const remainingGroups = groupsList.querySelectorAll(".dc-group").length;
+        const summaryEl = modal.querySelector(".dc-result-summary");
+        if (summaryEl) {
+          const strong = summaryEl.querySelector("strong");
+          if (strong) strong.textContent = String(remainingGroups);
+        }
+
+        // Reset bulk delete button
+        const remaining = groupsList.querySelectorAll(".dc-scene-checkbox:checked").length;
+        bulkDeleteBtn.textContent = `🗑 Delete Selected (${remaining})`;
+        bulkDeleteBtn.disabled = remaining === 0;
+
+        if (failed > 0) {
+          window.alert(`${failed} ${failed !== 1 ? "scenes" : "scene"} failed to delete. Check the console for details.`);
+        }
+      });
     }
 
     document.body.appendChild(modal);
