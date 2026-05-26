@@ -278,6 +278,9 @@
   font-weight: 600;
   color: var(--dc-gray-light);
   border-bottom: 1px solid var(--dc-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dc-group-count {
@@ -469,6 +472,113 @@
 .dc-delete-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ============================================
+   SCENE CHECKBOX (BULK SELECT)
+   ============================================ */
+
+.dc-scene-thumb-wrap {
+  position: relative;
+}
+
+.dc-scene-checkbox-label {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dc-scene-checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.dc-scene-checkmark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: rgba(0, 0, 0, 0.65);
+  border: 2px solid var(--dc-gray-mid);
+  border-radius: 4px;
+  color: transparent;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.dc-scene-checkbox-label:hover .dc-scene-checkmark {
+  border-color: var(--dc-danger);
+}
+
+.dc-scene-checkbox:checked + .dc-scene-checkmark {
+  background: var(--dc-danger);
+  border-color: var(--dc-danger);
+  color: var(--dc-white);
+}
+
+.dc-scene-card--selected {
+  border-color: var(--dc-danger) !important;
+  box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.25);
+}
+
+/* ============================================
+   BULK DELETE BUTTON
+   ============================================ */
+
+.dc-bulk-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--dc-danger);
+  border: 1px solid var(--dc-danger);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+
+.dc-bulk-delete-btn:hover:not(:disabled) {
+  background: var(--dc-danger);
+  color: var(--dc-white);
+}
+
+.dc-bulk-delete-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============================================
+   GROUP SELECT ALL BUTTON
+   ============================================ */
+
+.dc-group-select-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--dc-gray-mid);
+  color: var(--dc-gray-light);
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+
+.dc-group-select-btn:hover {
+  border-color: var(--dc-gray);
+  color: var(--dc-white);
 }
 
 /* ============================================
