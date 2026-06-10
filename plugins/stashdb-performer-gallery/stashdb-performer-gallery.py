@@ -310,7 +310,13 @@ def processPerformerStashid(endpoint, stashid, p):
                         log.info(
                             "Running stash scraper on performer url: %s" % (u["url"],)
                         )
-                        res = stash.scrape_performer_url(u["url"])
+                        try:
+                            res = stash.scrape_performer_url(u["url"])
+                        except Exception as e:
+                            log.warning(
+                                "Scraper failed for url %s: %s" % (u["url"], e)
+                            )
+                            continue
                         # Check if the scraper returned a result
                         if res is not None:
                             log.debug(res)
