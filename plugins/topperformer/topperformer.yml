@@ -1,7 +1,7 @@
 name: TopPerformer
 description: Displays the performer with the highest number of appearances for a studio on the studio card
 version: 1.0.0
-url: https://github.com/lowgrade12/hotornottest
+url: https://github.com/lowgrade12/myplugins
 ui:
   javascript:
     - topperformer.js
