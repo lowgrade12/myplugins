@@ -6,7 +6,6 @@ import sys
 import requests
 import json
 from pathlib import Path
-from urllib.parse import urlparse
 import base64
 
 
@@ -159,24 +158,7 @@ def processPerformer(performer):
         processPerformerStashid(sid["endpoint"], sid["stash_id"], performer)
 
 
-def is_theporndb_endpoint(endpoint):
-    """Check if the endpoint is theporndb.net by parsing the URL hostname."""
-    try:
-        parsed = urlparse(endpoint)
-        hostname = parsed.hostname
-        if not hostname:
-            return False
-        return hostname == "theporndb.net" or hostname.endswith(".theporndb.net")
-    except Exception:
-        return False
-
-
 def get_stashbox(endpoint):
-    # Skip theporndb.net as it's not a compatible Stash-Box instance
-    if is_theporndb_endpoint(endpoint):
-        log.info("Skipping theporndb.net endpoint - it uses a different API (https://api.theporndb.net/docs/)")
-        return None
-
     for sbx_config in stash.get_configuration()["general"]["stashBoxes"]:
         if sbx_config["endpoint"] == endpoint:
             stashbox = StashBoxInterface(
@@ -445,9 +427,7 @@ def processPerformerStashid(endpoint, stashid, p):
     #                    scrape=stash.scrape_performer_url(ur)
 
     else:
-        # Don't log an error if we already logged an info message about skipping theporndb.net
-        if not is_theporndb_endpoint(endpoint):
-            log.error("endpoint %s not configured, skipping" % (endpoint,))
+        log.error("endpoint %s not configured, skipping" % (endpoint,))
 
 
 def setPerformerPicture(img):
