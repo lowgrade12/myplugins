@@ -16,6 +16,9 @@
   // How many pages to fetch in parallel during the initial load
   const PARALLEL_PAGES = 8;
 
+  // How many scene cards to render per display batch (avoids huge string joins)
+  const DISPLAY_PAGE_SIZE = 200;
+
   // localStorage cache settings
   const CACHE_KEY = "rs_scored_scenes_cache";
   const DEFAULT_CACHE_TTL_MIN = 60; // minutes; 0 = disabled
@@ -282,11 +285,28 @@
 
   /**
    * Persist scored scenes to localStorage with the current timestamp.
+   * Falls back to stripping restash_components (the largest field) when the
+   * full payload would exceed the browser's localStorage quota (~5 MB).
    * @param {Array} scenes
    */
   function writeCache(scenes) {
+    const payload = { ts: Date.now(), scenes };
     try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), scenes }));
+      localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
+      return;
+    } catch (err) {
+      // Full payload too large — log and try again without the components breakdown.
+      console.warn(`${PLUGIN_PREFIX} Cache quota exceeded with full payload, retrying without components:`, err?.message || err);
+    }
+    try {
+      const slim = scenes.map((s) => {
+        const fields = parseCustomFields(s.custom_fields);
+        // eslint-disable-next-line no-unused-vars
+        const { [CF_COMPONENTS]: _dropped, ...rest } = fields;
+        return { ...s, custom_fields: JSON.stringify(rest) };
+      });
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), scenes: slim }));
+      console.warn(`${PLUGIN_PREFIX} Cache written without component breakdowns (quota limit).`);
     } catch (err) {
       console.warn(`${PLUGIN_PREFIX} Could not write cache:`, err?.message || err);
     }
@@ -523,7 +543,10 @@
     });
 
     /**
-     * Sort and filter scenes, then render cards.
+     * Sort and filter scenes, then render the first DISPLAY_PAGE_SIZE cards.
+     * A "Load more" button is appended when there are additional results.
+     * Rendering in batches avoids the RangeError that occurs when joining
+     * thousands of large HTML strings into a single assignment.
      * @param {Array} scenes
      * @param {string} sort
      * @param {number} minScore
@@ -565,7 +588,36 @@
         return;
       }
 
-      contentEl.innerHTML = sortedFiltered.map((s, i) => sceneCardHtml(s, i + 1)).join("");
+      contentEl.innerHTML = "";
+
+      /**
+       * Append one batch of cards starting at startIdx, then attach a
+       * "Load more" button if more remain.
+       * @param {number} startIdx
+       */
+      function appendBatch(startIdx) {
+        const slice = sortedFiltered.slice(startIdx, startIdx + DISPLAY_PAGE_SIZE);
+        // Insert each card individually to avoid building one enormous joined string.
+        for (let i = 0; i < slice.length; i++) {
+          contentEl.insertAdjacentHTML("beforeend", sceneCardHtml(slice[i], startIdx + i + 1));
+        }
+
+        const nextIdx = startIdx + slice.length;
+        if (nextIdx < sortedFiltered.length) {
+          const remaining = sortedFiltered.length - nextIdx;
+          const moreBtn = document.createElement("button");
+          moreBtn.id = "rs-load-more-btn";
+          moreBtn.className = "rs-btn rs-load-more";
+          moreBtn.textContent = `Load more (${remaining} remaining)`;
+          moreBtn.addEventListener("click", () => {
+            moreBtn.remove();
+            appendBatch(nextIdx);
+          });
+          contentEl.appendChild(moreBtn);
+        }
+      }
+
+      appendBatch(0);
     }
 
     /**
