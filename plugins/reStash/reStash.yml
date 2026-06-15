@@ -1,0 +1,18 @@
+name: ReStash
+description: Displays scenes sorted by restash_score custom field, with component breakdowns. Uses the GraphQL API to work around the broken custom-field filter.
+version: 1.0.0
+url: https://github.com/lowgrade12/myplugins
+ui:
+  javascript:
+    - reStash.js
+  css:
+    - reStash.css
+settings:
+  pageSize:
+    displayName: Scenes per page
+    description: How many scenes to fetch per GraphQL request. Lower values are faster but require more requests to load all scored scenes.
+    type: NUMBER
+  minScore:
+    displayName: Minimum score filter
+    description: Only show scenes with a restash_score at or above this value (0-100). Leave 0 to show all scored scenes.
+    type: NUMBER
