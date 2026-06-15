@@ -16,3 +16,7 @@ settings:
     displayName: Minimum score filter
     description: Only show scenes with a restash_score at or above this value (0-100). Leave 0 to show all scored scenes.
     type: NUMBER
+  cacheTtlMin:
+    displayName: Cache TTL (minutes)
+    description: How long to reuse the locally-cached scene list before re-fetching from Stash. Set to 0 to disable caching (always fetch fresh). Default is 60 minutes.
+    type: NUMBER
