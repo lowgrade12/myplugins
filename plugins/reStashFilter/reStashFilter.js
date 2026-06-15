@@ -13,6 +13,13 @@
   // How many scenes to load per GraphQL page (can be overridden in plugin settings)
   const DEFAULT_PAGE_SIZE = 250;
 
+  // How many pages to fetch in parallel during the initial load
+  const PARALLEL_PAGES = 8;
+
+  // localStorage cache settings
+  const CACHE_KEY = "rs_scored_scenes_cache";
+  const DEFAULT_CACHE_TTL_MIN = 60; // minutes; 0 = disabled
+
   // Custom field key names
   const CF_SCORE = "restash_score";
   const CF_RAW = "restash_raw";
@@ -106,13 +113,15 @@
         }
       `);
       const cfg = (data?.configuration?.plugins?.reStashFilter) || {};
+      const cacheTtlRaw = cfg.cacheTtlMin;
       return {
         pageSize: parseInt(cfg.pageSize, 10) || DEFAULT_PAGE_SIZE,
         minScore: parseFloat(cfg.minScore) || 0,
+        cacheTtlMin: cacheTtlRaw !== undefined && cacheTtlRaw !== "" ? parseInt(cacheTtlRaw, 10) : DEFAULT_CACHE_TTL_MIN,
       };
     } catch (err) {
       console.warn(`${PLUGIN_PREFIX} Could not load plugin config, using defaults:`, err?.message || err);
-      return { pageSize: DEFAULT_PAGE_SIZE, minScore: 0 };
+      return { pageSize: DEFAULT_PAGE_SIZE, minScore: 0, cacheTtlMin: DEFAULT_CACHE_TTL_MIN };
     }
   }
 
@@ -168,6 +177,7 @@
 
   /**
    * Fetch ALL scenes and return only those that have a restash_score.
+   * Pages after the first are fetched in parallel batches for speed.
    * Shows progress via a callback.
    * @param {number} pageSize
    * @param {function(number, number): void} onProgress - called with (loaded, total)
@@ -176,15 +186,30 @@
   async function fetchAllScoredScenes(pageSize, onProgress) {
     const firstPage = await fetchScenePage(1, pageSize);
     const total = firstPage.count;
-    let allScenes = [...firstPage.scenes];
+    const allScenes = [...firstPage.scenes];
+    let loaded = allScenes.length;
 
-    if (onProgress) onProgress(allScenes.length, total);
+    if (onProgress) onProgress(loaded, total);
 
     const totalPages = Math.ceil(total / pageSize);
-    for (let p = 2; p <= totalPages; p++) {
-      const { scenes } = await fetchScenePage(p, pageSize);
-      allScenes = allScenes.concat(scenes);
-      if (onProgress) onProgress(allScenes.length, total);
+
+    // Fetch remaining pages in parallel batches of PARALLEL_PAGES
+    for (let batchStart = 2; batchStart <= totalPages; batchStart += PARALLEL_PAGES) {
+      const batchEnd = Math.min(batchStart + PARALLEL_PAGES - 1, totalPages);
+      const pagePromises = [];
+      for (let p = batchStart; p <= batchEnd; p++) {
+        pagePromises.push(
+          fetchScenePage(p, pageSize).then((result) => {
+            loaded += result.scenes.length;
+            if (onProgress) onProgress(loaded, total);
+            return result.scenes;
+          })
+        );
+      }
+      const batchResults = await Promise.all(pagePromises);
+      for (const scenes of batchResults) {
+        allScenes.push(...scenes);
+      }
     }
 
     // Filter to scenes that have a restash_score
@@ -233,6 +258,45 @@
       }
     }
     return null;
+  }
+
+  // ============================================
+  // LOCALSTORAGE CACHE
+  // ============================================
+
+  /**
+   * Read the scored-scenes cache from localStorage.
+   * @returns {{ts: number, scenes: Array}|null}
+   */
+  function readCache() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Persist scored scenes to localStorage with the current timestamp.
+   * @param {Array} scenes
+   */
+  function writeCache(scenes) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), scenes }));
+    } catch (err) {
+      console.warn(`${PLUGIN_PREFIX} Could not write cache:`, err?.message || err);
+    }
+  }
+
+  /**
+   * Remove the scored-scenes cache from localStorage.
+   */
+  function clearCache() {
+    try {
+      localStorage.removeItem(CACHE_KEY);
+    } catch (_) {}
   }
 
   // ============================================
@@ -451,7 +515,8 @@
       cachedScenes = null;
       document.getElementById("rs-status").textContent = "Reloading…";
       document.getElementById("rs-content").innerHTML = "";
-      cachedScenes = await loadScenes();
+      clearCache();
+      cachedScenes = await loadScenes(true);
       applySortFilter();
     });
 
@@ -503,11 +568,29 @@
 
     /**
      * Load all scored scenes, updating the status bar as pages arrive.
+     * Returns cached data when available and not expired.
+     * @param {boolean} forceReload - skip cache and fetch fresh from Stash
      * @returns {Promise<Array>}
      */
-    async function loadScenes() {
+    async function loadScenes(forceReload = false) {
       const cfg = await loadPluginConfig();
       const statusEl = document.getElementById("rs-status");
+
+      if (!forceReload) {
+        const cached = readCache();
+        if (cached && cached.ts && Array.isArray(cached.scenes)) {
+          const ageMin = Math.round((Date.now() - cached.ts) / 60000);
+          const ttl = cfg.cacheTtlMin;
+          if (ttl === 0 || ageMin < ttl) {
+            const count = cached.scenes.length;
+            if (statusEl) {
+              statusEl.textContent = `${count} scored scene${count !== 1 ? "s" : ""} — cached ${ageMin}m ago`;
+            }
+            return cached.scenes;
+          }
+        }
+      }
+
       let allScored;
       try {
         allScored = await fetchAllScoredScenes(cfg.pageSize, (loaded, total) => {
@@ -522,6 +605,8 @@
         }
         return [];
       }
+
+      writeCache(allScored);
       return allScored;
     }
 
