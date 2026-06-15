@@ -200,6 +200,8 @@
       for (let p = batchStart; p <= batchEnd; p++) {
         pagePromises.push(
           fetchScenePage(p, pageSize).then((result) => {
+            // JS is single-threaded; .then() callbacks are queued in the microtask
+            // queue and execute one at a time, so `loaded +=` is safe here.
             loaded += result.scenes.length;
             if (onProgress) onProgress(loaded, total);
             return result.scenes;
@@ -581,10 +583,12 @@
         if (cached && cached.ts && Array.isArray(cached.scenes)) {
           const ageMin = Math.round((Date.now() - cached.ts) / 60000);
           const ttl = cfg.cacheTtlMin;
-          if (ttl === 0 || ageMin < ttl) {
+          // ttl === 0 means caching is disabled; skip the cache entirely
+          if (ttl > 0 && ageMin < ttl) {
             const count = cached.scenes.length;
+            const ageLabel = ageMin === 0 ? "< 1m ago" : `${ageMin}m ago`;
             if (statusEl) {
-              statusEl.textContent = `${count} scored scene${count !== 1 ? "s" : ""} — cached ${ageMin}m ago`;
+              statusEl.textContent = `${count} scored scene${count !== 1 ? "s" : ""} — cached ${ageLabel}`;
             }
             return cached.scenes;
           }
