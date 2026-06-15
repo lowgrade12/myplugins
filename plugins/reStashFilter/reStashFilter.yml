@@ -1,12 +1,12 @@
-name: ReStash
+name: ReStash Filter
 description: Displays scenes sorted by restash_score custom field, with component breakdowns. Uses the GraphQL API to work around the broken custom-field filter.
 version: 1.0.0
 url: https://github.com/lowgrade12/myplugins
 ui:
   javascript:
-    - reStash.js
+    - reStashFilter.js
   css:
-    - reStash.css
+    - reStashFilter.css
 settings:
   pageSize:
     displayName: Scenes per page

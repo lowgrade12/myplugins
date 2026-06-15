@@ -2,13 +2,13 @@
   "use strict";
 
   // ============================================
-  // RESTASH PLUGIN
+  // RESTASH FILTER PLUGIN
   // Displays scenes sorted by restash_score custom field.
   // Regular custom-field filtering is broken in Stash so this plugin
   // fetches all scenes via GraphQL and sorts/filters in-browser.
   // ============================================
 
-  const PLUGIN_PREFIX = "[ReStash]";
+  const PLUGIN_PREFIX = "[ReStash Filter]";
 
   // How many scenes to load per GraphQL page (can be overridden in plugin settings)
   const DEFAULT_PAGE_SIZE = 250;
@@ -105,7 +105,7 @@
           }
         }
       `);
-      const cfg = (data?.configuration?.plugins?.reStash) || {};
+      const cfg = (data?.configuration?.plugins?.reStashFilter) || {};
       return {
         pageSize: parseInt(cfg.pageSize, 10) || DEFAULT_PAGE_SIZE,
         minScore: parseFloat(cfg.minScore) || 0,
@@ -365,7 +365,7 @@
   let modalOpen = false;
 
   /**
-   * Remove the ReStash modal if it exists.
+   * Remove the ReStash Filter modal if it exists.
    */
   function closeModal() {
     const existing = document.getElementById("rs-modal");
@@ -374,7 +374,7 @@
   }
 
   /**
-   * Open the main ReStash modal.
+   * Open the main ReStash Filter modal.
    */
   async function openModal() {
     if (modalOpen) {
@@ -390,7 +390,7 @@
       <div class="rs-backdrop"></div>
       <div class="rs-dialog">
         <div class="rs-header">
-          <span class="rs-header-title">📊 ReStash — Scored Scenes</span>
+          <span class="rs-header-title">📊 ReStash Filter — Scored Scenes</span>
           <div class="rs-header-controls">
             <label class="rs-sort-label">Sort:
               <select id="rs-sort-select">
@@ -539,7 +539,7 @@
   // ============================================
 
   /**
-   * Inject a "📊 ReStash" button into Stash's main navigation bar.
+   * Inject a "📊 ReStash Filter" button into Stash's main navigation bar.
    * @returns {boolean} true if successfully injected
    */
   function addNavbarButton() {
@@ -551,9 +551,9 @@
     const container = document.createElement("div");
     container.className = "col-4 col-sm-3 col-md-2 col-lg-auto nav-link";
     container.innerHTML = `
-      <a href="javascript:void(0);" id="rs-nav-btn" class="minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center" title="ReStash">
+      <a href="javascript:void(0);" id="rs-nav-btn" class="minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center" title="ReStash Filter">
         <span class="rs-nav-icon d-block d-xl-inline mb-2 mb-xl-0" aria-hidden="true">📊</span>
-        <span>ReStash</span>
+        <span>ReStash Filter</span>
       </a>
     `;
     container.querySelector("#rs-nav-btn").addEventListener("click", openModal);
@@ -562,7 +562,7 @@
   }
 
   /**
-   * Add the ReStash launch button to the UI.
+   * Add the ReStash Filter launch button to the UI.
    * Tries navbar first, falls back to a floating button.
    */
   function addLaunchButton() {
@@ -573,7 +573,7 @@
     const btn = document.createElement("button");
     btn.id = "rs-floating-btn";
     btn.innerHTML = "📊";
-    btn.title = "ReStash";
+    btn.title = "ReStash Filter";
     btn.addEventListener("click", openModal);
     document.body.appendChild(btn);
   }
