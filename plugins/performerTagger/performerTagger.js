@@ -1001,17 +1001,27 @@
    * @returns {HTMLElement|null}
    */
   function findInjectionTarget() {
-    // Stash renders performer details inside a main detail area.
-    // We look for the detail wrapper and append inside it, or fall back to body.
-    return (
+    // Stash renders performer details inside a flex container (.detail-container).
+    // On mobile, appending inside the flex container causes the panel to sit
+    // beside other flex items instead of stacking below them.
+    // We insert the panel AFTER the detail container (as a sibling) so it is
+    // outside the container's flex context and flows naturally below the content.
+    const detailContainer =
       document.querySelector(".detail-container") ||
       document.querySelector(".performer-body") ||
       document.querySelector(".performer-details") ||
       document.querySelector(".detail-header") ||
-      document.querySelector(".performer-head") ||
-      document.querySelector("main") ||
-      document.body
-    );
+      document.querySelector(".performer-head");
+
+    if (detailContainer) {
+      return { element: detailContainer, method: "after" };
+    }
+
+    // Fallback — append inside <main> or <body>
+    return {
+      element: document.querySelector("main") || document.body,
+      method: "append",
+    };
   }
 
   /**
@@ -1075,7 +1085,11 @@
       syncPillStates(panel, activeTagIds);
 
       const target = findInjectionTarget();
-      target.appendChild(panel);
+      if (target.method === "after") {
+        target.element.insertAdjacentElement("afterend", panel);
+      } else {
+        target.element.appendChild(panel);
+      }
 
       console.log(`[PerformerTagger] Injected quick-tag panel for performer ${performerId}`);
     } catch (err) {
