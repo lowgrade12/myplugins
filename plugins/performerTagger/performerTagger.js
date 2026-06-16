@@ -1001,11 +1001,10 @@
    * @returns {HTMLElement|null}
    */
   function findInjectionTarget() {
-    // Stash renders performer details inside a flex container (.detail-container).
-    // On mobile, appending inside the flex container causes the panel to sit
-    // beside other flex items instead of stacking below them.
-    // We insert the panel AFTER the detail container (as a sibling) so it is
-    // outside the container's flex context and flows naturally below the content.
+    // Stash renders performer details inside a container (.detail-container).
+    // We append the panel as the last child inside this container so it remains
+    // in the visible page flow. CSS flex-basis:100% ensures it occupies a full
+    // row even when the container uses flexbox.
     const detailContainer =
       document.querySelector(".detail-container") ||
       document.querySelector(".performer-body") ||
@@ -1014,7 +1013,7 @@
       document.querySelector(".performer-head");
 
     if (detailContainer) {
-      return { element: detailContainer, method: "after" };
+      return { element: detailContainer, method: "append" };
     }
 
     // Fallback — append inside <main> or <body>
@@ -1085,11 +1084,7 @@
       syncPillStates(panel, activeTagIds);
 
       const target = findInjectionTarget();
-      if (target.method === "after") {
-        target.element.insertAdjacentElement("afterend", panel);
-      } else {
-        target.element.appendChild(panel);
-      }
+      target.element.appendChild(panel);
 
       console.log(`[PerformerTagger] Injected quick-tag panel for performer ${performerId}`);
     } catch (err) {
