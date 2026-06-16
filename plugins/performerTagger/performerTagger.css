@@ -11,6 +11,10 @@
   font-size: 0.85rem;
   overflow: hidden;
   position: relative;
+  clear: both;
+  width: 100%;
+  flex-basis: 100%;
+  box-sizing: border-box;
 }
 
 /* Header row */
