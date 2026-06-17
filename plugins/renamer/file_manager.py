@@ -130,7 +130,7 @@ class StashFile:
         """Clean a single path component by removing unsafe characters and/or extra spaces."""
         cleaned = part
         if remove_unsafe:
-            cleaned = re.sub(r"[|]", "", cleaned)
+            cleaned = re.sub(r"\s*[|]\s*", "  ", cleaned)
             cleaned = re.sub(r"[<>:\"/\\?*]", "", cleaned)
         if remove_extra_spaces:
             cleaned = re.sub(r"\s+", " ", cleaned)
@@ -183,7 +183,7 @@ class StashFile:
         base_name = file_name.rsplit(".", 1)[0]
 
         if not self.config.allow_unsafe_characters:
-            base_name = re.sub(r"[|]", "", base_name)
+            base_name = re.sub(r"\s*[|]\s*", "  ", base_name)
             base_name = re.sub(r"[<>:\"/\\?*]", "", base_name)
 
         if self.config.remove_extra_spaces_from_file_name:
@@ -209,7 +209,7 @@ class StashFile:
             file_name = f"{base_name}{duplicate_suffix}.{extension}"
 
         if not self.config.allow_unsafe_characters:
-            file_name = re.sub(r"[|]", "", file_name)
+            file_name = re.sub(r"\s*[|]\s*", "  ", file_name)
             file_name = re.sub(r"[<>:\"/\\?*]", "", file_name)
 
         if self.config.remove_extra_spaces_from_file_name:
