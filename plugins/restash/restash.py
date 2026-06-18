@@ -190,7 +190,8 @@ def _handle_scene_hook(stash, settings, scene_id: str) -> int:
     date_seed = now.strftime("%Y-%m-%d")
 
     # Compute the raw score for this scene from the cache
-    last_eng = algorithm._max_dt(cached.get("last_engagement"), cur.get("last_played_at"))
+    a, b = cached.get("last_engagement"), cur.get("last_played_at")
+    last_eng = max(filter(None, [a, b]), default=None)
     watched_since = (cur.get("play_count", 0) > 0 or cur.get("o_counter", 0) > 0)
     final_raw, extra = algorithm.finalize_from_base(
         scene_id, cached["base"], cached["n_events"], last_eng, cached["created_at"],
