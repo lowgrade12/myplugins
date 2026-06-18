@@ -593,7 +593,6 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     aff.setdefault("studios", {})
     new_scene_standins = []
     if added:
-        all_raws = [sc.raw for sc in scene_scores.values()]
         for i, sid in enumerate(added):
             scene = stash_io.fetch_scene_full(stash, sid)
             if scene is None or not scene.has_file:
@@ -605,7 +604,6 @@ def _run_refresh(stash, settings: config.Settings) -> int:
             final_raw, extra = algorithm.finalize_from_base(
                 sid, comp["base"], ne, last, scene.created_at, now, date_seed, settings)
             comp.update(extra)
-            all_raws.append(final_raw)
             # Build a stand-in for performer scoring
             new_scene_standins.append(models.SceneData(
                 id=sid, title=scene.title, play_history=[], o_history=[],
