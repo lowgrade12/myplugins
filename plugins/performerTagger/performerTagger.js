@@ -998,19 +998,23 @@
   /**
    * Find the best DOM anchor to insert the tagger panel.
    * Tries several selectors used by different Stash versions.
-   * @returns {HTMLElement|null}
+   * @returns {{ element: HTMLElement, method: string }}
    */
   function findInjectionTarget() {
-    // Stash renders performer details inside a container (.detail-container).
-    // We append the panel as the last child inside this container so it remains
-    // in the visible page flow. CSS flex-basis:100% ensures it occupies a full
-    // row even when the container uses flexbox.
-    const detailContainer =
-      document.querySelector(".detail-container") ||
+    // Safari can render a panel appended inside some Stash flex containers as a
+    // far-right column. Prefer inserting after the main performer header/body
+    // block so the panel stays in the normal page flow across browsers.
+    const flowAnchor =
       document.querySelector(".performer-body") ||
       document.querySelector(".performer-details") ||
       document.querySelector(".detail-header") ||
       document.querySelector(".performer-head");
+
+    if (flowAnchor?.parentElement) {
+      return { element: flowAnchor, method: "after" };
+    }
+
+    const detailContainer = document.querySelector(".detail-container");
 
     if (detailContainer) {
       return { element: detailContainer, method: "append" };
@@ -1021,6 +1025,24 @@
       element: document.querySelector("main") || document.body,
       method: "append",
     };
+  }
+
+  /**
+   * Insert the panel using the strategy returned by findInjectionTarget().
+   * @param {{ element: HTMLElement, method: string }} target
+   * @param {HTMLElement} panel
+   */
+  function insertPanel(target, panel) {
+    if (!target?.element) {
+      return;
+    }
+
+    if (target.method === "after" && target.element.parentElement) {
+      target.element.insertAdjacentElement("afterend", panel);
+      return;
+    }
+
+    target.element.appendChild(panel);
   }
 
   /**
@@ -1084,7 +1106,7 @@
       syncPillStates(panel, activeTagIds);
 
       const target = findInjectionTarget();
-      target.element.appendChild(panel);
+      insertPanel(target, panel);
 
       console.log(`[PerformerTagger] Injected quick-tag panel for performer ${performerId}`);
     } catch (err) {

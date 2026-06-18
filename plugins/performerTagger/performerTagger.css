@@ -15,7 +15,9 @@
   clear: both;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   flex-basis: 100%;
+  align-self: stretch;
   box-sizing: border-box;
 }
 
