@@ -320,10 +320,16 @@ class StashFile:
             return
 
         current_directory = old_directory
+        protected_dirs = self.config.protected_directories
 
         while True:
             # Stop at the filesystem root
             if current_directory == current_directory.parent:
+                break
+
+            # Stop if this directory is protected
+            if current_directory.resolve() in protected_dirs:
+                log.info(f"Skipping protected directory: {current_directory}")
                 break
 
             if not current_directory.exists():

@@ -58,6 +58,11 @@ settings:
     displayName: Delete empty directory after renaming
     description: If enabled, the plugin will delete the original directory after renaming if it becomes empty.
     type: BOOLEAN
+  protectedDirectories:
+    displayName: Protected directories
+    description: |
+      Comma-separated list of absolute directory paths that should never be deleted, even when empty.
+      Example: /data/usenet/complete/movies,/data/usenet/complete/tv
 
 tasks:
   - name: Rename scenes
