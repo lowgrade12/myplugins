@@ -138,12 +138,13 @@ def build_settings(plugin_cfg: dict | None, args: dict) -> config.Settings:
 
 def _handle_hook(payload: dict) -> int:
     """Handle hook triggers (Scene.Update.Post, Performer.Create.Post).
-    Runs a quick refresh to score the scene or performer."""
+    Scores only the specific entity that was updated using cached state."""
     conn = payload.get("server_connection") or {}
     stash = stash_io.connect(conn)
     caps = stash_io.ensure_schema(stash)
     plugin_cfg = stash_io.fetch_plugin_settings(stash, PLUGIN_ID)
     settings = build_settings(plugin_cfg, {})
+    settings.dry_run = False
 
     hook_context = payload.get("args", {}).get("hookContext", {})
     hook_type = hook_context.get("type", "")
@@ -151,10 +152,73 @@ def _handle_hook(payload: dict) -> int:
 
     log.info(f"[Restash] Hook fired: {hook_type} for entity {entity_id}")
 
-    # For hooks, run a full recompute (the cache will make it fast if available)
-    # This ensures the new entity gets scored in context of the full library
-    settings.dry_run = False
-    return _run_refresh(stash, settings)
+    if hook_type == "Scene.Update.Post" and entity_id:
+        return _handle_scene_hook(stash, settings, entity_id)
+
+    # For performer creates or unrecognized hooks, skip — the next scheduled
+    # Recompute All or Quick Refresh will pick them up.
+    if hook_type == "Performer.Create.Post":
+        log.info("[Restash] Performer.Create.Post — will be scored on next full run.")
+    return 0
+
+
+def _handle_scene_hook(stash, settings, scene_id: str) -> int:
+    """Score a single scene using the cached state. If no usable cache exists,
+    skip gracefully — the scene will be scored on the next scheduled run."""
+    st = state.load_state(state.default_state_path())
+    ok, reason = state.is_valid(st, settings)
+    if not ok:
+        log.info(f"[Restash] Hook: cache unusable ({reason}); skipping single-scene "
+                 f"score for {scene_id}. It will be scored on the next full run.")
+        return 0
+
+    cached_scenes = _parse_cached_scenes(st["scenes"])
+    cached = cached_scenes.get(scene_id)
+    if cached is None:
+        log.info(f"[Restash] Hook: scene {scene_id} not in cache (new scene); "
+                 f"skipping. It will be scored on the next full run.")
+        return 0
+
+    # Fetch only this scene's current light data
+    cur = stash_io.fetch_scene_light(stash, scene_id)
+    if cur is None:
+        log.info(f"[Restash] Hook: scene {scene_id} not found in library; skipping.")
+        return 0
+
+    now = stash_io.utcnow()
+    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    date_seed = now.strftime("%Y-%m-%d")
+
+    # Compute the raw score for this scene from the cache
+    last_eng = algorithm._max_dt(cached.get("last_engagement"), cur.get("last_played_at"))
+    watched_since = (cur.get("play_count", 0) > 0 or cur.get("o_counter", 0) > 0)
+    final_raw, extra = algorithm.finalize_from_base(
+        scene_id, cached["base"], cached["n_events"], last_eng, cached["created_at"],
+        now, date_seed, settings, watched_since=watched_since)
+
+    # Estimate percentile from the distribution of all cached scenes
+    all_raws = []
+    for sid, c in cached_scenes.items():
+        # Use stored base as a rough proxy for ranking (avoids recomputing all)
+        all_raws.append(c["base"])
+    all_raws.append(final_raw)
+    pcts = algorithm.percentiles(all_raws)
+    # Our scene's percentile is the last one we appended
+    scene_pct = pcts[-1]
+
+    score = models.SceneScore(
+        id=scene_id, raw=final_raw, restash_score=algorithm.to_restash_score(scene_pct),
+        percentile=scene_pct, n_events=cached["n_events"], wildcard=False,
+        components={**{"base": cached["base"], "n_events": cached["n_events"]}, **extra})
+
+    # Write only this scene's score
+    existing_cf = {scene_id: cur.get("custom_fields") or {}}
+    result = writer.write_scores(stash, "scene", {scene_id: score}, existing_cf,
+                                 settings, now_iso)
+    log.info(f"[Restash] Hook: scored scene {scene_id} → "
+             f"restash_score={score.restash_score} "
+             f"(written={result['written']}, skipped={result['skipped']})")
+    return 0
 
 
 # --- Main run logic ---

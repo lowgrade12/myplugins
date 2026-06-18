@@ -204,6 +204,22 @@ def fetch_scenes_light(stash, per_page: int = 500, progress=None):
                      map_scene_light, progress)
 
 
+_FIND_SCENE_BY_ID = """
+query($id: ID!) {
+  findScene(id: $id) { %s }
+}
+""" % SCENE_LIGHT_FRAGMENT
+
+
+def fetch_scene_light(stash, scene_id: str) -> dict | None:
+    """Fetch a single scene's light data by ID. Returns mapped dict or None."""
+    result = stash.call_GQL(_FIND_SCENE_BY_ID, {"id": scene_id})
+    raw = (result or {}).get("findScene")
+    if raw is None:
+        return None
+    return map_scene_light(raw)
+
+
 def fetch_scenes(stash, per_page: int = 500, progress=None):
     return _paginate(stash, _FIND_SCENES, "findScenes", "scenes", per_page,
                      map_scene, progress)
