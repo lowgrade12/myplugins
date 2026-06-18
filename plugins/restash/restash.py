@@ -577,21 +577,70 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     log.info(f"[Restash] refresh: light-read {len(light)} scenes; cache has "
              f"{len(cached_scenes)}; scoring {len(corpus)}.")
     if added:
-        log.info(f"[Restash] refresh: {len(added)} new scene(s) not in cache — they "
-                 f"will be scored on the next full recompute.")
+        log.info(f"[Restash] refresh: {len(added)} new scene(s) not in cache — "
+                 f"scoring them inline.")
     if dropped:
         log.info(f"[Restash] refresh: {len(dropped)} cached scene(s) no longer in library.")
     log.progress(0.45)
 
     scene_scores = algorithm.refresh_scene_scores(corpus, light_by_id, settings,
                                                   now, date_seed)
+
+    # Score new scenes inline using cached affinities (avoids requiring a full run)
+    aff = st.get("affinities", {})
+    aff.setdefault("performers", {})
+    aff.setdefault("tags", {})
+    aff.setdefault("studios", {})
+    new_scene_standins = []
+    if added:
+        for i, sid in enumerate(added):
+            scene = stash_io.fetch_scene_full(stash, sid)
+            if scene is None or not scene.has_file:
+                continue
+            comp = algorithm.scene_base(scene, aff, {}, None, None, settings, now,
+                                        scene_ratings={})
+            ne = comp["n_events"]
+            last = None if ne == 0 else algorithm._last_engagement(scene)
+            final_raw, extra = algorithm.finalize_from_base(
+                sid, comp["base"], ne, last, scene.created_at, now, date_seed, settings)
+            comp.update(extra)
+            # Build a stand-in for performer scoring
+            new_scene_standins.append(models.SceneData(
+                id=sid, title=scene.title, play_history=[], o_history=[],
+                play_count=scene.play_count, o_counter=scene.o_counter,
+                play_duration=0.0, resume_time=None,
+                last_played_at=scene.last_played_at,
+                file_duration=scene.file_duration, height=None,
+                marker_count=0, organized=False, date=None,
+                created_at=scene.created_at, rating100=scene.rating100,
+                tag_ids=scene.tag_ids, performer_ids=scene.performer_ids,
+                studio_id=scene.studio_id, custom_fields=scene.custom_fields,
+                has_file=True))
+            # Temporarily store raw/comp for percentile calculation below
+            scene_scores[sid] = models.SceneScore(
+                id=sid, raw=final_raw, restash_score=0, percentile=0.0,
+                n_events=ne, wildcard=False, components=comp)
+        # Recompute percentiles with new scenes included
+        if new_scene_standins:
+            all_ids = list(scene_scores.keys())
+            all_raws_final = [scene_scores[sid].raw for sid in all_ids]
+            pcts = algorithm.percentiles(all_raws_final)
+            for idx, sid in enumerate(all_ids):
+                sc = scene_scores[sid]
+                scene_scores[sid] = models.SceneScore(
+                    id=sid, raw=sc.raw,
+                    restash_score=algorithm.to_restash_score(pcts[idx]),
+                    percentile=pcts[idx], n_events=sc.n_events,
+                    wildcard=sc.wildcard, components=sc.components)
+            log.info(f"[Restash] refresh: scored {len(new_scene_standins)} new scene(s) "
+                     f"inline.")
     log.progress(0.65)
 
     performers = stash_io.fetch_performers(stash)
-    aff = {"performers": st["affinities"].get("performers", {})}
-    stand_ins = _scene_standins(corpus, light_by_id)
+    aff_for_perfs = {"performers": st["affinities"].get("performers", {})}
+    stand_ins = _scene_standins(corpus, light_by_id) + new_scene_standins
     performer_scores = algorithm.score_performers(performers, stand_ins, scene_scores,
-                                                  aff, settings, now)
+                                                  aff_for_perfs, settings, now)
     log.progress(0.80)
 
     existing_scene_cf = {sid: light_by_id[sid]["custom_fields"] for sid in scene_scores}
