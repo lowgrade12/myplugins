@@ -101,3 +101,6 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# Restash runtime lock file
+.restash_running.lock

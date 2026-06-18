@@ -139,6 +139,12 @@ def _handle_hook(payload: dict) -> int:
 
     log.info(f"[Restash] Hook fired: {hook_type} for entity {entity_id}")
 
+    # Skip hook processing if a full/refresh task is currently running — the task
+    # itself is writing scores and re-triggering hooks would just slow it down.
+    if state.is_task_running():
+        log.info("[Restash] Hook: task is running, bypassing hook to avoid slowdown.")
+        return 0
+
     if hook_type == "Scene.Update.Post" and entity_id:
         return _handle_scene_hook(stash, settings, entity_id)
 
@@ -299,6 +305,11 @@ def run(payload: dict) -> int:
     if settings.disable_plugins_before_run and mode in ("full", "refresh", "dry"):
         previously_enabled = _disable_other_plugins(stash)
 
+    # Acquire a lock so hooks know to bypass during this task
+    lock_acquired = mode in ("full", "refresh", "dry")
+    if lock_acquired:
+        state.acquire_lock()
+
     try:
         if mode == "dry":
             return _run_dry(stash, settings)
@@ -315,6 +326,9 @@ def run(payload: dict) -> int:
         log.error(f"[Restash] unknown mode '{mode}'.")
         return 1
     finally:
+        # Release the lock so hooks resume normal operation
+        if lock_acquired:
+            state.release_lock()
         # Re-enable plugins after the run completes
         if previously_enabled:
             _reenable_plugins(stash, previously_enabled)

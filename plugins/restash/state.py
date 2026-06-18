@@ -56,6 +56,55 @@ def save_state(path: str, *, settings, affinities: dict, scenes: dict,
         raise
 
 
+def default_lock_path() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        ".restash_running.lock")
+
+
+def acquire_lock(path: str | None = None) -> None:
+    """Create a lock file indicating a task is actively running."""
+    path = path or default_lock_path()
+    with open(path, "w") as fh:
+        fh.write(str(os.getpid()))
+
+
+def release_lock(path: str | None = None) -> None:
+    """Remove the lock file when a task finishes."""
+    path = path or default_lock_path()
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def is_task_running(path: str | None = None) -> bool:
+    """Return True if the lock file exists and was created by a still-running process.
+    If the lock file references a dead PID, it's stale — remove it and return False."""
+    path = path or default_lock_path()
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path) as fh:
+            pid_str = fh.read().strip()
+        if pid_str:
+            pid = int(pid_str)
+            # Check if the process is still alive
+            os.kill(pid, 0)
+        return True
+    except (ValueError, ProcessLookupError):
+        # PID is invalid or process no longer exists — stale lock
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return False
+    except PermissionError:
+        # Process exists but we can't signal it (different user) — still running
+        return True
+    except OSError:
+        return False
+
+
 def load_state(path: str) -> dict | None:
     """Return the parsed cache, or None if missing/unreadable/corrupt."""
     try:
