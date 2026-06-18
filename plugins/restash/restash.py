@@ -137,8 +137,8 @@ def build_settings(plugin_cfg: dict | None, args: dict) -> config.Settings:
 # --- Hook handling ---
 
 def _handle_hook(payload: dict) -> int:
-    """Handle hook triggers (Scene.Create.Post, Performer.Create.Post).
-    Runs a quick refresh to score the new entity."""
+    """Handle hook triggers (Scene.Update.Post, Performer.Create.Post).
+    Runs a quick refresh to score the scene or performer."""
     conn = payload.get("server_connection") or {}
     stash = stash_io.connect(conn)
     caps = stash_io.ensure_schema(stash)

@@ -16,10 +16,10 @@ settings:
   mirrorToRating100:    { displayName: "Also mirror score to rating100 (destructive)", type: BOOLEAN, description: "If on, each entity's Restash score is ALSO written to native rating100 (enables the in-app 'Rating, descending' sort). OVERWRITES manual ratings; a backup is auto-created first and can be reverted with 'Restore Ratings'. Default off." }
   disablePluginsBeforeRun: { displayName: "Disable other plugins before run", type: BOOLEAN, description: "If on, all other enabled plugins will be disabled before Restash runs, then re-enabled after. Prevents interference from other plugins during scoring. Default off." }
 hooks:
-  - name: on_scene_create
-    description: Score a newly created scene automatically.
+  - name: on_scene_update
+    description: Score a scene automatically when it is updated (e.g. organized).
     triggeredBy:
-      - Scene.Create.Post
+      - Scene.Update.Post
   - name: on_performer_create
     description: Score a newly created performer automatically.
     triggeredBy:
