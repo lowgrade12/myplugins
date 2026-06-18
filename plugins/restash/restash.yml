@@ -46,3 +46,6 @@ tasks:
   - name: Disable Other Plugins
     description: Temporarily disable all other enabled plugins. They will be re-enabled when any Restash scoring task completes (if the setting is on).
     defaultArgs: { mode: disable-plugins }
+  - name: Restore Plugins
+    description: Re-enable plugins that were left disabled by a canceled or crashed Restash run. Safe to run anytime — does nothing if no plugins are stuck disabled.
+    defaultArgs: { mode: restore-plugins }

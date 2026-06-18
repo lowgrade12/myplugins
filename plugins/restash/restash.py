@@ -71,11 +71,14 @@ def _set_plugins_enabled(stash, enabled_map: dict[str, bool]) -> bool:
 
 def _disable_other_plugins(stash) -> list[str]:
     """Disable all plugins except this one. Returns the list of plugin IDs that were
-    previously enabled (so they can be re-enabled later)."""
+    previously enabled (so they can be re-enabled later). Persists the list to disk
+    so it survives a crash or cancellation."""
     enabled_ids = _get_enabled_plugin_ids(stash)
     if not enabled_ids:
         log.info("[Restash] No other plugins to disable.")
         return []
+    # Persist the list BEFORE disabling so we can recover after a crash
+    state.save_disabled_plugins(enabled_ids)
     # Build a map setting all other enabled plugins to disabled
     enabled_map = {pid: False for pid in enabled_ids}
     if _set_plugins_enabled(stash, enabled_map):
@@ -83,18 +86,31 @@ def _disable_other_plugins(stash) -> list[str]:
                  f"{', '.join(enabled_ids)}")
     else:
         log.warning("[Restash] Failed to disable plugins — continuing anyway.")
+        state.clear_disabled_plugins()
         return []
     return enabled_ids
 
 
 def _reenable_plugins(stash, plugin_ids: list[str]) -> None:
-    """Re-enable the given plugins."""
+    """Re-enable the given plugins and clear the persisted disabled-plugins file."""
     if not plugin_ids:
         return
     enabled_map = {pid: True for pid in plugin_ids}
     if _set_plugins_enabled(stash, enabled_map):
         log.info(f"[Restash] Re-enabled {len(plugin_ids)} plugin(s): "
                  f"{', '.join(plugin_ids)}")
+    state.clear_disabled_plugins()
+
+
+def _recover_disabled_plugins(stash) -> None:
+    """Check for plugins left disabled by a previous crashed/canceled run and
+    re-enable them. Called at the start of every task run."""
+    stale = state.load_disabled_plugins()
+    if not stale:
+        return
+    log.info(f"[Restash] Recovering {len(stale)} plugin(s) left disabled by a "
+             f"previous interrupted run: {', '.join(stale)}")
+    _reenable_plugins(stash, stale)
 
 
 # --- Input parsing ---
@@ -138,6 +154,12 @@ def _handle_hook(payload: dict) -> int:
     entity_id = str(hook_context.get("id", ""))
 
     log.info(f"[Restash] Hook fired: {hook_type} for entity {entity_id}")
+
+    # Skip hook processing if a full/refresh task is currently running — the task
+    # itself is writing scores and re-triggering hooks would just slow it down.
+    if state.is_task_running():
+        log.info("[Restash] Hook: task is running, bypassing hook to avoid slowdown.")
+        return 0
 
     if hook_type == "Scene.Update.Post" and entity_id:
         return _handle_scene_hook(stash, settings, entity_id)
@@ -294,10 +316,23 @@ def run(payload: dict) -> int:
         _disable_other_plugins(stash)
         return 0
 
+    # Handle restore-plugins mode — re-enable plugins left disabled by a crash
+    if mode == "restore-plugins":
+        _recover_disabled_plugins(stash)
+        return 0
+
+    # Recover plugins left disabled by a previous crashed/canceled run
+    _recover_disabled_plugins(stash)
+
     # Optionally disable other plugins before scoring tasks
     previously_enabled = []
     if settings.disable_plugins_before_run and mode in ("full", "refresh", "dry"):
         previously_enabled = _disable_other_plugins(stash)
+
+    # Acquire a lock so hooks know to bypass during this task
+    lock_acquired = mode in ("full", "refresh", "dry")
+    if lock_acquired:
+        state.acquire_lock()
 
     try:
         if mode == "dry":
@@ -315,6 +350,9 @@ def run(payload: dict) -> int:
         log.error(f"[Restash] unknown mode '{mode}'.")
         return 1
     finally:
+        # Release the lock so hooks resume normal operation
+        if lock_acquired:
+            state.release_lock()
         # Re-enable plugins after the run completes
         if previously_enabled:
             _reenable_plugins(stash, previously_enabled)
