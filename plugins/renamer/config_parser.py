@@ -37,7 +37,16 @@ class Config:
         raw = self.config.get("protectedDirectories") or Config.DEFAULT_CONFIG["protectedDirectories"]
         if not raw:
             return set()
-        return {pathlib.Path(p.strip()).resolve() for p in raw.split(",") if p.strip()}
+        result = set()
+        for p in raw.split(","):
+            p = p.strip()
+            if not p:
+                continue
+            try:
+                result.add(pathlib.Path(p).resolve())
+            except (OSError, ValueError):
+                pass
+        return result
 
     @staticmethod
     def __to_camel_case(snake_str):
