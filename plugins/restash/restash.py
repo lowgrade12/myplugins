@@ -661,6 +661,7 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     aff.setdefault("tags", {})
     aff.setdefault("studios", {})
     new_scene_standins = []
+    new_scene_cache_entries = {}
     if added:
         for i, sid in enumerate(added):
             scene = stash_io.fetch_scene_full(stash, sid)
@@ -689,6 +690,14 @@ def _run_refresh(stash, settings: config.Settings) -> int:
             scene_scores[sid] = models.SceneScore(
                 id=sid, raw=final_raw, restash_score=0, percentile=0.0,
                 n_events=ne, wildcard=False, components=comp)
+            # Cache entry so subsequent refreshes don't re-fetch this scene
+            new_scene_cache_entries[sid] = {
+                "base": comp["base"],
+                "n_events": ne,
+                "created_at": _iso(scene.created_at),
+                "last_engagement": _iso(last),
+                "perf_ids": scene.performer_ids,
+            }
         # Recompute percentiles with new scenes included
         if new_scene_standins:
             all_ids = list(scene_scores.keys())
@@ -737,6 +746,28 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     if s_failed or p_failed:
         log.error(f"[Restash] {s_failed} scene + {p_failed} performer update(s) were "
                   f"rejected by the server (those IDs were NOT written); re-run to retry.")
+
+    # Persist the updated scene cache so subsequent refreshes don't re-fetch
+    # new scenes and pick up any updated last_engagement values from this run.
+    updated_scene_cache = {}
+    for sid, c in corpus.items():
+        cur = light_by_id.get(sid, {})
+        updated_last = algorithm._max_dt(c.get("last_engagement"),
+                                         cur.get("last_played_at"))
+        updated_scene_cache[sid] = {
+            "base": c["base"],
+            "n_events": c["n_events"],
+            "created_at": _iso(c["created_at"]),
+            "last_engagement": _iso(updated_last),
+            "perf_ids": c["perf_ids"],
+        }
+    updated_scene_cache.update(new_scene_cache_entries)
+    state.save_state(state.default_state_path(), settings=settings,
+                     affinities=st["affinities"], scenes=updated_scene_cache,
+                     written_at=now_iso)
+    log.info(f"[Restash] refresh: updated cache ({len(updated_scene_cache)} scenes; "
+             f"{len(new_scene_cache_entries)} new).")
+
     log.progress(1.0)
     return 1 if (s_failed or p_failed) else 0
 
