@@ -30,82 +30,69 @@ PLUGIN_ID = _resolve_plugin_id()
 # --- Plugin management (disable/re-enable other plugins) ---
 
 _PLUGINS_QUERY = """
-query { configuration { plugins general { pluginsPath } } }
+query { plugins { id enabled } }
 """
 
-_CONFIGURE_PLUGIN = """
-mutation ConfigurePlugin($input: ConfigGeneralInput!) {
-  configureGeneral(input: $input) { pluginsPath }
-}
-"""
-
-_DISABLED_PLUGINS_QUERY = """
-query { configuration { general { disabledPlugins } } }
-"""
-
-_SET_DISABLED_PLUGINS = """
-mutation SetDisabledPlugins($input: ConfigGeneralInput!) {
-  configureGeneral(input: $input) { disabledPlugins }
+_SET_PLUGINS_ENABLED = """
+mutation SetPluginsEnabled($enabledMap: BoolMap!) {
+  setPluginsEnabled(enabledMap: $enabledMap)
 }
 """
 
 
-def _get_all_plugin_ids(stash) -> list[str]:
-    """Retrieve all installed plugin IDs from the Stash configuration."""
+def _get_all_plugins(stash) -> list[dict]:
+    """Retrieve all installed plugins with their id and enabled status."""
     try:
-        result = stash.call_GQL("query { plugins { id } }")
+        result = stash.call_GQL(_PLUGINS_QUERY)
         plugins = (result or {}).get("plugins") or []
-        return [p["id"] for p in plugins if p.get("id")]
+        return [p for p in plugins if p.get("id")]
     except Exception:
         return []
 
 
-def _get_disabled_plugins(stash) -> list[str]:
-    """Get the current list of disabled plugin IDs."""
-    try:
-        result = stash.call_GQL(_DISABLED_PLUGINS_QUERY)
-        general = ((result or {}).get("configuration") or {}).get("general") or {}
-        return general.get("disabledPlugins") or []
-    except Exception:
-        return []
+def _get_enabled_plugin_ids(stash) -> list[str]:
+    """Get the list of currently enabled plugin IDs (excluding self)."""
+    plugins = _get_all_plugins(stash)
+    return [p["id"] for p in plugins if p.get("enabled") and p["id"] != PLUGIN_ID]
 
 
-def _set_disabled_plugins(stash, plugin_ids: list[str]) -> bool:
-    """Set the list of disabled plugins."""
+def _set_plugins_enabled(stash, enabled_map: dict[str, bool]) -> bool:
+    """Enable or disable plugins using the setPluginsEnabled mutation.
+    enabled_map is a dict of plugin_id → bool (True=enabled, False=disabled)."""
+    if not enabled_map:
+        return True
     try:
-        stash.call_GQL(_SET_DISABLED_PLUGINS, {"input": {"disabledPlugins": plugin_ids}})
+        stash.call_GQL(_SET_PLUGINS_ENABLED, {"enabledMap": enabled_map})
         return True
     except Exception as exc:
-        log.error(f"[Restash] Failed to set disabled plugins: {exc}")
+        log.error(f"[Restash] Failed to set plugins enabled state: {exc}")
         return False
 
 
 def _disable_other_plugins(stash) -> list[str]:
-    """Disable all plugins except this one. Returns the list of plugins that were
+    """Disable all plugins except this one. Returns the list of plugin IDs that were
     previously enabled (so they can be re-enabled later)."""
-    all_ids = _get_all_plugin_ids(stash)
-    currently_disabled = set(_get_disabled_plugins(stash))
-    # Plugins that are currently enabled (not in disabled list) and not us
-    to_disable = [pid for pid in all_ids
-                  if pid != PLUGIN_ID and pid not in currently_disabled]
-    if not to_disable:
+    enabled_ids = _get_enabled_plugin_ids(stash)
+    if not enabled_ids:
         log.info("[Restash] No other plugins to disable.")
         return []
-    # Add them to the disabled list
-    new_disabled = list(currently_disabled | set(to_disable))
-    if _set_disabled_plugins(stash, new_disabled):
-        log.info(f"[Restash] Disabled {len(to_disable)} other plugin(s): "
-                 f"{', '.join(to_disable)}")
-    return to_disable
+    # Build a map setting all other enabled plugins to disabled
+    enabled_map = {pid: False for pid in enabled_ids}
+    if _set_plugins_enabled(stash, enabled_map):
+        log.info(f"[Restash] Disabled {len(enabled_ids)} other plugin(s): "
+                 f"{', '.join(enabled_ids)}")
+    else:
+        log.warning("[Restash] Failed to disable plugins — continuing anyway.")
+        return []
+    return enabled_ids
 
 
 def _reenable_plugins(stash, plugin_ids: list[str]) -> None:
-    """Re-enable the given plugins by removing them from the disabled list."""
+    """Re-enable the given plugins."""
     if not plugin_ids:
         return
-    currently_disabled = set(_get_disabled_plugins(stash))
-    new_disabled = [pid for pid in currently_disabled if pid not in set(plugin_ids)]
-    if _set_disabled_plugins(stash, new_disabled):
+    enabled_map = {pid: True for pid in plugin_ids}
+    if _set_plugins_enabled(stash, enabled_map):
         log.info(f"[Restash] Re-enabled {len(plugin_ids)} plugin(s): "
                  f"{', '.join(plugin_ids)}")
 
@@ -175,9 +162,8 @@ def _handle_scene_hook(stash, settings, scene_id: str) -> int:
     cached_scenes = _parse_cached_scenes(st["scenes"])
     cached = cached_scenes.get(scene_id)
     if cached is None:
-        log.info(f"[Restash] Hook: scene {scene_id} not in cache (new scene); "
-                 f"skipping. It will be scored on the next full run.")
-        return 0
+        # New scene not in cache — score it from scratch using full data
+        return _handle_new_scene_hook(stash, settings, scene_id, cached_scenes)
 
     # Fetch only this scene's current light data
     cur = stash_io.fetch_scene_light(stash, scene_id)
@@ -214,9 +200,70 @@ def _handle_scene_hook(stash, settings, scene_id: str) -> int:
 
     # Write only this scene's score
     existing_cf = {scene_id: cur.get("custom_fields") or {}}
+    kw = {}
+    if settings.mirror_to_rating100:
+        kw["current_ratings"] = {scene_id: cur.get("rating100")}
     result = writer.write_scores(stash, "scene", {scene_id: score}, existing_cf,
-                                 settings, now_iso)
+                                 settings, now_iso, **kw)
     log.info(f"[Restash] Hook: scored scene {scene_id} → "
+             f"restash_score={score.restash_score} "
+             f"(written={result['written']}, skipped={result['skipped']})")
+    return 0
+
+
+def _handle_new_scene_hook(stash, settings, scene_id: str, cached_scenes: dict) -> int:
+    """Score a new scene that isn't in the cache yet. Fetches full scene data,
+    computes a score using cached affinities, and writes it immediately."""
+    scene = stash_io.fetch_scene_full(stash, scene_id)
+    if scene is None:
+        log.info(f"[Restash] Hook: new scene {scene_id} not found in library; skipping.")
+        return 0
+
+    if not scene.has_file:
+        log.info(f"[Restash] Hook: new scene {scene_id} has no file; skipping.")
+        return 0
+
+    now = stash_io.utcnow()
+    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    date_seed = now.strftime("%Y-%m-%d")
+
+    # Load cached affinities for ingredient scoring
+    st = state.load_state(state.default_state_path())
+    aff = st.get("affinities", {}) if st else {}
+    # Ensure aff has expected structure
+    aff.setdefault("performers", {})
+    aff.setdefault("tags", {})
+    aff.setdefault("studios", {})
+
+    # Compute this scene's base score using its full data
+    # We don't have the full corpus context (tag counts, duration stats) so we
+    # use reasonable defaults — the score will be refined on the next full run.
+    comp = algorithm.scene_base(scene, aff, {}, None, None, settings, now,
+                                scene_ratings={})
+    ne = comp["n_events"]
+    last = None if ne == 0 else algorithm._last_engagement(scene)
+    final_raw, extra = algorithm.finalize_from_base(
+        scene_id, comp["base"], ne, last, scene.created_at, now, date_seed, settings)
+    comp.update(extra)
+
+    # Estimate percentile from the distribution of all cached scenes
+    all_raws = [c["base"] for c in cached_scenes.values()]
+    all_raws.append(final_raw)
+    pcts = algorithm.percentiles(all_raws)
+    scene_pct = pcts[-1]
+
+    score = models.SceneScore(
+        id=scene_id, raw=final_raw, restash_score=algorithm.to_restash_score(scene_pct),
+        percentile=scene_pct, n_events=ne, wildcard=False, components=comp)
+
+    # Write the score (including rating100 mirror if enabled)
+    existing_cf = {scene_id: scene.custom_fields}
+    kw = {}
+    if settings.mirror_to_rating100:
+        kw["current_ratings"] = {scene_id: scene.rating100}
+    result = writer.write_scores(stash, "scene", {scene_id: score}, existing_cf,
+                                 settings, now_iso, **kw)
+    log.info(f"[Restash] Hook: scored NEW scene {scene_id} → "
              f"restash_score={score.restash_score} "
              f"(written={result['written']}, skipped={result['skipped']})")
     return 0
