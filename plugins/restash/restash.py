@@ -71,11 +71,14 @@ def _set_plugins_enabled(stash, enabled_map: dict[str, bool]) -> bool:
 
 def _disable_other_plugins(stash) -> list[str]:
     """Disable all plugins except this one. Returns the list of plugin IDs that were
-    previously enabled (so they can be re-enabled later)."""
+    previously enabled (so they can be re-enabled later). Persists the list to disk
+    so it survives a crash or cancellation."""
     enabled_ids = _get_enabled_plugin_ids(stash)
     if not enabled_ids:
         log.info("[Restash] No other plugins to disable.")
         return []
+    # Persist the list BEFORE disabling so we can recover after a crash
+    state.save_disabled_plugins(enabled_ids)
     # Build a map setting all other enabled plugins to disabled
     enabled_map = {pid: False for pid in enabled_ids}
     if _set_plugins_enabled(stash, enabled_map):
@@ -83,18 +86,31 @@ def _disable_other_plugins(stash) -> list[str]:
                  f"{', '.join(enabled_ids)}")
     else:
         log.warning("[Restash] Failed to disable plugins — continuing anyway.")
+        state.clear_disabled_plugins()
         return []
     return enabled_ids
 
 
 def _reenable_plugins(stash, plugin_ids: list[str]) -> None:
-    """Re-enable the given plugins."""
+    """Re-enable the given plugins and clear the persisted disabled-plugins file."""
     if not plugin_ids:
         return
     enabled_map = {pid: True for pid in plugin_ids}
     if _set_plugins_enabled(stash, enabled_map):
         log.info(f"[Restash] Re-enabled {len(plugin_ids)} plugin(s): "
                  f"{', '.join(plugin_ids)}")
+    state.clear_disabled_plugins()
+
+
+def _recover_disabled_plugins(stash) -> None:
+    """Check for plugins left disabled by a previous crashed/canceled run and
+    re-enable them. Called at the start of every task run."""
+    stale = state.load_disabled_plugins()
+    if not stale:
+        return
+    log.info(f"[Restash] Recovering {len(stale)} plugin(s) left disabled by a "
+             f"previous interrupted run: {', '.join(stale)}")
+    _reenable_plugins(stash, stale)
 
 
 # --- Input parsing ---
@@ -299,6 +315,14 @@ def run(payload: dict) -> int:
     if mode == "disable-plugins":
         _disable_other_plugins(stash)
         return 0
+
+    # Handle restore-plugins mode — re-enable plugins left disabled by a crash
+    if mode == "restore-plugins":
+        _recover_disabled_plugins(stash)
+        return 0
+
+    # Recover plugins left disabled by a previous crashed/canceled run
+    _recover_disabled_plugins(stash)
 
     # Optionally disable other plugins before scoring tasks
     previously_enabled = []

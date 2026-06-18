@@ -104,3 +104,4 @@ venv.bak/
 
 # Restash runtime lock file
 .restash_running.lock
+.restash_disabled_plugins.json
