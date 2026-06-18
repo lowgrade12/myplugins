@@ -164,10 +164,9 @@ def _handle_hook(payload: dict) -> int:
     if hook_type == "Scene.Update.Post" and entity_id:
         return _handle_scene_hook(stash, settings, entity_id)
 
-    # For performer creates or unrecognized hooks, skip — the next scheduled
-    # Recompute All or Quick Refresh will pick them up.
-    if hook_type == "Performer.Create.Post":
-        log.info("[Restash] Performer.Create.Post — will be scored on next full run.")
+    if hook_type == "Performer.Create.Post" and entity_id:
+        return _handle_performer_hook(stash, settings, entity_id)
+
     return 0
 
 
@@ -288,6 +287,76 @@ def _handle_new_scene_hook(stash, settings, scene_id: str, cached_scenes: dict) 
     log.info(f"[Restash] Hook: scored NEW scene {scene_id} → "
              f"restash_score={score.restash_score} "
              f"(written={result['written']}, skipped={result['skipped']})")
+    return 0
+
+
+def _scene_standins_from_cache(cached_scenes: dict) -> list:
+    """Lightweight SceneData stand-ins built purely from cached data (no light fetch)."""
+    out = []
+    for sid, c in cached_scenes.items():
+        out.append(models.SceneData(
+            id=sid, title="", play_history=[], o_history=[],
+            play_count=0, o_counter=0,
+            play_duration=0.0, resume_time=None,
+            last_played_at=c.get("last_engagement"),
+            file_duration=None, height=None, marker_count=0, organized=False,
+            date=None, created_at=c["created_at"], rating100=None,
+            tag_ids=[], performer_ids=c["perf_ids"], studio_id=None,
+            custom_fields={}, has_file=True))
+    return out
+
+
+def _scene_scores_from_cache(cached_scenes: dict) -> dict:
+    """Reconstruct approximate SceneScore objects from cached base scores.
+    Uses base as a proxy for raw — good enough for performer percentile computation."""
+    ids = list(cached_scenes.keys())
+    all_bases = [cached_scenes[sid]["base"] for sid in ids]
+    pcts = algorithm.percentiles(all_bases) if all_bases else []
+    out = {}
+    for idx, sid in enumerate(ids):
+        c = cached_scenes[sid]
+        pct = pcts[idx] if pcts else 50.0
+        out[sid] = models.SceneScore(
+            id=sid, raw=c["base"], restash_score=algorithm.to_restash_score(pct),
+            percentile=pct, n_events=c["n_events"], wildcard=False,
+            components={"base": c["base"], "n_events": c["n_events"]})
+    return out
+
+
+def _handle_performer_hook(stash, settings, performer_id: str) -> int:
+    """Score all performers using cached state when a new performer is created.
+    Falls back gracefully if no usable cache exists."""
+    st = state.load_state(state.default_state_path())
+    ok, reason = state.is_valid(st, settings)
+    if not ok:
+        log.info(f"[Restash] Performer hook: cache unusable ({reason}); "
+                 f"performer {performer_id} will be scored on the next full run.")
+        return 0
+
+    cached_scenes = _parse_cached_scenes(st["scenes"])
+    stand_ins = _scene_standins_from_cache(cached_scenes)
+    scene_scores = _scene_scores_from_cache(cached_scenes)
+
+    aff = st.get("affinities", {})
+    aff.setdefault("performers", {})
+    aff_for_perfs = {"performers": aff["performers"]}
+
+    performers = stash_io.fetch_performers(stash)
+    now = stash_io.utcnow()
+    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    performer_scores = algorithm.score_performers(performers, stand_ins, scene_scores,
+                                                  aff_for_perfs, settings, now)
+
+    existing_perf_cf = {p.id: p.custom_fields for p in performers}
+    kw = {}
+    if settings.mirror_to_rating100:
+        kw["current_ratings"] = {p.id: p.rating100 for p in performers}
+    p_stats = writer.write_scores(stash, "performer", performer_scores, existing_perf_cf,
+                                  settings, now_iso, **kw)
+    log.info(f"[Restash] Performer hook: scored {len(performer_scores)} performer(s) "
+             f"(triggered by new performer {performer_id}); "
+             f"written={p_stats['written']}, skipped={p_stats['skipped']}.")
     return 0
 
 
