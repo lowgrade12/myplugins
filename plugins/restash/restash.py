@@ -450,10 +450,13 @@ def _run_dry(stash, settings: config.Settings) -> int:
         live_scene={s.id: s.rating100 for s in scenes if s.rating100 is not None},
         live_perf={p.id: p.rating100 for p in performers if p.rating100 is not None})
 
-    aff = algorithm.build_affinities(scenes, now, settings, favorites, perf_ratings)
+    events_by_id = {s.id: algorithm.extract_events(s, settings) for s in scenes}
+    aff = algorithm.build_affinities(scenes, now, settings, favorites, perf_ratings,
+                                     events_by_id=events_by_id)
     scene_scores = algorithm.score_scenes(scenes, settings, now, date_seed,
                                           favorites, perf_ratings, aff,
-                                          scene_ratings=scene_ratings)
+                                          scene_ratings=scene_ratings,
+                                          events_by_id=events_by_id)
     log.progress(0.85)
     performer_scores = algorithm.score_performers(performers, scenes, scene_scores,
                                                  aff, settings, now)
@@ -461,7 +464,8 @@ def _run_dry(stash, settings: config.Settings) -> int:
 
     titles = {s.id: s.title for s in scenes}
     names = {p.id: p.name for p in performers}
-    diag_rows, diag_summary = _watched_diagnostic(scenes, scene_scores, settings)
+    diag_rows, diag_summary = _watched_diagnostic(scenes, scene_scores, settings,
+                                                   events_by_id=events_by_id)
     summary = report.format_summary(len(scene_scores), len(performer_scores),
                                     would_write=len(scene_scores) + len(performer_scores),
                                     skipped=0)
@@ -508,10 +512,13 @@ def _run_full(stash, settings: config.Settings) -> int:
         live_scene={s.id: s.rating100 for s in kept_scenes if s.rating100 is not None},
         live_perf={p.id: p.rating100 for p in kept_performers if p.rating100 is not None})
 
-    aff = algorithm.build_affinities(kept_scenes, now, settings, favorites, perf_ratings)
+    events_by_id = {s.id: algorithm.extract_events(s, settings) for s in kept_scenes}
+    aff = algorithm.build_affinities(kept_scenes, now, settings, favorites, perf_ratings,
+                                     events_by_id=events_by_id)
     scene_scores = algorithm.score_scenes(kept_scenes, settings, now, date_seed,
                                           favorites, perf_ratings, aff,
-                                          scene_ratings=scene_ratings)
+                                          scene_ratings=scene_ratings,
+                                          events_by_id=events_by_id)
     performer_scores = algorithm.score_performers(kept_performers, kept_scenes,
                                                   scene_scores, aff, settings, now)
     log.progress(0.70)
@@ -822,7 +829,8 @@ def _build_scene_cache(kept_scenes, scene_scores) -> dict:
     return out
 
 
-def _watched_diagnostic(scenes, scene_scores, settings, top_n: int = 20):
+def _watched_diagnostic(scenes, scene_scores, settings, top_n: int = 20,
+                        events_by_id=None):
     """Gather read-only diagnostics for watched scenes (n_events>0)."""
     rows = []
     penalty = penalty_high_comp = resume_zero = resume_zero_penalty = 0
@@ -830,7 +838,8 @@ def _watched_diagnostic(scenes, scene_scores, settings, top_n: int = 20):
         sc = scene_scores.get(s.id)
         if sc is None or sc.n_events == 0:
             continue
-        events = algorithm.extract_events(s, settings)
+        events = (events_by_id.get(s.id) if events_by_id is not None
+                  else algorithm.extract_events(s, settings))
         fired = any(e.kind == "penalty" for e in events)
         comp = algorithm.completion_factor(s.play_duration, s.play_count,
                                            s.file_duration, settings.completion_floor)
