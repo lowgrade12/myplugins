@@ -360,6 +360,13 @@ def _score_and_write_scene_performers(stash, settings, perf_ids: list,
     if not performers:
         return
 
+    # Honour the exclude tag — skip performers tagged for exclusion
+    exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
+    if exclude_id is not None:
+        performers = [p for p in performers if exclude_id not in p.tag_ids]
+    if not performers:
+        return
+
     cached_scenes = _parse_cached_scenes(st.get("scenes", {}))
     stand_ins = _scene_standins_from_cache(cached_scenes)
     scene_scores = _scene_scores_from_cache(cached_scenes)
@@ -397,6 +404,10 @@ def _handle_performer_hook(stash, settings, performer_id: str) -> int:
     aff_for_perfs = {"performers": aff["performers"]}
 
     performers = stash_io.fetch_performers(stash)
+    # Honour the exclude tag
+    exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
+    if exclude_id is not None:
+        performers = [p for p in performers if exclude_id not in p.tag_ids]
     now = stash_io.utcnow()
     now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
