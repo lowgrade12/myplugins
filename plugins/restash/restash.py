@@ -29,83 +29,66 @@ PLUGIN_ID = _resolve_plugin_id()
 
 # --- Plugin management (disable/re-enable other plugins) ---
 
-_PLUGINS_QUERY = """
-query { configuration { plugins general { pluginsPath } } }
+_PLUGINS_WITH_STATUS_QUERY = """
+query { plugins { id enabled } }
 """
 
-_CONFIGURE_PLUGIN = """
-mutation ConfigurePlugin($input: ConfigGeneralInput!) {
-  configureGeneral(input: $input) { pluginsPath }
-}
-"""
-
-_DISABLED_PLUGINS_QUERY = """
-query { configuration { general { disabledPlugins } } }
-"""
-
-_SET_DISABLED_PLUGINS = """
-mutation SetDisabledPlugins($input: ConfigGeneralInput!) {
-  configureGeneral(input: $input) { disabledPlugins }
+_SET_PLUGINS_ENABLED = """
+mutation SetPluginsEnabled($enabledMap: BoolMap!) {
+  setPluginsEnabled(enabledMap: $enabledMap)
 }
 """
 
 
-def _get_all_plugin_ids(stash) -> list[str]:
-    """Retrieve all installed plugin IDs from the Stash configuration."""
+def _get_plugins_status(stash) -> dict[str, bool]:
+    """Retrieve a map of plugin ID → enabled status."""
     try:
-        result = stash.call_GQL("query { plugins { id } }")
+        result = stash.call_GQL(_PLUGINS_WITH_STATUS_QUERY)
         plugins = (result or {}).get("plugins") or []
-        return [p["id"] for p in plugins if p.get("id")]
+        return {p["id"]: p.get("enabled", True) for p in plugins if p.get("id")}
     except Exception:
-        return []
+        return {}
 
 
 def _get_disabled_plugins(stash) -> list[str]:
     """Get the current list of disabled plugin IDs."""
-    try:
-        result = stash.call_GQL(_DISABLED_PLUGINS_QUERY)
-        general = ((result or {}).get("configuration") or {}).get("general") or {}
-        return general.get("disabledPlugins") or []
-    except Exception:
-        return []
+    status = _get_plugins_status(stash)
+    return [pid for pid, enabled in status.items() if not enabled]
 
 
-def _set_disabled_plugins(stash, plugin_ids: list[str]) -> bool:
-    """Set the list of disabled plugins."""
+def _set_plugins_enabled(stash, enabled_map: dict[str, bool]) -> bool:
+    """Update the enabled state for the given plugins."""
     try:
-        stash.call_GQL(_SET_DISABLED_PLUGINS, {"input": {"disabledPlugins": plugin_ids}})
+        stash.call_GQL(_SET_PLUGINS_ENABLED, {"enabledMap": enabled_map})
         return True
     except Exception as exc:
-        log.error(f"[Restash] Failed to set disabled plugins: {exc}")
+        log.error(f"[Restash] Failed to update plugin enabled state: {exc}")
         return False
 
 
 def _disable_other_plugins(stash) -> list[str]:
     """Disable all plugins except this one. Returns the list of plugins that were
     previously enabled (so they can be re-enabled later)."""
-    all_ids = _get_all_plugin_ids(stash)
-    currently_disabled = set(_get_disabled_plugins(stash))
-    # Plugins that are currently enabled (not in disabled list) and not us
-    to_disable = [pid for pid in all_ids
-                  if pid != PLUGIN_ID and pid not in currently_disabled]
+    status = _get_plugins_status(stash)
+    # Plugins that are currently enabled and not us
+    to_disable = [pid for pid, enabled in status.items()
+                  if pid != PLUGIN_ID and enabled]
     if not to_disable:
         log.info("[Restash] No other plugins to disable.")
         return []
-    # Add them to the disabled list
-    new_disabled = list(currently_disabled | set(to_disable))
-    if _set_disabled_plugins(stash, new_disabled):
+    enabled_map = {pid: False for pid in to_disable}
+    if _set_plugins_enabled(stash, enabled_map):
         log.info(f"[Restash] Disabled {len(to_disable)} other plugin(s): "
                  f"{', '.join(to_disable)}")
     return to_disable
 
 
 def _reenable_plugins(stash, plugin_ids: list[str]) -> None:
-    """Re-enable the given plugins by removing them from the disabled list."""
+    """Re-enable the given plugins."""
     if not plugin_ids:
         return
-    currently_disabled = set(_get_disabled_plugins(stash))
-    new_disabled = [pid for pid in currently_disabled if pid not in set(plugin_ids)]
-    if _set_disabled_plugins(stash, new_disabled):
+    enabled_map = {pid: True for pid in plugin_ids}
+    if _set_plugins_enabled(stash, enabled_map):
         log.info(f"[Restash] Re-enabled {len(plugin_ids)} plugin(s): "
                  f"{', '.join(plugin_ids)}")
 
