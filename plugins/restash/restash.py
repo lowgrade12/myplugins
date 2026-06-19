@@ -62,7 +62,7 @@ def _set_plugins_enabled(stash, enabled_map: dict[str, bool]) -> bool:
         stash.call_GQL(_SET_PLUGINS_ENABLED, {"enabledMap": enabled_map})
         return True
     except Exception as exc:
-        log.error(f"[Restash] Failed to set disabled plugins: {exc}")
+        log.error(f"[Restash] Failed to update plugin enabled state: {exc}")
         return False
 
 
