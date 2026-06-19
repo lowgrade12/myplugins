@@ -91,6 +91,7 @@ query($filter: FindFilterType) {
 }
 """ % PERFORMER_FRAGMENT
 
+
 def _parse_dt(value):
     if not value or not isinstance(value, str):
         return None
@@ -201,37 +202,6 @@ def map_scene_light(raw: dict) -> dict:
 def fetch_scenes_light(stash, per_page: int = 500, progress=None):
     return _paginate(stash, _FIND_SCENES_LIGHT, "findScenes", "scenes", per_page,
                      map_scene_light, progress)
-
-
-_FIND_SCENE_BY_ID = """
-query($id: ID!) {
-  findScene(id: $id) { %s }
-}
-""" % SCENE_LIGHT_FRAGMENT
-
-_FIND_SCENE_FULL_BY_ID = """
-query($id: ID!) {
-  findScene(id: $id) { %s }
-}
-""" % SCENE_FRAGMENT
-
-
-def fetch_scene_light(stash, scene_id: str) -> dict | None:
-    """Fetch a single scene's light data by ID. Returns mapped dict or None."""
-    result = stash.call_GQL(_FIND_SCENE_BY_ID, {"id": scene_id})
-    raw = (result or {}).get("findScene")
-    if raw is None:
-        return None
-    return map_scene_light(raw)
-
-
-def fetch_scene_full(stash, scene_id: str):
-    """Fetch a single scene's full data by ID. Returns a SceneData or None."""
-    result = stash.call_GQL(_FIND_SCENE_FULL_BY_ID, {"id": scene_id})
-    raw = (result or {}).get("findScene")
-    if raw is None:
-        return None
-    return map_scene(raw)
 
 
 def fetch_scenes(stash, per_page: int = 500, progress=None):

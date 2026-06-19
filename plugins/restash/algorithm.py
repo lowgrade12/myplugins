@@ -174,10 +174,8 @@ def satiation_multiplier(share: float, cfg: Settings) -> float:
     return max(cfg.satiation_floor, 1.0 - overexposure)
 
 
-def trailing_category_shares(scenes: list[models.SceneData],
-                             events_by_id: dict[str, list[Event]],
-                             now: datetime, cfg: Settings,
-                             attr: str) -> dict[str, float]:
+def trailing_category_shares(scenes: list[models.SceneData], now: datetime,
+                             cfg: Settings, attr: str) -> dict[str, float]:
     """Share of total (undecayed, positive) event value over the trailing window,
     per category id found in scene.<attr> (a list of ids)."""
     window = cfg.satiation_window_days
@@ -185,7 +183,7 @@ def trailing_category_shares(scenes: list[models.SceneData],
     total = 0.0
     for scene in scenes:
         recent_value = sum(
-            e.value for e in events_by_id.get(scene.id, [])
+            e.value for e in extract_events(scene, cfg)
             if e.kind in ("play", "o") and age_days(e.timestamp, now) <= window
         )
         if recent_value <= 0:
@@ -199,14 +197,13 @@ def trailing_category_shares(scenes: list[models.SceneData],
 
 
 def apply_satiation(affinities: dict[str, dict], scenes: list[models.SceneData],
-                    events_by_id: dict[str, list[Event]],
                     now: datetime, cfg: Settings) -> dict[str, dict]:
     """D2: multiply each performer/tag affinity by its trailing-window satiation
     multiplier (mutates and returns `affinities`)."""
     for cls, attr in (("performers", "performer_ids"), ("tags", "tag_ids")):
         if cls not in affinities:
             continue
-        shares = trailing_category_shares(scenes, events_by_id, now, cfg, attr)
+        shares = trailing_category_shares(scenes, now, cfg, attr)
         for key in affinities[cls]:
             affinities[cls][key] *= satiation_multiplier(shares.get(key, 0.0), cfg)
     return affinities
@@ -253,22 +250,16 @@ def duration_sweet_spot(scenes: list[models.SceneData]) -> tuple[float | None, f
 
 
 def build_affinities(scenes: list[models.SceneData], now: datetime, cfg: Settings,
-                     favorites: set[str], ratings: dict[str, int],
-                     events_by_id: dict[str, list[Event]] | None = None) -> dict[str, dict]:
+                     favorites: set[str], ratings: dict[str, int]) -> dict[str, dict]:
     """Returns {'performers':{id:aff}, 'tags':{...}, 'studios':{...}}, each in [-1,1],
-    with satiation (D2) already applied to performers and tags.
-
-    `events_by_id` may be passed in when the caller has already computed events for
-    all scenes (e.g. to share with score_scenes), avoiding redundant extraction."""
-    if events_by_id is None:
-        events_by_id = {s.id: extract_events(s, cfg) for s in scenes}
+    with satiation (D2) already applied to performers and tags."""
     classes = {"performers": ("performer_ids", True), "tags": ("tag_ids", True),
                "studios": ("studio_id", False)}
     value_sums = {c: {} for c in classes}
     exposure = {c: {} for c in classes}
 
     for scene in scenes:
-        dsum = decayed_event_sum(events_by_id[scene.id], now,
+        dsum = decayed_event_sum(extract_events(scene, cfg), now,
                                  cfg.taste_half_life_days)
         for cls, (attr, is_list) in classes.items():
             ids = getattr(scene, attr)
@@ -285,7 +276,7 @@ def build_affinities(scenes: list[models.SceneData], now: datetime, cfg: Setting
         else:
             result[cls] = {k: math.tanh(z) for k, z in zscores.items()}
 
-    return apply_satiation(result, scenes, events_by_id, now, cfg)   # D2, performers + tags
+    return apply_satiation(result, scenes, now, cfg)   # D2, performers + tags
 
 
 def _mean_top_n(values: list[float], n: int) -> float:
@@ -298,8 +289,7 @@ def _mean_top_n(values: list[float], n: int) -> float:
 def scene_base(scene: models.SceneData, aff: dict[str, dict],
                tag_scene_counts: dict[str, int], dur_median: float | None,
                dur_scale: float | None, cfg: Settings, now: datetime,
-               scene_ratings: dict[str, int] | None = None,
-               events: list[Event] | None = None) -> dict:
+               scene_ratings: dict[str, int] | None = None) -> dict:
     """Returns a components dict including 'ingredients', 'direct', 'confidence',
     'base' and the sub-parts, all on the [-1,1] scale (quality centered, D1)."""
     perf_affs = [aff["performers"].get(p, 0.0) for p in scene.performer_ids]
@@ -324,7 +314,7 @@ def scene_base(scene: models.SceneData, aff: dict[str, dict],
                    + cfg.ingredient_w_studio * studio_term
                    + cfg.ingredient_w_quality * quality_term)
 
-    events = events if events is not None else extract_events(scene, cfg)
+    events = extract_events(scene, cfg)
     ne = n_events(events)
     # D13: per-scene "loved-ness" fades on its own (longer) half-life, decoupled from
     # the taste-model half-life used in build_affinities, so rediscovery can resurface.
@@ -427,15 +417,11 @@ def score_scenes(scenes: list[models.SceneData], cfg: Settings, now: datetime,
                  date_seed: str, favorites: set[str] | None = None,
                  ratings: dict[str, int] | None = None,
                  aff: dict[str, dict] | None = None,
-                 scene_ratings: dict[str, int] | None = None,
-                 events_by_id: dict[str, list[Event]] | None = None) -> dict[str, models.SceneScore]:
+                 scene_ratings: dict[str, int] | None = None) -> dict[str, models.SceneScore]:
     favorites = favorites or set()
     ratings = ratings or {}
-    if events_by_id is None:
-        events_by_id = {s.id: extract_events(s, cfg) for s in scenes}
     if aff is None:
-        aff = build_affinities(scenes, now, cfg, favorites, ratings,
-                               events_by_id=events_by_id)
+        aff = build_affinities(scenes, now, cfg, favorites, ratings)
     tag_counts: dict[str, int] = {}
     for s in scenes:
         for t in s.tag_ids:
@@ -447,7 +433,7 @@ def score_scenes(scenes: list[models.SceneData], cfg: Settings, now: datetime,
     ids: list[str] = []
     for s in scenes:
         comp = scene_base(s, aff, tag_counts, dur_median, dur_scale, cfg, now,
-                          scene_ratings=scene_ratings, events=events_by_id[s.id])
+                          scene_ratings=scene_ratings)
         ne = comp["n_events"]
         last = None if ne == 0 else _last_engagement(s)
         final, extra = finalize_from_base(
