@@ -30,87 +30,84 @@ PLUGIN_ID = _resolve_plugin_id()
 # --- Plugin management (disable/re-enable other plugins) ---
 
 _PLUGINS_QUERY = """
-query { plugins { id enabled } }
+query { configuration { plugins general { pluginsPath } } }
 """
 
-_SET_PLUGINS_ENABLED = """
-mutation SetPluginsEnabled($enabledMap: BoolMap!) {
-  setPluginsEnabled(enabledMap: $enabledMap)
+_CONFIGURE_PLUGIN = """
+mutation ConfigurePlugin($input: ConfigGeneralInput!) {
+  configureGeneral(input: $input) { pluginsPath }
+}
+"""
+
+_DISABLED_PLUGINS_QUERY = """
+query { configuration { general { disabledPlugins } } }
+"""
+
+_SET_DISABLED_PLUGINS = """
+mutation SetDisabledPlugins($input: ConfigGeneralInput!) {
+  configureGeneral(input: $input) { disabledPlugins }
 }
 """
 
 
-def _get_all_plugins(stash) -> list[dict]:
-    """Retrieve all installed plugins with their id and enabled status."""
+def _get_all_plugin_ids(stash) -> list[str]:
+    """Retrieve all installed plugin IDs from the Stash configuration."""
     try:
-        result = stash.call_GQL(_PLUGINS_QUERY)
+        result = stash.call_GQL("query { plugins { id } }")
         plugins = (result or {}).get("plugins") or []
-        return [p for p in plugins if p.get("id")]
+        return [p["id"] for p in plugins if p.get("id")]
     except Exception:
         return []
 
 
-def _get_enabled_plugin_ids(stash) -> list[str]:
-    """Get the list of currently enabled plugin IDs (excluding self)."""
-    plugins = _get_all_plugins(stash)
-    return [p["id"] for p in plugins if p.get("enabled") and p["id"] != PLUGIN_ID]
-
-
-def _set_plugins_enabled(stash, enabled_map: dict[str, bool]) -> bool:
-    """Enable or disable plugins using the setPluginsEnabled mutation.
-    enabled_map is a dict of plugin_id → bool (True=enabled, False=disabled)."""
-    if not enabled_map:
-        return True
+def _get_disabled_plugins(stash) -> list[str]:
+    """Get the current list of disabled plugin IDs."""
     try:
-        stash.call_GQL(_SET_PLUGINS_ENABLED, {"enabledMap": enabled_map})
+        result = stash.call_GQL(_DISABLED_PLUGINS_QUERY)
+        general = ((result or {}).get("configuration") or {}).get("general") or {}
+        return general.get("disabledPlugins") or []
+    except Exception:
+        return []
+
+
+def _set_disabled_plugins(stash, plugin_ids: list[str]) -> bool:
+    """Set the list of disabled plugins."""
+    try:
+        stash.call_GQL(_SET_DISABLED_PLUGINS, {"input": {"disabledPlugins": plugin_ids}})
         return True
     except Exception as exc:
-        log.error(f"[Restash] Failed to set plugins enabled state: {exc}")
+        log.error(f"[Restash] Failed to set disabled plugins: {exc}")
         return False
 
 
 def _disable_other_plugins(stash) -> list[str]:
-    """Disable all plugins except this one. Returns the list of plugin IDs that were
-    previously enabled (so they can be re-enabled later). Persists the list to disk
-    so it survives a crash or cancellation."""
-    enabled_ids = _get_enabled_plugin_ids(stash)
-    if not enabled_ids:
+    """Disable all plugins except this one. Returns the list of plugins that were
+    previously enabled (so they can be re-enabled later)."""
+    all_ids = _get_all_plugin_ids(stash)
+    currently_disabled = set(_get_disabled_plugins(stash))
+    # Plugins that are currently enabled (not in disabled list) and not us
+    to_disable = [pid for pid in all_ids
+                  if pid != PLUGIN_ID and pid not in currently_disabled]
+    if not to_disable:
         log.info("[Restash] No other plugins to disable.")
         return []
-    # Persist the list BEFORE disabling so we can recover after a crash
-    state.save_disabled_plugins(enabled_ids)
-    # Build a map setting all other enabled plugins to disabled
-    enabled_map = {pid: False for pid in enabled_ids}
-    if _set_plugins_enabled(stash, enabled_map):
-        log.info(f"[Restash] Disabled {len(enabled_ids)} other plugin(s): "
-                 f"{', '.join(enabled_ids)}")
-    else:
-        log.warning("[Restash] Failed to disable plugins — continuing anyway.")
-        state.clear_disabled_plugins()
-        return []
-    return enabled_ids
+    # Add them to the disabled list
+    new_disabled = list(currently_disabled | set(to_disable))
+    if _set_disabled_plugins(stash, new_disabled):
+        log.info(f"[Restash] Disabled {len(to_disable)} other plugin(s): "
+                 f"{', '.join(to_disable)}")
+    return to_disable
 
 
 def _reenable_plugins(stash, plugin_ids: list[str]) -> None:
-    """Re-enable the given plugins and clear the persisted disabled-plugins file."""
+    """Re-enable the given plugins by removing them from the disabled list."""
     if not plugin_ids:
         return
-    enabled_map = {pid: True for pid in plugin_ids}
-    if _set_plugins_enabled(stash, enabled_map):
+    currently_disabled = set(_get_disabled_plugins(stash))
+    new_disabled = [pid for pid in currently_disabled if pid not in set(plugin_ids)]
+    if _set_disabled_plugins(stash, new_disabled):
         log.info(f"[Restash] Re-enabled {len(plugin_ids)} plugin(s): "
                  f"{', '.join(plugin_ids)}")
-    state.clear_disabled_plugins()
-
-
-def _recover_disabled_plugins(stash) -> None:
-    """Check for plugins left disabled by a previous crashed/canceled run and
-    re-enable them. Called at the start of every task run."""
-    stale = state.load_disabled_plugins()
-    if not stale:
-        return
-    log.info(f"[Restash] Recovering {len(stale)} plugin(s) left disabled by a "
-             f"previous interrupted run: {', '.join(stale)}")
-    _reenable_plugins(stash, stale)
 
 
 # --- Input parsing ---
@@ -140,195 +137,24 @@ def build_settings(plugin_cfg: dict | None, args: dict) -> config.Settings:
 # --- Hook handling ---
 
 def _handle_hook(payload: dict) -> int:
-    """Handle hook triggers (Scene.Update.Post, Performer.Create.Post).
-    Scores only the specific entity that was updated using cached state."""
-    hook_context = payload.get("args", {}).get("hookContext", {})
-    hook_type = hook_context.get("type", "")
-    entity_id = str(hook_context.get("id", ""))
-
-    # Fast-path bypass: check lock file before making any API calls. A task
-    # (full/refresh/dry) sets this lock while running, so hooks fired by its own
-    # writes skip immediately with just a file-existence check.
-    if state.is_task_running():
-        log.info(f"[Restash] Hook: {hook_type} for {entity_id} — task running, bypassing.")
-        return 0
-
+    """Handle hook triggers (Scene.Create.Post, Performer.Create.Post).
+    Runs a quick refresh to score the new entity."""
     conn = payload.get("server_connection") or {}
     stash = stash_io.connect(conn)
     caps = stash_io.ensure_schema(stash)
     plugin_cfg = stash_io.fetch_plugin_settings(stash, PLUGIN_ID)
     settings = build_settings(plugin_cfg, {})
-    settings.dry_run = False
+
+    hook_context = payload.get("args", {}).get("hookContext", {})
+    hook_type = hook_context.get("type", "")
+    entity_id = str(hook_context.get("id", ""))
 
     log.info(f"[Restash] Hook fired: {hook_type} for entity {entity_id}")
 
-    if hook_type == "Scene.Update.Post" and entity_id:
-        return _handle_scene_hook(stash, settings, entity_id)
-
-    if hook_type == "Performer.Create.Post":
-        return _run_refresh(stash, settings)
-
-    return 0
-
-
-def _handle_scene_hook(stash, settings, scene_id: str) -> int:
-    """Score a single scene using the cached state. If no usable cache exists,
-    skip gracefully — the scene will be scored on the next scheduled run."""
-    st = state.load_state(state.default_state_path())
-    ok, reason = state.is_valid(st, settings)
-    if not ok:
-        log.info(f"[Restash] Hook: cache unusable ({reason}); skipping single-scene "
-                 f"score for {scene_id}. It will be scored on the next full run.")
-        return 0
-
-    cached_scenes = _parse_cached_scenes(st["scenes"])
-    cached = cached_scenes.get(scene_id)
-    if cached is None:
-        # New scene not in cache — score it from scratch using full data
-        return _handle_new_scene_hook(stash, settings, scene_id, cached_scenes, st=st)
-
-    # Fetch only this scene's current light data
-    cur = stash_io.fetch_scene_light(stash, scene_id)
-    if cur is None:
-        log.info(f"[Restash] Hook: scene {scene_id} not found in library; skipping.")
-        return 0
-
-    now = stash_io.utcnow()
-    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    date_seed = now.strftime("%Y-%m-%d")
-
-    # Compute the raw score for this scene from the cache
-    a, b = cached.get("last_engagement"), cur.get("last_played_at")
-    last_eng = max(filter(None, [a, b]), default=None)
-    watched_since = (cur.get("play_count", 0) > 0 or cur.get("o_counter", 0) > 0)
-    final_raw, extra = algorithm.finalize_from_base(
-        scene_id, cached["base"], cached["n_events"], last_eng, cached["created_at"],
-        now, date_seed, settings, watched_since=watched_since)
-
-    # Estimate percentile from the distribution of all cached scenes
-    all_raws = []
-    for sid, c in cached_scenes.items():
-        # Use stored base as a rough proxy for ranking (avoids recomputing all)
-        all_raws.append(c["base"])
-    all_raws.append(final_raw)
-    pcts = algorithm.percentiles(all_raws)
-    # Our scene's percentile is the last one we appended
-    scene_pct = pcts[-1]
-
-    score = models.SceneScore(
-        id=scene_id, raw=final_raw, restash_score=algorithm.to_restash_score(scene_pct),
-        percentile=scene_pct, n_events=cached["n_events"], wildcard=False,
-        components={**{"base": cached["base"], "n_events": cached["n_events"]}, **extra})
-
-    # Write only this scene's score
-    existing_cf = {scene_id: cur.get("custom_fields") or {}}
-    kw = {}
-    if settings.mirror_to_rating100:
-        kw["current_ratings"] = {scene_id: cur.get("rating100")}
-    result = writer.write_scores(stash, "scene", {scene_id: score}, existing_cf,
-                                 settings, now_iso, **kw)
-    log.info(f"[Restash] Hook: scored scene {scene_id} → "
-             f"restash_score={score.restash_score} "
-             f"(written={result['written']}, skipped={result['skipped']})")
-
-    return 0
-
-
-def _handle_new_scene_hook(stash, settings, scene_id: str, cached_scenes: dict,
-                           st=None) -> int:
-    """Score a new scene that isn't in the cache yet. Fetches full scene data,
-    computes a score using cached affinities, and writes it immediately."""
-    scene = stash_io.fetch_scene_full(stash, scene_id)
-    if scene is None:
-        log.info(f"[Restash] Hook: new scene {scene_id} not found in library; skipping.")
-        return 0
-
-    if not scene.has_file:
-        log.info(f"[Restash] Hook: new scene {scene_id} has no file; skipping.")
-        return 0
-
-    now = stash_io.utcnow()
-    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    date_seed = now.strftime("%Y-%m-%d")
-
-    # Use the passed-in cache state; fall back to loading it if not provided
-    if st is None:
-        st = state.load_state(state.default_state_path())
-    aff = st.get("affinities", {}) if st else {}
-    # Ensure aff has expected structure
-    aff.setdefault("performers", {})
-    aff.setdefault("tags", {})
-    aff.setdefault("studios", {})
-
-    # Compute this scene's base score using its full data
-    # We don't have the full corpus context (tag counts, duration stats) so we
-    # use reasonable defaults — the score will be refined on the next full run.
-    comp = algorithm.scene_base(scene, aff, {}, None, None, settings, now,
-                                scene_ratings={})
-    ne = comp["n_events"]
-    last = None if ne == 0 else algorithm._last_engagement(scene)
-    final_raw, extra = algorithm.finalize_from_base(
-        scene_id, comp["base"], ne, last, scene.created_at, now, date_seed, settings)
-    comp.update(extra)
-
-    # Estimate percentile from the distribution of all cached scenes
-    all_raws = [c["base"] for c in cached_scenes.values()]
-    all_raws.append(final_raw)
-    pcts = algorithm.percentiles(all_raws)
-    scene_pct = pcts[-1]
-
-    score = models.SceneScore(
-        id=scene_id, raw=final_raw, restash_score=algorithm.to_restash_score(scene_pct),
-        percentile=scene_pct, n_events=ne, wildcard=False, components=comp)
-
-    # Write the score (including rating100 mirror if enabled)
-    existing_cf = {scene_id: scene.custom_fields}
-    kw = {}
-    if settings.mirror_to_rating100:
-        kw["current_ratings"] = {scene_id: scene.rating100}
-    result = writer.write_scores(stash, "scene", {scene_id: score}, existing_cf,
-                                 settings, now_iso, **kw)
-    log.info(f"[Restash] Hook: scored NEW scene {scene_id} → "
-             f"restash_score={score.restash_score} "
-             f"(written={result['written']}, skipped={result['skipped']})")
-
-    return 0
-
-
-def _scene_standins_from_cache(cached_scenes: dict) -> list:
-    """Lightweight SceneData stand-ins built purely from cached data (no light fetch)."""
-    out = []
-    for sid, c in cached_scenes.items():
-        out.append(models.SceneData(
-            id=sid, title="", play_history=[], o_history=[],
-            play_count=0, o_counter=0,
-            play_duration=0.0, resume_time=None,
-            last_played_at=c.get("last_engagement"),
-            file_duration=None, height=None, marker_count=0, organized=False,
-            date=None, created_at=c["created_at"], rating100=None,
-            tag_ids=[], performer_ids=c["perf_ids"], studio_id=None,
-            custom_fields={}, has_file=True))
-    return out
-
-
-def _scene_scores_from_cache(cached_scenes: dict) -> dict:
-    """Reconstruct approximate SceneScore objects from cached base scores.
-    Uses base as a proxy for raw — good enough for performer percentile computation."""
-    ids = list(cached_scenes.keys())
-    all_bases = [cached_scenes[sid]["base"] for sid in ids]
-    pcts = algorithm.percentiles(all_bases) if all_bases else []
-    out = {}
-    for idx, sid in enumerate(ids):
-        c = cached_scenes[sid]
-        pct = pcts[idx] if pcts else 50.0
-        out[sid] = models.SceneScore(
-            id=sid, raw=c["base"], restash_score=algorithm.to_restash_score(pct),
-            percentile=pct, n_events=c["n_events"], wildcard=False,
-            components={"base": c["base"], "n_events": c["n_events"]})
-    return out
-
-
-
+    # For hooks, run a refresh (the cache will make it fast if available)
+    # This ensures the new entity gets scored in context of the full library
+    settings.dry_run = False
+    return _run_refresh(stash, settings)
 
 
 # --- Main run logic ---
@@ -356,23 +182,10 @@ def run(payload: dict) -> int:
         _disable_other_plugins(stash)
         return 0
 
-    # Handle restore-plugins mode — re-enable plugins left disabled by a crash
-    if mode == "restore-plugins":
-        _recover_disabled_plugins(stash)
-        return 0
-
-    # Recover plugins left disabled by a previous crashed/canceled run
-    _recover_disabled_plugins(stash)
-
     # Optionally disable other plugins before scoring tasks
     previously_enabled = []
     if settings.disable_plugins_before_run and mode in ("full", "refresh", "dry"):
         previously_enabled = _disable_other_plugins(stash)
-
-    # Acquire a lock so hooks know to bypass during this task
-    lock_acquired = mode in ("full", "refresh", "dry")
-    if lock_acquired:
-        state.acquire_lock()
 
     try:
         if mode == "dry":
@@ -390,9 +203,6 @@ def run(payload: dict) -> int:
         log.error(f"[Restash] unknown mode '{mode}'.")
         return 1
     finally:
-        # Release the lock so hooks resume normal operation
-        if lock_acquired:
-            state.release_lock()
         # Re-enable plugins after the run completes
         if previously_enabled:
             _reenable_plugins(stash, previously_enabled)
@@ -421,13 +231,10 @@ def _run_dry(stash, settings: config.Settings) -> int:
         live_scene={s.id: s.rating100 for s in scenes if s.rating100 is not None},
         live_perf={p.id: p.rating100 for p in performers if p.rating100 is not None})
 
-    events_by_id = {s.id: algorithm.extract_events(s, settings) for s in scenes}
-    aff = algorithm.build_affinities(scenes, now, settings, favorites, perf_ratings,
-                                     events_by_id=events_by_id)
+    aff = algorithm.build_affinities(scenes, now, settings, favorites, perf_ratings)
     scene_scores = algorithm.score_scenes(scenes, settings, now, date_seed,
                                           favorites, perf_ratings, aff,
-                                          scene_ratings=scene_ratings,
-                                          events_by_id=events_by_id)
+                                          scene_ratings=scene_ratings)
     log.progress(0.85)
     performer_scores = algorithm.score_performers(performers, scenes, scene_scores,
                                                  aff, settings, now)
@@ -435,8 +242,7 @@ def _run_dry(stash, settings: config.Settings) -> int:
 
     titles = {s.id: s.title for s in scenes}
     names = {p.id: p.name for p in performers}
-    diag_rows, diag_summary = _watched_diagnostic(scenes, scene_scores, settings,
-                                                   events_by_id=events_by_id)
+    diag_rows, diag_summary = _watched_diagnostic(scenes, scene_scores, settings)
     summary = report.format_summary(len(scene_scores), len(performer_scores),
                                     would_write=len(scene_scores) + len(performer_scores),
                                     skipped=0)
@@ -483,13 +289,10 @@ def _run_full(stash, settings: config.Settings) -> int:
         live_scene={s.id: s.rating100 for s in kept_scenes if s.rating100 is not None},
         live_perf={p.id: p.rating100 for p in kept_performers if p.rating100 is not None})
 
-    events_by_id = {s.id: algorithm.extract_events(s, settings) for s in kept_scenes}
-    aff = algorithm.build_affinities(kept_scenes, now, settings, favorites, perf_ratings,
-                                     events_by_id=events_by_id)
+    aff = algorithm.build_affinities(kept_scenes, now, settings, favorites, perf_ratings)
     scene_scores = algorithm.score_scenes(kept_scenes, settings, now, date_seed,
                                           favorites, perf_ratings, aff,
-                                          scene_ratings=scene_ratings,
-                                          events_by_id=events_by_id)
+                                          scene_ratings=scene_ratings)
     performer_scores = algorithm.score_performers(kept_performers, kept_scenes,
                                                   scene_scores, aff, settings, now)
     log.progress(0.70)
@@ -624,79 +427,21 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     log.info(f"[Restash] refresh: light-read {len(light)} scenes; cache has "
              f"{len(cached_scenes)}; scoring {len(corpus)}.")
     if added:
-        log.info(f"[Restash] refresh: {len(added)} new scene(s) not in cache — "
-                 f"scoring them inline.")
+        log.info(f"[Restash] refresh: {len(added)} new scene(s) not in cache — they "
+                 f"will be scored on the next full recompute.")
     if dropped:
         log.info(f"[Restash] refresh: {len(dropped)} cached scene(s) no longer in library.")
     log.progress(0.45)
 
     scene_scores = algorithm.refresh_scene_scores(corpus, light_by_id, settings,
                                                   now, date_seed)
-
-    # Score new scenes inline using cached affinities (avoids requiring a full run)
-    aff = st.get("affinities", {})
-    aff.setdefault("performers", {})
-    aff.setdefault("tags", {})
-    aff.setdefault("studios", {})
-    new_scene_standins = []
-    new_scene_cache_entries = {}
-    if added:
-        for i, sid in enumerate(added):
-            scene = stash_io.fetch_scene_full(stash, sid)
-            if scene is None or not scene.has_file:
-                continue
-            comp = algorithm.scene_base(scene, aff, {}, None, None, settings, now,
-                                        scene_ratings={})
-            ne = comp["n_events"]
-            last = None if ne == 0 else algorithm._last_engagement(scene)
-            final_raw, extra = algorithm.finalize_from_base(
-                sid, comp["base"], ne, last, scene.created_at, now, date_seed, settings)
-            comp.update(extra)
-            # Build a stand-in for performer scoring
-            new_scene_standins.append(models.SceneData(
-                id=sid, title=scene.title, play_history=[], o_history=[],
-                play_count=scene.play_count, o_counter=scene.o_counter,
-                play_duration=0.0, resume_time=None,
-                last_played_at=scene.last_played_at,
-                file_duration=scene.file_duration, height=None,
-                marker_count=0, organized=False, date=None,
-                created_at=scene.created_at, rating100=scene.rating100,
-                tag_ids=scene.tag_ids, performer_ids=scene.performer_ids,
-                studio_id=scene.studio_id, custom_fields=scene.custom_fields,
-                has_file=True))
-            # Temporarily store raw/comp for percentile calculation below
-            scene_scores[sid] = models.SceneScore(
-                id=sid, raw=final_raw, restash_score=0, percentile=0.0,
-                n_events=ne, wildcard=False, components=comp)
-            # Cache entry so subsequent refreshes don't re-fetch this scene
-            new_scene_cache_entries[sid] = {
-                "base": comp["base"],
-                "n_events": ne,
-                "created_at": _iso(scene.created_at),
-                "last_engagement": _iso(last),
-                "perf_ids": scene.performer_ids,
-            }
-        # Recompute percentiles with new scenes included
-        if new_scene_standins:
-            all_ids = list(scene_scores.keys())
-            all_raws_final = [scene_scores[sid].raw for sid in all_ids]
-            pcts = algorithm.percentiles(all_raws_final)
-            for idx, sid in enumerate(all_ids):
-                sc = scene_scores[sid]
-                scene_scores[sid] = models.SceneScore(
-                    id=sid, raw=sc.raw,
-                    restash_score=algorithm.to_restash_score(pcts[idx]),
-                    percentile=pcts[idx], n_events=sc.n_events,
-                    wildcard=sc.wildcard, components=sc.components)
-            log.info(f"[Restash] refresh: scored {len(new_scene_standins)} new scene(s) "
-                     f"inline.")
     log.progress(0.65)
 
     performers = stash_io.fetch_performers(stash)
-    aff_for_perfs = {"performers": st["affinities"].get("performers", {})}
-    stand_ins = _scene_standins(corpus, light_by_id) + new_scene_standins
+    aff = {"performers": st["affinities"].get("performers", {})}
+    stand_ins = _scene_standins(corpus, light_by_id)
     performer_scores = algorithm.score_performers(performers, stand_ins, scene_scores,
-                                                  aff_for_perfs, settings, now)
+                                                  aff, settings, now)
     log.progress(0.80)
 
     existing_scene_cf = {sid: light_by_id[sid]["custom_fields"] for sid in scene_scores}
@@ -724,28 +469,6 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     if s_failed or p_failed:
         log.error(f"[Restash] {s_failed} scene + {p_failed} performer update(s) were "
                   f"rejected by the server (those IDs were NOT written); re-run to retry.")
-
-    # Persist the updated scene cache so subsequent refreshes don't re-fetch
-    # new scenes and pick up any updated last_engagement values from this run.
-    updated_scene_cache = {}
-    for sid, c in corpus.items():
-        cur = light_by_id.get(sid, {})
-        updated_last = algorithm._max_dt(c.get("last_engagement"),
-                                         cur.get("last_played_at"))
-        updated_scene_cache[sid] = {
-            "base": c["base"],
-            "n_events": c["n_events"],
-            "created_at": _iso(c["created_at"]),
-            "last_engagement": _iso(updated_last),
-            "perf_ids": c["perf_ids"],
-        }
-    updated_scene_cache.update(new_scene_cache_entries)
-    state.save_state(state.default_state_path(), settings=settings,
-                     affinities=st["affinities"], scenes=updated_scene_cache,
-                     written_at=now_iso)
-    log.info(f"[Restash] refresh: updated cache ({len(updated_scene_cache)} scenes; "
-             f"{len(new_scene_cache_entries)} new).")
-
     log.progress(1.0)
     return 1 if (s_failed or p_failed) else 0
 
@@ -800,8 +523,7 @@ def _build_scene_cache(kept_scenes, scene_scores) -> dict:
     return out
 
 
-def _watched_diagnostic(scenes, scene_scores, settings, top_n: int = 20,
-                        events_by_id=None):
+def _watched_diagnostic(scenes, scene_scores, settings, top_n: int = 20):
     """Gather read-only diagnostics for watched scenes (n_events>0)."""
     rows = []
     penalty = penalty_high_comp = resume_zero = resume_zero_penalty = 0
@@ -809,8 +531,7 @@ def _watched_diagnostic(scenes, scene_scores, settings, top_n: int = 20,
         sc = scene_scores.get(s.id)
         if sc is None or sc.n_events == 0:
             continue
-        events = (events_by_id.get(s.id) if events_by_id is not None
-                  else algorithm.extract_events(s, settings))
+        events = algorithm.extract_events(s, settings)
         fired = any(e.kind == "penalty" for e in events)
         comp = algorithm.completion_factor(s.play_duration, s.play_count,
                                            s.file_duration, settings.completion_floor)

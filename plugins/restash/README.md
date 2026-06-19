@@ -58,7 +58,7 @@ Add this repository as a Stash plugin source:
 
 ## Hooks (automatic triggers)
 
-- **Scene.Update.Post** — runs a refresh when a scene is updated (e.g. organized)
+- **Scene.Create.Post** — runs a refresh when a new scene is created
 - **Performer.Create.Post** — runs a refresh when a new performer is created
 
 ## License

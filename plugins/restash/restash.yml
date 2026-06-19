@@ -16,10 +16,10 @@ settings:
   mirrorToRating100:    { displayName: "Also mirror score to rating100 (destructive)", type: BOOLEAN, description: "If on, each entity's Restash score is ALSO written to native rating100 (enables the in-app 'Rating, descending' sort). OVERWRITES manual ratings; a backup is auto-created first and can be reverted with 'Restore Ratings'. Default off." }
   disablePluginsBeforeRun: { displayName: "Disable other plugins before run", type: BOOLEAN, description: "If on, all other enabled plugins will be disabled before Restash runs, then re-enabled after. Prevents interference from other plugins during scoring. Default off." }
 hooks:
-  - name: on_scene_update
-    description: Score a scene automatically when it is updated (e.g. organized).
+  - name: on_scene_create
+    description: Score a newly created scene automatically.
     triggeredBy:
-      - Scene.Update.Post
+      - Scene.Create.Post
   - name: on_performer_create
     description: Score a newly created performer automatically.
     triggeredBy:
@@ -32,7 +32,7 @@ tasks:
     description: Read everything, rebuild the taste model, and write freshness scores to scenes + performers (custom_fields). Skips unchanged.
     defaultArgs: { mode: full }
   - name: Quick Refresh
-    description: Fast daily re-score from the cached taste model — re-applies freshness, novelty, jitter, and wildcards without rebuilding affinities. New scenes are scored inline using cached affinities. Run Recompute All at least once first (Quick Refresh self-heals to a full run if no cache exists).
+    description: Fast daily re-score from the cached taste model — re-applies freshness, novelty, jitter, and wildcards without rebuilding affinities. Run Recompute All at least once first.
     defaultArgs: { mode: refresh }
   - name: Clear Restash Data
     description: Remove all Restash custom fields (restash_*) from scenes + performers. Other fields and ratings are left untouched.
@@ -46,6 +46,3 @@ tasks:
   - name: Disable Other Plugins
     description: Temporarily disable all other enabled plugins. They will be re-enabled when any Restash scoring task completes (if the setting is on).
     defaultArgs: { mode: disable-plugins }
-  - name: Restore Plugins
-    description: Re-enable plugins that were left disabled by a canceled or crashed Restash run. Safe to run anytime — does nothing if no plugins are stuck disabled.
-    defaultArgs: { mode: restore-plugins }
