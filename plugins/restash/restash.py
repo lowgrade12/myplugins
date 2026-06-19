@@ -165,8 +165,8 @@ def _handle_hook(payload: dict) -> int:
     if hook_type == "Scene.Update.Post" and entity_id:
         return _handle_scene_hook(stash, settings, entity_id)
 
-    if hook_type == "Performer.Create.Post" and entity_id:
-        return _handle_performer_hook(stash, settings, entity_id)
+    if hook_type == "Performer.Create.Post":
+        return _run_refresh(stash, settings)
 
     return 0
 
@@ -231,11 +231,6 @@ def _handle_scene_hook(stash, settings, scene_id: str) -> int:
              f"restash_score={score.restash_score} "
              f"(written={result['written']}, skipped={result['skipped']})")
 
-    # Also update the performers associated with this scene
-    perf_ids = cached.get("perf_ids") or []
-    if perf_ids:
-        _score_and_write_scene_performers(stash, settings, perf_ids, st, now, now_iso)
-
     return 0
 
 
@@ -297,11 +292,6 @@ def _handle_new_scene_hook(stash, settings, scene_id: str, cached_scenes: dict,
              f"restash_score={score.restash_score} "
              f"(written={result['written']}, skipped={result['skipped']})")
 
-    # Also score the performers in this new scene
-    if scene.performer_ids and st:
-        _score_and_write_scene_performers(stash, settings, scene.performer_ids,
-                                          st, now, now_iso)
-
     return 0
 
 
@@ -338,92 +328,7 @@ def _scene_scores_from_cache(cached_scenes: dict) -> dict:
     return out
 
 
-def _score_and_write_scene_performers(stash, settings, perf_ids: list,
-                                      st: dict, now, now_iso: str) -> None:
-    """Fetch performers by ID and update their scores using cached scene data.
 
-    Intended to be called from scene hook handlers after a scene is written so
-    that a performer's score reflects scenes that were just linked or changed.
-
-    Uses the D12 Bayesian shrinkage algorithm with only the performers in this
-    scene as the population.  This means the prior (population-mean scene count)
-    is computed from a small sample rather than all performers, so scores for
-    performers with very few scenes may be slightly off compared to a full run.
-    These scores are corrected automatically the next time a full/refresh run is
-    executed.
-    """
-    if not perf_ids:
-        return
-
-    # Single batched request for all performers in the scene
-    performers = stash_io.fetch_performers_by_ids(stash, perf_ids)
-    if not performers:
-        return
-
-    # Honour the exclude tag — skip performers tagged for exclusion
-    exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
-    if exclude_id is not None:
-        performers = [p for p in performers if exclude_id not in p.tag_ids]
-    if not performers:
-        return
-
-    cached_scenes = _parse_cached_scenes(st.get("scenes", {}))
-    stand_ins = _scene_standins_from_cache(cached_scenes)
-    scene_scores = _scene_scores_from_cache(cached_scenes)
-    aff = st.get("affinities", {}) or {}
-    aff_for_perfs = aff.get("performers", {})
-
-    scored = algorithm.score_performers(performers, stand_ins, scene_scores,
-                                        aff_for_perfs, settings, now)
-    if not scored:
-        return
-
-    existing_cf = {p.id: p.custom_fields for p in performers}
-    result = writer.write_scores(stash, "performer", scored, existing_cf,
-                                 settings, now_iso)
-    log.info(f"[Restash] Hook: updated {len(perf_ids)} performer(s) → "
-             f"written={result['written']}, skipped={result['skipped']}")
-
-
-def _handle_performer_hook(stash, settings, performer_id: str) -> int:
-    """Score all performers using cached state when a new performer is created.
-    Falls back gracefully if no usable cache exists."""
-    st = state.load_state(state.default_state_path())
-    ok, reason = state.is_valid(st, settings)
-    if not ok:
-        log.info(f"[Restash] Performer hook: cache unusable ({reason}); "
-                 f"performer {performer_id} will be scored on the next full run.")
-        return 0
-
-    cached_scenes = _parse_cached_scenes(st["scenes"])
-    stand_ins = _scene_standins_from_cache(cached_scenes)
-    scene_scores = _scene_scores_from_cache(cached_scenes)
-
-    aff = st.get("affinities", {})
-    aff.setdefault("performers", {})
-    aff_for_perfs = {"performers": aff["performers"]}
-
-    performers = stash_io.fetch_performers(stash)
-    # Honour the exclude tag
-    exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
-    if exclude_id is not None:
-        performers = [p for p in performers if exclude_id not in p.tag_ids]
-    now = stash_io.utcnow()
-    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    performer_scores = algorithm.score_performers(performers, stand_ins, scene_scores,
-                                                  aff_for_perfs, settings, now)
-
-    existing_perf_cf = {p.id: p.custom_fields for p in performers}
-    kw = {}
-    if settings.mirror_to_rating100:
-        kw["current_ratings"] = {p.id: p.rating100 for p in performers}
-    p_stats = writer.write_scores(stash, "performer", performer_scores, existing_perf_cf,
-                                  settings, now_iso, **kw)
-    log.info(f"[Restash] Performer hook: scored {len(performer_scores)} performer(s) "
-             f"(triggered by new performer {performer_id}); "
-             f"written={p_stats['written']}, skipped={p_stats['skipped']}.")
-    return 0
 
 
 # --- Main run logic ---
