@@ -15,15 +15,6 @@ settings:
   excludeTagName:       { displayName: Exclusion tag name, type: STRING, description: "Entities carrying this tag are dropped from scoring. Leave blank for the default ([Restash: Exclude])." }
   mirrorToRating100:    { displayName: "Also mirror score to rating100 (destructive)", type: BOOLEAN, description: "If on, each entity's Restash score is ALSO written to native rating100 (enables the in-app 'Rating, descending' sort). OVERWRITES manual ratings; a backup is auto-created first and can be reverted with 'Restore Ratings'. Default off." }
   disablePluginsBeforeRun: { displayName: "Disable other plugins before run", type: BOOLEAN, description: "If on, all other enabled plugins will be disabled before Restash runs, then re-enabled after. Prevents interference from other plugins during scoring. Default off." }
-hooks:
-  - name: on_scene_create
-    description: Score a newly created scene automatically.
-    triggeredBy:
-      - Scene.Create.Post
-  - name: on_performer_create
-    description: Score a newly created performer automatically.
-    triggeredBy:
-      - Performer.Create.Post
 tasks:
   - name: Dry Run Report
     description: Full compute, writes nothing, logs top-30 scenes/performers with score breakdowns. Run this first.
