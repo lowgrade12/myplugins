@@ -151,7 +151,7 @@ def _handle_hook(payload: dict) -> int:
 
     log.info(f"[Restash] Hook fired: {hook_type} for entity {entity_id}")
 
-    # For hooks, run a full recompute (the cache will make it fast if available)
+    # For hooks, run a refresh (the cache will make it fast if available)
     # This ensures the new entity gets scored in context of the full library
     settings.dry_run = False
     return _run_refresh(stash, settings)
