@@ -344,18 +344,19 @@ def _score_and_write_scene_performers(stash, settings, perf_ids: list,
 
     Intended to be called from scene hook handlers after a scene is written so
     that a performer's score reflects scenes that were just linked or changed.
-    Uses the D12 Bayesian scoring algorithm with the subset of performers as its
-    own mini-population (an approximation that is corrected on the next full run).
+
+    Uses the D12 Bayesian shrinkage algorithm with only the performers in this
+    scene as the population.  This means the prior (population-mean scene count)
+    is computed from a small sample rather than all performers, so scores for
+    performers with very few scenes may be slightly off compared to a full run.
+    These scores are corrected automatically the next time a full/refresh run is
+    executed.
     """
     if not perf_ids:
         return
 
-    performers = []
-    for pid in perf_ids:
-        p = stash_io.fetch_performer(stash, pid)
-        if p is not None:
-            performers.append(p)
-
+    # Single batched request for all performers in the scene
+    performers = stash_io.fetch_performers_by_ids(stash, perf_ids)
     if not performers:
         return
 
@@ -370,9 +371,7 @@ def _score_and_write_scene_performers(stash, settings, perf_ids: list,
     if not scored:
         return
 
-    # Fetch existing custom fields for only these performers
     existing_cf = {p.id: p.custom_fields for p in performers}
-
     result = writer.write_scores(stash, "performer", scored, existing_cf,
                                  settings, now_iso)
     log.info(f"[Restash] Hook: updated {len(perf_ids)} performer(s) → "
