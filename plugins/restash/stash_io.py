@@ -98,8 +98,8 @@ query($id: ID!) {
 """ % PERFORMER_FRAGMENT
 
 _FIND_PERFORMERS_BY_IDS = """
-query($ids: [Int!]) {
-  findPerformers(performer_ids: $ids) { performers { %s } }
+query($performer_filter: PerformerFilterType) {
+  findPerformers(performer_filter: $performer_filter) { performers { %s } }
 }
 """ % PERFORMER_FRAGMENT
 
@@ -274,7 +274,9 @@ def fetch_performers_by_ids(stash, performer_ids: list) -> list:
         return []
     try:
         variables = {
-            "ids": [int(pid) for pid in performer_ids]
+            "performer_filter": {
+                "id": {"value": list(performer_ids), "modifier": "INCLUDES"}
+            }
         }
         result = stash.call_GQL(_FIND_PERFORMERS_BY_IDS, variables)
         items = ((result or {}).get("findPerformers") or {}).get("performers") or []
