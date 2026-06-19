@@ -91,6 +91,12 @@ query($filter: FindFilterType) {
 }
 """ % PERFORMER_FRAGMENT
 
+_FIND_PERFORMER_BY_ID = """
+query($id: ID!) {
+  findPerformer(id: $id) { %s }
+}
+""" % PERFORMER_FRAGMENT
+
 
 def _parse_dt(value):
     if not value or not isinstance(value, str):
@@ -243,6 +249,16 @@ def fetch_scenes(stash, per_page: int = 500, progress=None):
 def fetch_performers(stash, per_page: int = 500, progress=None):
     return _paginate(stash, _FIND_PERFORMERS, "findPerformers", "performers",
                      per_page, map_performer, progress)
+
+
+def fetch_performer(stash, performer_id: str):
+    """Fetch a single performer by ID. Returns None if not found."""
+    try:
+        result = stash.call_GQL(_FIND_PERFORMER_BY_ID, {"id": performer_id})
+        raw = (result or {}).get("findPerformer")
+        return map_performer(raw) if raw else None
+    except Exception:
+        return None
 
 
 _FIND_TAG = """

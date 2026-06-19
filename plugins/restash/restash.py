@@ -142,6 +142,17 @@ def build_settings(plugin_cfg: dict | None, args: dict) -> config.Settings:
 def _handle_hook(payload: dict) -> int:
     """Handle hook triggers (Scene.Update.Post, Performer.Create.Post).
     Scores only the specific entity that was updated using cached state."""
+    hook_context = payload.get("args", {}).get("hookContext", {})
+    hook_type = hook_context.get("type", "")
+    entity_id = str(hook_context.get("id", ""))
+
+    # Fast-path bypass: check lock file before making any API calls. A task
+    # (full/refresh/dry) sets this lock while running, so hooks fired by its own
+    # writes skip immediately with just a file-existence check.
+    if state.is_task_running():
+        log.info(f"[Restash] Hook: {hook_type} for {entity_id} — task running, bypassing.")
+        return 0
+
     conn = payload.get("server_connection") or {}
     stash = stash_io.connect(conn)
     caps = stash_io.ensure_schema(stash)
@@ -149,17 +160,7 @@ def _handle_hook(payload: dict) -> int:
     settings = build_settings(plugin_cfg, {})
     settings.dry_run = False
 
-    hook_context = payload.get("args", {}).get("hookContext", {})
-    hook_type = hook_context.get("type", "")
-    entity_id = str(hook_context.get("id", ""))
-
     log.info(f"[Restash] Hook fired: {hook_type} for entity {entity_id}")
-
-    # Skip hook processing if a full/refresh task is currently running — the task
-    # itself is writing scores and re-triggering hooks would just slow it down.
-    if state.is_task_running():
-        log.info("[Restash] Hook: task is running, bypassing hook to avoid slowdown.")
-        return 0
 
     if hook_type == "Scene.Update.Post" and entity_id:
         return _handle_scene_hook(stash, settings, entity_id)
@@ -184,7 +185,7 @@ def _handle_scene_hook(stash, settings, scene_id: str) -> int:
     cached = cached_scenes.get(scene_id)
     if cached is None:
         # New scene not in cache — score it from scratch using full data
-        return _handle_new_scene_hook(stash, settings, scene_id, cached_scenes)
+        return _handle_new_scene_hook(stash, settings, scene_id, cached_scenes, st=st)
 
     # Fetch only this scene's current light data
     cur = stash_io.fetch_scene_light(stash, scene_id)
@@ -229,10 +230,17 @@ def _handle_scene_hook(stash, settings, scene_id: str) -> int:
     log.info(f"[Restash] Hook: scored scene {scene_id} → "
              f"restash_score={score.restash_score} "
              f"(written={result['written']}, skipped={result['skipped']})")
+
+    # Also update the performers associated with this scene
+    perf_ids = cached.get("perf_ids") or []
+    if perf_ids:
+        _score_and_write_scene_performers(stash, settings, perf_ids, st, now, now_iso)
+
     return 0
 
 
-def _handle_new_scene_hook(stash, settings, scene_id: str, cached_scenes: dict) -> int:
+def _handle_new_scene_hook(stash, settings, scene_id: str, cached_scenes: dict,
+                           st=None) -> int:
     """Score a new scene that isn't in the cache yet. Fetches full scene data,
     computes a score using cached affinities, and writes it immediately."""
     scene = stash_io.fetch_scene_full(stash, scene_id)
@@ -248,8 +256,9 @@ def _handle_new_scene_hook(stash, settings, scene_id: str, cached_scenes: dict) 
     now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     date_seed = now.strftime("%Y-%m-%d")
 
-    # Load cached affinities for ingredient scoring
-    st = state.load_state(state.default_state_path())
+    # Use the passed-in cache state; fall back to loading it if not provided
+    if st is None:
+        st = state.load_state(state.default_state_path())
     aff = st.get("affinities", {}) if st else {}
     # Ensure aff has expected structure
     aff.setdefault("performers", {})
@@ -287,6 +296,12 @@ def _handle_new_scene_hook(stash, settings, scene_id: str, cached_scenes: dict) 
     log.info(f"[Restash] Hook: scored NEW scene {scene_id} → "
              f"restash_score={score.restash_score} "
              f"(written={result['written']}, skipped={result['skipped']})")
+
+    # Also score the performers in this new scene
+    if scene.performer_ids and st:
+        _score_and_write_scene_performers(stash, settings, scene.performer_ids,
+                                          st, now, now_iso)
+
     return 0
 
 
@@ -321,6 +336,47 @@ def _scene_scores_from_cache(cached_scenes: dict) -> dict:
             percentile=pct, n_events=c["n_events"], wildcard=False,
             components={"base": c["base"], "n_events": c["n_events"]})
     return out
+
+
+def _score_and_write_scene_performers(stash, settings, perf_ids: list,
+                                      st: dict, now, now_iso: str) -> None:
+    """Fetch performers by ID and update their scores using cached scene data.
+
+    Intended to be called from scene hook handlers after a scene is written so
+    that a performer's score reflects scenes that were just linked or changed.
+    Uses the D12 Bayesian scoring algorithm with the subset of performers as its
+    own mini-population (an approximation that is corrected on the next full run).
+    """
+    if not perf_ids:
+        return
+
+    performers = []
+    for pid in perf_ids:
+        p = stash_io.fetch_performer(stash, pid)
+        if p is not None:
+            performers.append(p)
+
+    if not performers:
+        return
+
+    cached_scenes = _parse_cached_scenes(st.get("scenes", {}))
+    stand_ins = _scene_standins_from_cache(cached_scenes)
+    scene_scores = _scene_scores_from_cache(cached_scenes)
+    aff = st.get("affinities", {}) or {}
+    aff_for_perfs = aff.get("performers", {})
+
+    scored = algorithm.score_performers(performers, stand_ins, scene_scores,
+                                        aff_for_perfs, settings, now)
+    if not scored:
+        return
+
+    # Fetch existing custom fields for only these performers
+    existing_cf = {p.id: p.custom_fields for p in performers}
+
+    result = writer.write_scores(stash, "performer", scored, existing_cf,
+                                 settings, now_iso)
+    log.info(f"[Restash] Hook: updated {len(perf_ids)} performer(s) → "
+             f"written={result['written']}, skipped={result['skipped']}")
 
 
 def _handle_performer_hook(stash, settings, performer_id: str) -> int:
