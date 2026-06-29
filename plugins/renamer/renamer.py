@@ -4,6 +4,18 @@ from config_parser import Config
 from file_manager import StashFile
 import pathlib
 
+SCENES_DIRECTORY = pathlib.Path("/data/scenes")
+
+
+def _already_in_scenes_directory(file_path: pathlib.Path) -> bool:
+    """Return True if the file is already inside /data/scenes/."""
+    try:
+        file_path.resolve().relative_to(SCENES_DIRECTORY)
+        return True
+    except ValueError:
+        return False
+
+
 SCENE_FRAGMENT = """
 id
 title
@@ -47,6 +59,10 @@ def rename_scene(stash: StashInterface, config: Config, args):
         return
 
     for file in scene["files"]:
+        file_path = pathlib.Path(file["path"])
+        if _already_in_scenes_directory(file_path):
+            log.info(f"File {file_path} is already in /data/scenes/, skipping.")
+            continue
         stash_file = StashFile(stash, config, scene, file)
         stash_file.rename_file()
 
@@ -62,6 +78,10 @@ def rename_all_scenes(stash: StashInterface, config: Config):
             continue
             
         for file in scene["files"]:
+            file_path = pathlib.Path(file["path"])
+            if _already_in_scenes_directory(file_path):
+                log.info(f"File {file_path} is already in /data/scenes/, skipping.")
+                continue
             stash_file = StashFile(stash, config, scene, file)
             stash_file.rename_file()
 
@@ -93,6 +113,9 @@ def rename_scenes_in_directory(stash: StashInterface, config: Config):
                 file_path.relative_to(filter_path)
                 # File is within the filter directory, proceed with rename
                 log.debug(f"File {file_path} is within filter directory {filter_path}")
+                if _already_in_scenes_directory(file_path):
+                    log.info(f"File {file_path} is already in /data/scenes/, skipping.")
+                    continue
                 stash_file = StashFile(stash, config, scene, file)
                 stash_file.rename_file()
             except ValueError:
