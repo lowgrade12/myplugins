@@ -178,6 +178,7 @@ def _paginate(stash, query: str, root: str, sub: str, per_page: int, mapper,
 
 SCENE_LIGHT_FRAGMENT = """
 id last_played_at play_count o_counter rating100 custom_fields
+tags { id }
 """
 
 _FIND_SCENES_LIGHT = """
@@ -188,7 +189,7 @@ query($filter: FindFilterType) {
 
 
 def map_scene_light(raw: dict) -> dict:
-    """Refresh-only minimal projection: no histories, tags, performers, or files."""
+    """Refresh-only minimal projection: no histories, performers, or files."""
     return {
         "id": str(raw["id"]),
         "last_played_at": _parse_dt(raw.get("last_played_at")),
@@ -196,6 +197,7 @@ def map_scene_light(raw: dict) -> dict:
         "o_counter": raw.get("o_counter") or 0,
         "rating100": raw.get("rating100"),
         "custom_fields": raw.get("custom_fields") or {},
+        "tag_ids": [str(t["id"]) for t in (raw.get("tags") or [])],
     }
 
 

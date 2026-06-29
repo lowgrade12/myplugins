@@ -404,11 +404,20 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     light = stash_io.fetch_scenes_light(stash)
     light_by_id = {s["id"]: s for s in light}
     cached_scenes = _parse_cached_scenes(st["scenes"])
-    corpus = {sid: c for sid, c in cached_scenes.items() if sid in light_by_id}
+
+    exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
+
+    def _scene_excluded(sid):
+        return (exclude_id is not None
+                and exclude_id in light_by_id.get(sid, {}).get("tag_ids", []))
+
+    corpus = {sid: c for sid, c in cached_scenes.items()
+              if sid in light_by_id and not _scene_excluded(sid)}
     added = [sid for sid in light_by_id if sid not in cached_scenes]
     dropped = [sid for sid in cached_scenes if sid not in light_by_id]
     log.info(f"[Restash] refresh: light-read {len(light)} scenes; cache has "
-             f"{len(cached_scenes)}; scoring {len(corpus)}.")
+             f"{len(cached_scenes)}; scoring {len(corpus)} "
+             f"(exclude tag id={exclude_id}).")
     if added:
         log.info(f"[Restash] refresh: {len(added)} new scene(s) not in cache — they "
                  f"will be scored on the next full recompute.")
@@ -420,7 +429,11 @@ def _run_refresh(stash, settings: config.Settings) -> int:
                                                   now, date_seed)
     log.progress(0.65)
 
-    performers = stash_io.fetch_performers(stash)
+    all_performers = stash_io.fetch_performers(stash)
+    if exclude_id is not None:
+        performers = [p for p in all_performers if exclude_id not in p.tag_ids]
+    else:
+        performers = all_performers
     aff = {"performers": st["affinities"].get("performers", {})}
     stand_ins = _scene_standins(corpus, light_by_id)
     performer_scores = algorithm.score_performers(performers, stand_ins, scene_scores,
@@ -443,17 +456,33 @@ def _run_refresh(stash, settings: config.Settings) -> int:
                                   settings, now_iso, **scene_kw)
     p_stats = writer.write_scores(stash, "performer", performer_scores, existing_perf_cf,
                                   settings, now_iso, **perf_kw)
-    log.progress(0.95)
+    log.progress(0.90)
+
+    # Clear restash data from entities that now carry the exclude tag but still
+    # have restash custom fields (mirrors the drop logic in _run_full).
+    kept_scene_ids = set(corpus)
+    kept_perf_ids = {p.id for p in performers}
+    drop_scene_ids = [sid for sid, s in light_by_id.items()
+                      if sid not in kept_scene_ids
+                      and _has_restash(s.get("custom_fields", {}))]
+    drop_perf_ids = [p.id for p in all_performers
+                     if p.id not in kept_perf_ids and _has_restash(p.custom_fields)]
+    cleared = (writer.clear_scores(stash, "scene", drop_scene_ids, settings)
+               + writer.clear_scores(stash, "performer", drop_perf_ids, settings))
 
     log.info(f"[Restash] refresh: scenes written={s_stats['written']} "
              f"skipped={s_stats['skipped']}; performers written={p_stats['written']} "
-             f"skipped={p_stats['skipped']}.")
+             f"skipped={p_stats['skipped']}; excluded cleared={cleared}.")
     s_failed, p_failed = s_stats.get("failed", 0), p_stats.get("failed", 0)
     if s_failed or p_failed:
         log.error(f"[Restash] {s_failed} scene + {p_failed} performer update(s) were "
                   f"rejected by the server (those IDs were NOT written); re-run to retry.")
+    clear_failed = (len(drop_scene_ids) + len(drop_perf_ids)) - cleared
+    if clear_failed:
+        log.error(f"[Restash] {clear_failed} excluded-entity clear(s) were rejected by "
+                  f"the server (restash_* keys remain on those IDs); re-run to retry.")
     log.progress(1.0)
-    return 1 if (s_failed or p_failed) else 0
+    return 1 if (s_failed or p_failed or clear_failed) else 0
 
 
 def _has_restash(custom_fields: dict) -> bool:
