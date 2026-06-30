@@ -12,9 +12,6 @@
   // Increment on every SPA navigation to cancel stale async work
   let navigationVersion = 0;
 
-  // Whether Apollo client has permanently failed (avoid repeated errors)
-  let apolloFailed = false;
-
   // Cached plugin settings
   let pluginConfigCache = null;
 
@@ -36,46 +33,15 @@
   }
 
   /**
-   * Execute a GraphQL query or mutation against the local Stash instance.
-   * Prefers the Stash Apollo client when available; falls back to raw fetch.
+   * Execute a GraphQL query or mutation against the local Stash instance via
+   * direct fetch. Using the shared Stash Apollo client is intentionally avoided
+   * because Stash calls clearStore() on navigation, which would kill any
+   * in-flight plugin queries with an unhandled Invariant Violation.
    * @param {string} query - GraphQL query/mutation string
    * @param {Object} variables - Query variables
    * @returns {Promise<Object>} GraphQL response data
    */
   async function graphqlQuery(query, variables = {}) {
-    if (
-      !apolloFailed &&
-      typeof PluginApi !== "undefined" &&
-      PluginApi.utils &&
-      PluginApi.utils.StashService &&
-      typeof PluginApi.utils.StashService.getClient === "function" &&
-      PluginApi.libraries &&
-      PluginApi.libraries.Apollo
-    ) {
-      try {
-        const { gql } = PluginApi.libraries.Apollo;
-        const client = PluginApi.utils.StashService.getClient();
-        if (!client || !gql) {
-          throw new Error("Apollo client or gql not available");
-        }
-        const doc = gql(query);
-        const isMutation = doc.definitions.some(
-          (def) => def.kind === "OperationDefinition" && def.operation === "mutation"
-        );
-        const result = isMutation
-          ? await client.mutate({ mutation: doc, variables })
-          : await client.query({ query: doc, variables, fetchPolicy: "no-cache" });
-        return result.data;
-      } catch (apolloError) {
-        apolloFailed = true;
-        console.warn(
-          `${PLUGIN_NAME} Apollo client unavailable, using direct fetch:`,
-          apolloError?.message || apolloError
-        );
-      }
-    }
-
-    // Fallback: direct fetch
     const response = await fetch(getGraphQLUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
