@@ -7,8 +7,8 @@ import pathlib
 SCENES_DIRECTORY = pathlib.Path("/data/scenes")
 
 
-def _already_in_scenes_directory(file_path: pathlib.Path) -> bool:
-    """Return True if the file is already inside /data/scenes/."""
+def _is_in_scenes_directory(file_path: pathlib.Path) -> bool:
+    """Return True if the file is inside /data/scenes/."""
     try:
         file_path.resolve().relative_to(SCENES_DIRECTORY)
         return True
@@ -58,10 +58,13 @@ def rename_scene(stash: StashInterface, config: Config, args):
         log.info("Scene is not marked as organized, ignoring scene.")
         return
 
+    input_data = args["hookContext"].get("input", {})
+    title_is_changing = "title" in input_data
+
     for file in scene["files"]:
         file_path = pathlib.Path(file["path"])
-        if _already_in_scenes_directory(file_path):
-            log.info(f"File {file_path} is already in /data/scenes/, skipping.")
+        if _is_in_scenes_directory(file_path) and not title_is_changing:
+            log.info(f"File {file_path} is in /data/scenes/ and title is not changing, skipping.")
             continue
         stash_file = StashFile(stash, config, scene, file)
         stash_file.rename_file()
@@ -79,8 +82,8 @@ def rename_all_scenes(stash: StashInterface, config: Config):
             
         for file in scene["files"]:
             file_path = pathlib.Path(file["path"])
-            if _already_in_scenes_directory(file_path):
-                log.info(f"File {file_path} is already in /data/scenes/, skipping.")
+            if _is_in_scenes_directory(file_path):
+                log.info(f"File {file_path} is in /data/scenes/, skipping.")
                 continue
             stash_file = StashFile(stash, config, scene, file)
             stash_file.rename_file()
@@ -113,8 +116,8 @@ def rename_scenes_in_directory(stash: StashInterface, config: Config):
                 file_path.relative_to(filter_path)
                 # File is within the filter directory, proceed with rename
                 log.debug(f"File {file_path} is within filter directory {filter_path}")
-                if _already_in_scenes_directory(file_path):
-                    log.info(f"File {file_path} is already in /data/scenes/, skipping.")
+                if _is_in_scenes_directory(file_path):
+                    log.info(f"File {file_path} is in /data/scenes/, skipping.")
                     continue
                 stash_file = StashFile(stash, config, scene, file)
                 stash_file.rename_file()
