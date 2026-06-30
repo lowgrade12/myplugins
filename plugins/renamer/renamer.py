@@ -4,13 +4,13 @@ from config_parser import Config
 from file_manager import StashFile
 import pathlib
 
-MEDIA_DIRECTORY = pathlib.Path("/data/media")
+SCENES_DIRECTORY = pathlib.Path("/data/scenes")
 
 
-def _is_in_media_directory(file_path: pathlib.Path) -> bool:
-    """Return True if the file is inside /data/media/."""
+def _is_in_scenes_directory(file_path: pathlib.Path) -> bool:
+    """Return True if the file is inside /data/scenes/."""
     try:
-        file_path.resolve().relative_to(MEDIA_DIRECTORY)
+        file_path.resolve().relative_to(SCENES_DIRECTORY)
         return True
     except ValueError:
         return False
@@ -63,8 +63,8 @@ def rename_scene(stash: StashInterface, config: Config, args):
 
     for file in scene["files"]:
         file_path = pathlib.Path(file["path"])
-        if _is_in_media_directory(file_path) and not title_is_changing:
-            log.info(f"File {file_path} is in /data/media/ and title is not changing, skipping.")
+        if _is_in_scenes_directory(file_path) and not title_is_changing:
+            log.info(f"File {file_path} is in /data/scenes/ and title is not changing, skipping.")
             continue
         stash_file = StashFile(stash, config, scene, file)
         stash_file.rename_file()
@@ -82,8 +82,8 @@ def rename_all_scenes(stash: StashInterface, config: Config):
             
         for file in scene["files"]:
             file_path = pathlib.Path(file["path"])
-            if _is_in_media_directory(file_path):
-                log.info(f"File {file_path} is in /data/media/, skipping.")
+            if _is_in_scenes_directory(file_path):
+                log.info(f"File {file_path} is in /data/scenes/, skipping.")
                 continue
             stash_file = StashFile(stash, config, scene, file)
             stash_file.rename_file()
@@ -116,8 +116,8 @@ def rename_scenes_in_directory(stash: StashInterface, config: Config):
                 file_path.relative_to(filter_path)
                 # File is within the filter directory, proceed with rename
                 log.debug(f"File {file_path} is within filter directory {filter_path}")
-                if _is_in_media_directory(file_path):
-                    log.info(f"File {file_path} is in /data/media/, skipping.")
+                if _is_in_scenes_directory(file_path):
+                    log.info(f"File {file_path} is in /data/scenes/, skipping.")
                     continue
                 stash_file = StashFile(stash, config, scene, file)
                 stash_file.rename_file()
