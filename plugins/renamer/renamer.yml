@@ -11,6 +11,10 @@ hooks:
     description: Rename a scene's files and directory when it is updated.
     triggeredBy:
       - Scene.Update.Post
+  - name: Rename scene files when studio name changes
+    description: Rename scene files for all scenes belonging to a studio when the studio name is changed.
+    triggeredBy:
+      - Studio.Update.Post
 
 settings:
   renameUnorganized:
