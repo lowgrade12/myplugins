@@ -59,15 +59,35 @@ def rename_scene(stash: StashInterface, config: Config, args):
         return
 
     input_data = args["hookContext"].get("input", {})
-    title_is_changing = "title" in input_data
+    relevant_metadata_changing = "title" in input_data or "studio_id" in input_data
 
     for file in scene["files"]:
         file_path = pathlib.Path(file["path"])
-        if _is_in_scenes_directory(file_path) and not title_is_changing:
-            log.info(f"File {file_path} is in /data/scenes/ and title is not changing, skipping.")
+        if _is_in_scenes_directory(file_path) and not relevant_metadata_changing:
+            log.info(f"File {file_path} is in /data/scenes/ and no relevant metadata is changing, skipping.")
             continue
         stash_file = StashFile(stash, config, scene, file)
         stash_file.rename_file()
+
+def rename_scenes_for_studio(stash: StashInterface, config: Config, studio_id: str):
+    """Find all scenes belonging to the given studio and rename their files."""
+    log.info(f"Renaming scenes for studio {studio_id}")
+
+    scenes = stash.find_scenes(
+        f={"studios": {"value": [studio_id], "modifier": "INCLUDES"}},
+        fragment=SCENE_FRAGMENT,
+    )
+
+    for scene in scenes:
+        if not config.rename_unorganized and not scene["organized"]:
+            log.debug(f"Scene {scene['id']} is not marked as organized, skipping.")
+            continue
+
+        for file in scene["files"]:
+            file_path = pathlib.Path(file["path"])
+            stash_file = StashFile(stash, config, scene, file)
+            stash_file.rename_file()
+
 
 def rename_all_scenes(stash: StashInterface, config: Config):
     log.info("Checking all scenes")
