@@ -61,14 +61,17 @@
     {
       category: "Genitalia",
       tags: ["Innie Pussy", "Outie Pussy"],
+      lenient: true,
     },
     {
       category: "Tattoos",
       tags: ["Tattoos", "No Tattoos"],
+      autoTagOnly: true,
     },
     {
       category: "Piercings",
       tags: ["Piercings", "No Piercings"],
+      autoTagOnly: true,
     },
   ];
 
@@ -364,7 +367,7 @@
    * Fetch performer tags AND raw data fields in a single query.
    * Used during panel injection to support auto-tagging from known performer attributes.
    * @param {string} performerId - Performer ID
-   * @returns {Promise<Object>} Performer object with tags, hair_color, eye_color, ethnicity, birthdate, height_cm, fake_tits, gender
+   * @returns {Promise<Object>} Performer object with tags, hair_color, eye_color, ethnicity, birthdate, height_cm, fake_tits, measurements, tattoos, piercings, gender
    */
   async function getPerformerFull(performerId) {
     const result = await graphqlQuery(
@@ -381,6 +384,8 @@
           height_cm
           fake_tits
           measurements
+          tattoos
+          piercings
           gender
         }
       }
@@ -388,7 +393,7 @@
       { id: performerId }
     );
     if (!result.findPerformer) {
-      return { tags: [], hair_color: null, eye_color: null, ethnicity: null, birthdate: null, career_length: null, height_cm: null, fake_tits: null, measurements: null, gender: null };
+      return { tags: [], hair_color: null, eye_color: null, ethnicity: null, birthdate: null, career_length: null, height_cm: null, fake_tits: null, measurements: null, tattoos: null, piercings: null, gender: null };
     }
     const performer = result.findPerformer;
     // Pre-populate tag ID cache
@@ -398,7 +403,8 @@
 
   /**
    * Derive tag suggestions from a performer's raw Stash data fields.
-   * Maps hair_color, eye_color, ethnicity, height_cm, fake_tits, and measurements to matching tag names in DEFAULT_TAG_GROUPS.
+   * Maps hair_color, eye_color, ethnicity, height_cm, fake_tits, measurements,
+   * tattoos, and piercings to matching tag names in DEFAULT_TAG_GROUPS.
    * @param {Object} performer - Performer data object from getPerformerFull
    * @returns {Array<{tagName: string, categoryName: string}>}
    */
@@ -497,6 +503,18 @@
           derived.push({ tagName: bustTag, categoryName: "Bust Size" });
         }
       }
+    }
+
+    // Tattoos
+    if (performer.tattoos !== null && performer.tattoos !== undefined) {
+      const t = String(performer.tattoos).trim();
+      derived.push({ tagName: t === "" ? "No Tattoos" : "Tattoos", categoryName: "Tattoos" });
+    }
+
+    // Piercings
+    if (performer.piercings !== null && performer.piercings !== undefined) {
+      const p = String(performer.piercings).trim();
+      derived.push({ tagName: p === "" ? "No Piercings" : "Piercings", categoryName: "Piercings" });
     }
 
     return derived;
@@ -678,11 +696,15 @@
     if (!scenes || scenes.length === 0) return [];
 
     // Build lookup: managed tag name (lowercase) -> {tagName, categoryName}
+    // Skip groups marked autoTagOnly — those are handled exclusively by Auto Tag.
     const managedTagMap = new Map();
+    const lenientCategories = new Set();
     for (const group of DEFAULT_TAG_GROUPS) {
+      if (group.autoTagOnly) continue;
       for (const tagName of group.tags) {
         managedTagMap.set(tagName.toLowerCase(), { tagName, categoryName: group.category });
       }
+      if (group.lenient) lenientCategories.add(group.category);
     }
 
     // Determine which categories already have a managed tag on the performer.
@@ -690,6 +712,7 @@
     // this plugin (not in tagIdCache) are still recognised as filling a category.
     const filledCategories = new Set();
     for (const group of DEFAULT_TAG_GROUPS) {
+      if (group.autoTagOnly) continue;
       for (const tagName of group.tags) {
         if (currentTagNameSet.has(tagName.toLowerCase())) {
           filledCategories.add(group.category);
@@ -713,15 +736,17 @@
       }
     }
 
-    // Minimum threshold: 25% of total scenes, at least 2, when performer has 4+ scenes
+    // Minimum threshold: 25% of total scenes, at least 2, when performer has 4+ scenes.
+    // Lenient categories always require only 1 occurrence.
     const totalScenes = scenes.length;
-    const minCount = totalScenes >= 4 ? Math.max(2, Math.ceil(totalScenes * 0.25)) : 1;
+    const defaultMinCount = totalScenes >= 4 ? Math.max(2, Math.ceil(totalScenes * 0.25)) : 1;
 
     // Pick the majority-vote winner per category
     const derived = [];
     for (const [categoryName, counts] of categoryCounts) {
       if (filledCategories.has(categoryName)) continue;
 
+      const minCount = lenientCategories.has(categoryName) ? 1 : defaultMinCount;
       let bestTag = null;
       let bestCount = 0;
       for (const [tagName, count] of counts) {
