@@ -58,6 +58,18 @@
       category: "Height",
       tags: ["Tall", "Average", "Short", "Tiny"],
     },
+    {
+      category: "Genitalia",
+      tags: ["Innie", "Outie"],
+    },
+    {
+      category: "Tattoos",
+      tags: ["No Tattoos", "Few Tattoos", "Moderate Tattoos", "Heavy Tattoos"],
+    },
+    {
+      category: "Piercings",
+      tags: ["No Piercings", "Ear Piercings", "Nipple Piercings", "Navel Piercing", "Other Piercings"],
+    },
   ];
 
   // ============================================
