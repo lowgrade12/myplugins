@@ -647,9 +647,10 @@
    *
    * @param {Array<{tags: {id: string, name: string}[]}>} scenes - Scene objects
    * @param {Set<string>} currentTagIds - Tag IDs currently on the performer
+   * @param {Set<string>} currentTagNameSet - Lowercase tag names currently on the performer
    * @returns {Array<{tagName: string, categoryName: string}>}
    */
-  function deriveTagsFromScenes(scenes, currentTagIds) {
+  function deriveTagsFromScenes(scenes, currentTagIds, currentTagNameSet) {
     if (!scenes || scenes.length === 0) return [];
 
     // Build lookup: managed tag name (lowercase) -> {tagName, categoryName}
@@ -660,12 +661,13 @@
       }
     }
 
-    // Determine which categories already have a managed tag on the performer
+    // Determine which categories already have a managed tag on the performer.
+    // Use name-based matching against currentTagNameSet so that tags created outside
+    // this plugin (not in tagIdCache) are still recognised as filling a category.
     const filledCategories = new Set();
     for (const group of DEFAULT_TAG_GROUPS) {
       for (const tagName of group.tags) {
-        const cachedId = tagIdCache.get(tagName.toLowerCase());
-        if (cachedId && currentTagIds.has(cachedId)) {
+        if (currentTagNameSet.has(tagName.toLowerCase())) {
           filledCategories.add(group.category);
           break;
         }
@@ -716,12 +718,14 @@
    * Fetch a performer's scene tags and apply matching managed tags, filling only
    * categories that have no existing managed tag (gap-fill logic).
    * @param {string} performerId - Performer ID
-   * @param {Set<string>} currentTagIds - Current tag IDs on the performer
+   * @param {Array<{id: string, name: string}>} currentTags - Current tags on the performer
    * @returns {Promise<{savedTagIds: Set<string>, suggestedTagIds: Set<string>, sceneCount: number}>}
    */
-  async function applyTagsFromScenes(performerId, currentTagIds) {
+  async function applyTagsFromScenes(performerId, currentTags) {
+    const currentTagIds = new Set(currentTags.map((t) => t.id));
+    const currentTagNameSet = new Set(currentTags.map((t) => t.name.toLowerCase()));
     const scenes = await getPerformerSceneTags(performerId);
-    const derived = deriveTagsFromScenes(scenes, currentTagIds);
+    const derived = deriveTagsFromScenes(scenes, currentTagIds, currentTagNameSet);
 
     if (derived.length === 0) {
       return { savedTagIds: currentTagIds, suggestedTagIds: currentTagIds, sceneCount: scenes.length };
@@ -781,7 +785,7 @@
 
       const { savedTagIds, suggestedTagIds, sceneCount } = await applyTagsFromScenes(
         performerId,
-        currentTagIds
+        currentTags
       );
 
       const activeIds = savedTagIds.size >= suggestedTagIds.size ? savedTagIds : suggestedTagIds;
