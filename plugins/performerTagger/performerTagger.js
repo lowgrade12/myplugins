@@ -60,15 +60,15 @@
     },
     {
       category: "Genitalia",
-      tags: ["Innie", "Outie"],
+      tags: ["Innie Pussy", "Outie Pussy"],
     },
     {
       category: "Tattoos",
-      tags: ["No Tattoos", "Few Tattoos", "Moderate Tattoos", "Heavy Tattoos"],
+      tags: ["Tattoos", "No Tattoos"],
     },
     {
       category: "Piercings",
-      tags: ["No Piercings", "Ear Piercings", "Nipple Piercings", "Navel Piercing", "Other Piercings"],
+      tags: ["Piercings", "No Piercings"],
     },
   ];
 
