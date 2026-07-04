@@ -404,6 +404,199 @@ def update_performer_tags(performer_id: str, tag_ids: list[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Scene tag inference
+# ---------------------------------------------------------------------------
+
+def fetch_performer_scene_tags_py(performer_id: str) -> list[dict]:
+    """Fetch all scenes for a performer and return their tag arrays."""
+    query = """
+    query FindPerformerScenes($performer_id: [ID!]) {
+      findScenes(
+        scene_filter: { performers: { value: $performer_id, modifier: INCLUDES } }
+        filter: { per_page: -1 }
+      ) {
+        scenes {
+          tags { id name }
+        }
+      }
+    }
+    """
+    data = stash_graphql(query, {"performer_id": [performer_id]})
+    return (data or {}).get("findScenes", {}).get("scenes", [])
+
+
+def derive_tags_from_scenes(scenes: list[dict], current_tag_name_to_id: dict) -> list[dict]:
+    """
+    Derive tag suggestions from scene tags using majority vote.
+    Only suggests tags for categories where the performer has no existing managed tag
+    (fill-empty-categories-only logic).
+
+    Minimum threshold: when the performer has 4+ scenes a tag must appear in at least
+    25% of scenes (minimum 2); with fewer scenes any single occurrence qualifies.
+
+    Returns a list of {tag_name, category_name} dicts.
+    """
+    if not scenes:
+        return []
+
+    # Build lookup: managed tag name (lowercase) -> {tag_name, category_name}
+    managed_tag_map: dict[str, dict] = {}
+    for group in DEFAULT_TAG_GROUPS:
+        for tag_name in group["tags"]:
+            managed_tag_map[tag_name.lower()] = {
+                "tag_name": tag_name,
+                "category_name": group["category"],
+            }
+
+    # Determine which categories already have a managed tag on the performer
+    filled_categories: set[str] = set()
+    for group in DEFAULT_TAG_GROUPS:
+        for tag_name in group["tags"]:
+            if tag_name.lower() in current_tag_name_to_id:
+                filled_categories.add(group["category"])
+                break
+
+    # Count occurrences of each managed tag across scenes
+    # category_name -> {tag_name -> count}
+    category_counts: dict[str, dict[str, int]] = {}
+    for scene in scenes:
+        for tag in scene.get("tags", []):
+            managed = managed_tag_map.get(tag["name"].lower())
+            if not managed:
+                continue
+            cat = managed["category_name"]
+            if cat not in category_counts:
+                category_counts[cat] = {}
+            tn = managed["tag_name"]
+            category_counts[cat][tn] = category_counts[cat].get(tn, 0) + 1
+
+    # Minimum threshold: 25% of total scenes (at least 2) when performer has 4+ scenes
+    total_scenes = len(scenes)
+    if total_scenes >= 4:
+        min_count = max(2, math.ceil(total_scenes * 0.25))
+    else:
+        min_count = 1
+
+    # Pick majority-vote winner per category
+    derived = []
+    for category_name, counts in category_counts.items():
+        if category_name in filled_categories:
+            continue
+        best_tag = max(counts, key=lambda t: counts[t])
+        if counts[best_tag] >= min_count:
+            derived.append({"tag_name": best_tag, "category_name": category_name})
+
+    return derived
+
+
+def process_performer_from_scenes(performer: dict) -> str:
+    """
+    Apply scene-inferred tags to a single performer.
+    Returns 'tagged', 'skipped', or 'error'.
+    """
+    performer_id = performer["id"]
+
+    # Skip male performers
+    gender = (performer.get("gender") or "").upper()
+    if gender == "MALE":
+        return "skipped"
+
+    # Pre-populate tag ID cache from this performer's existing tags
+    current_tags = performer.get("tags", [])
+    for t in current_tags:
+        tag_id_cache[t["name"].lower()] = t["id"]
+
+    current_ids = {t["id"] for t in current_tags}
+    current_tag_name_to_id = {t["name"].lower(): t["id"] for t in current_tags}
+
+    # Fetch scene tags for this performer
+    try:
+        scenes = fetch_performer_scene_tags_py(performer_id)
+    except Exception as exc:
+        log.LogError(f"Failed to fetch scenes for performer {performer_id}: {exc}")
+        return "error"
+
+    if not scenes:
+        return "skipped"
+
+    derived = derive_tags_from_scenes(scenes, current_tag_name_to_id)
+    if not derived:
+        return "skipped"
+
+    new_ids = set(current_ids)
+    log_items = []
+
+    for d in derived:
+        category_id = get_or_create_category_tag(d["category_name"])
+        tag_id = get_or_create_tag(d["tag_name"], category_id)
+        if tag_id:
+            new_ids.add(tag_id)
+            log_items.append(f"{d['category_name']}: {d['tag_name']}")
+
+    if new_ids == current_ids:
+        return "skipped"
+
+    if log_items:
+        log.LogDebug(
+            f"Performer {performer_id} ({performer.get('name', '?')}) [scenes]: "
+            f"[{', '.join(log_items)}]"
+        )
+    success = update_performer_tags(performer_id, list(new_ids))
+    return "tagged" if success else "error"
+
+
+def task_batch_tag_from_scenes():
+    """Main logic for the 'Batch Tag from Scenes' Stash task."""
+    log.LogInfo("PerformerTagger: Batch Tag from Scenes starting…")
+
+    first_page = fetch_performer_page_tags_only(1)
+    total = first_page.get("count", 0)
+    total_pages = math.ceil(total / BATCH_PAGE_SIZE) if total else 0
+
+    log.LogInfo(f"PerformerTagger: {total} performer(s) to process across {total_pages} page(s)")
+
+    processed = 0
+    tagged = 0
+    skipped = 0
+    errors = 0
+
+    def handle_page(performers):
+        nonlocal processed, tagged, skipped, errors
+        for performer in performers:
+            result = process_performer_from_scenes(performer)
+            processed += 1
+            if result == "tagged":
+                tagged += 1
+            elif result == "error":
+                errors += 1
+            else:
+                skipped += 1
+
+            progress = processed / total if total else 1.0
+            log.LogProgress(progress)
+
+    handle_page(first_page.get("performers", []))
+
+    for page in range(2, total_pages + 1):
+        page_data = fetch_performer_page_tags_only(page)
+        handle_page(page_data.get("performers", []))
+
+    summary = (
+        f"PerformerTagger: Done. "
+        f"Processed {processed}, tagged {tagged}, skipped {skipped}"
+        + (f", errors {errors}" if errors else "")
+        + "."
+    )
+    log.LogInfo(summary)
+    return {
+        "processed": processed,
+        "tagged": tagged,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Batch processing
 # ---------------------------------------------------------------------------
 
@@ -678,6 +871,11 @@ def main():
 
     if mode == "batch_tag":
         output = task_batch_tag_performers()
+        print(json.dumps({"output": output}))
+        return
+
+    if mode == "batch_tag_from_scenes":
+        output = task_batch_tag_from_scenes()
         print(json.dumps({"output": output}))
         return
 

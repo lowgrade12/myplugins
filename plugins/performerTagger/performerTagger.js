@@ -596,6 +596,213 @@
   }
 
   // ============================================
+  // SCENE TAG INFERENCE
+  // ============================================
+
+  /**
+   * Fetch all scenes for a performer and return their tag arrays.
+   * @param {string} performerId - Performer ID
+   * @returns {Promise<Array<{tags: {id: string, name: string}[]}>>} Array of scene objects
+   */
+  async function getPerformerSceneTags(performerId) {
+    const result = await graphqlQuery(
+      `
+      query FindPerformerScenes($performer_id: [ID!]) {
+        findScenes(
+          scene_filter: { performers: { value: $performer_id, modifier: INCLUDES } }
+          filter: { per_page: -1 }
+        ) {
+          scenes {
+            tags { id name }
+          }
+        }
+      }
+    `,
+      { performer_id: [performerId] }
+    );
+    if (!result.findScenes) return [];
+    return result.findScenes.scenes;
+  }
+
+  /**
+   * Derive tag suggestions from a performer's scene tags using majority vote.
+   * For each managed category, picks the tag that appears most often across all scenes.
+   * Only suggests tags for categories where the performer has no existing managed tag
+   * (fill-empty-categories-only logic).
+   *
+   * Minimum threshold: when the performer has 4+ scenes a tag must appear in at least
+   * 25% of scenes (minimum 2); with fewer scenes any single occurrence qualifies.
+   *
+   * @param {Array<{tags: {id: string, name: string}[]}>} scenes - Scene objects
+   * @param {Set<string>} currentTagIds - Tag IDs currently on the performer
+   * @returns {Array<{tagName: string, categoryName: string}>}
+   */
+  function deriveTagsFromScenes(scenes, currentTagIds) {
+    if (!scenes || scenes.length === 0) return [];
+
+    // Build lookup: managed tag name (lowercase) -> {tagName, categoryName}
+    const managedTagMap = new Map();
+    for (const group of DEFAULT_TAG_GROUPS) {
+      for (const tagName of group.tags) {
+        managedTagMap.set(tagName.toLowerCase(), { tagName, categoryName: group.category });
+      }
+    }
+
+    // Determine which categories already have a managed tag on the performer
+    const filledCategories = new Set();
+    for (const group of DEFAULT_TAG_GROUPS) {
+      for (const tagName of group.tags) {
+        const cachedId = tagIdCache.get(tagName.toLowerCase());
+        if (cachedId && currentTagIds.has(cachedId)) {
+          filledCategories.add(group.category);
+          break;
+        }
+      }
+    }
+
+    // Count occurrences of each managed tag across scenes
+    // categoryName -> Map<tagName, count>
+    const categoryCounts = new Map();
+    for (const scene of scenes) {
+      for (const tag of (scene.tags || [])) {
+        const managed = managedTagMap.get(tag.name.toLowerCase());
+        if (!managed) continue;
+        if (!categoryCounts.has(managed.categoryName)) {
+          categoryCounts.set(managed.categoryName, new Map());
+        }
+        const counts = categoryCounts.get(managed.categoryName);
+        counts.set(managed.tagName, (counts.get(managed.tagName) || 0) + 1);
+      }
+    }
+
+    // Minimum threshold: 25% of total scenes, at least 2, when performer has 4+ scenes
+    const totalScenes = scenes.length;
+    const minCount = totalScenes >= 4 ? Math.max(2, Math.ceil(totalScenes * 0.25)) : 1;
+
+    // Pick the majority-vote winner per category
+    const derived = [];
+    for (const [categoryName, counts] of categoryCounts) {
+      if (filledCategories.has(categoryName)) continue;
+
+      let bestTag = null;
+      let bestCount = 0;
+      for (const [tagName, count] of counts) {
+        if (count > bestCount) {
+          bestCount = count;
+          bestTag = tagName;
+        }
+      }
+      if (bestTag && bestCount >= minCount) {
+        derived.push({ tagName: bestTag, categoryName });
+      }
+    }
+
+    return derived;
+  }
+
+  /**
+   * Fetch a performer's scene tags and apply matching managed tags, filling only
+   * categories that have no existing managed tag (gap-fill logic).
+   * @param {string} performerId - Performer ID
+   * @param {Set<string>} currentTagIds - Current tag IDs on the performer
+   * @returns {Promise<{savedTagIds: Set<string>, suggestedTagIds: Set<string>, sceneCount: number}>}
+   */
+  async function applyTagsFromScenes(performerId, currentTagIds) {
+    const scenes = await getPerformerSceneTags(performerId);
+    const derived = deriveTagsFromScenes(scenes, currentTagIds);
+
+    if (derived.length === 0) {
+      return { savedTagIds: currentTagIds, suggestedTagIds: currentTagIds, sceneCount: scenes.length };
+    }
+
+    const newTagIds = new Set(currentTagIds);
+    const logItems = [];
+
+    for (const { tagName, categoryName } of derived) {
+      const categoryId = await getOrCreateCategoryTag(categoryName);
+      const tagId = await getOrCreateTag(tagName, categoryId);
+      if (tagId) {
+        newTagIds.add(tagId);
+        tagIdCache.set(tagName.toLowerCase(), tagId);
+        logItems.push(`${categoryName}: ${tagName}`);
+      }
+    }
+
+    if (logItems.length > 0) {
+      console.log("[PerformerTagger] Applying tags from scene data:", logItems.join(", "));
+    }
+
+    const changed =
+      newTagIds.size !== currentTagIds.size ||
+      [...newTagIds].some((id) => !currentTagIds.has(id));
+
+    if (!changed) {
+      return { savedTagIds: currentTagIds, suggestedTagIds: currentTagIds, sceneCount: scenes.length };
+    }
+
+    try {
+      await updatePerformerTagIds(performerId, Array.from(newTagIds));
+      console.log(`[PerformerTagger] Applied scene tags to performer ${performerId}`);
+      return { savedTagIds: newTagIds, suggestedTagIds: newTagIds, sceneCount: scenes.length };
+    } catch (err) {
+      console.error("[PerformerTagger] Scene tag apply mutation failed:", err);
+      return { savedTagIds: currentTagIds, suggestedTagIds: newTagIds, sceneCount: scenes.length };
+    }
+  }
+
+  /**
+   * Handle the "Tag from Scenes" button click: fetch scene tags and apply matching
+   * managed tags to the performer for any categories not already filled.
+   * @param {HTMLElement} btn - The button element
+   * @param {HTMLElement} panel - The panel element
+   * @param {string} performerId - Performer ID
+   */
+  async function handleSceneTagClick(btn, panel, performerId) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "Scanning…";
+
+    try {
+      const currentTags = await getPerformerTags(performerId);
+      const currentTagIds = new Set(currentTags.map((t) => t.id));
+
+      const { savedTagIds, suggestedTagIds, sceneCount } = await applyTagsFromScenes(
+        performerId,
+        currentTagIds
+      );
+
+      const activeIds = savedTagIds.size >= suggestedTagIds.size ? savedTagIds : suggestedTagIds;
+      syncPillStates(panel, activeIds);
+
+      const added = savedTagIds.size - currentTagIds.size;
+      if (sceneCount === 0) {
+        showToast(panel, "No scenes found for this performer.", "error");
+      } else if (added > 0) {
+        showToast(panel, `Applied ${added} tag(s) from ${sceneCount} scene(s).`, "success");
+      } else if (suggestedTagIds.size > savedTagIds.size) {
+        showToast(panel, "Apply failed — click Save to apply the highlighted tags.", "error");
+      } else {
+        showToast(panel, `No new tags from ${sceneCount} scene(s) — categories already filled.`, "success");
+      }
+
+      btn.textContent = "✓ Done";
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }, 2000);
+    } catch (err) {
+      console.error("[PerformerTagger] Tag from Scenes failed:", err);
+      btn.textContent = "✗ Error";
+      showToast(panel, "Tag from Scenes failed — check the console for details.", "error");
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }, 2000);
+    }
+  }
+
+  // ============================================
   // URL HELPERS
   // ============================================
 
@@ -821,6 +1028,16 @@
       handleAutoTagClick(autoTagBtn, panel, performerId);
     });
 
+    const sceneTagBtn = document.createElement("button");
+    sceneTagBtn.className = "pt-scenetag-btn";
+    sceneTagBtn.setAttribute("aria-label", "Apply body tags inferred from this performer's scene tags");
+    sceneTagBtn.textContent = "🎬 Tag from Scenes";
+    sceneTagBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleSceneTagClick(sceneTagBtn, panel, performerId);
+    });
+
     const toggle = document.createElement("button");
     toggle.className = "pt-toggle";
     toggle.setAttribute("aria-label", "Toggle quick-tag panel");
@@ -829,6 +1046,7 @@
     toggle.addEventListener("click", (e) => e.stopPropagation());
 
     headerRight.appendChild(autoTagBtn);
+    headerRight.appendChild(sceneTagBtn);
     headerRight.appendChild(saveBtn);
     headerRight.appendChild(toggle);
     header.appendChild(title);

@@ -95,6 +95,32 @@
   cursor: default;
 }
 
+/* Scene Tag button */
+.pt-scenetag-btn {
+  background: rgba(200, 140, 40, 0.15);
+  border: 1px solid rgba(200, 140, 40, 0.5);
+  color: #e8c87d;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  line-height: 1.6;
+}
+
+.pt-scenetag-btn:hover:not(:disabled) {
+  background: rgba(200, 140, 40, 0.28);
+  border-color: rgba(200, 140, 40, 0.8);
+  color: #f0d8a0;
+}
+
+.pt-scenetag-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
 /* Collapse/expand toggle button */
 .pt-toggle {
   background: none;
