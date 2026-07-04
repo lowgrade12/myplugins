@@ -613,27 +613,51 @@
 
   /**
    * Fetch all scenes for a performer and return their tag arrays.
+   * Uses pagination (100 scenes per page) to handle performers with large scene counts
+   * where a single per_page: -1 request may hit server-side result limits.
    * @param {string} performerId - Performer ID
    * @returns {Promise<Array<{tags: {id: string, name: string}[]}>>} Array of scene objects
    */
   async function getPerformerSceneTags(performerId) {
-    const result = await graphqlQuery(
-      `
-      query FindPerformerScenes($performer_id: [ID!]) {
+    const PAGE_SIZE = 100;
+    const query = `
+      query FindPerformerScenes($performer_id: [ID!], $filter: FindFilterType) {
         findScenes(
           scene_filter: { performers: { value: $performer_id, modifier: INCLUDES } }
-          filter: { per_page: -1 }
+          filter: $filter
         ) {
+          count
           scenes {
             tags { id name }
           }
         }
       }
-    `,
-      { performer_id: [performerId] }
-    );
-    if (!result.findScenes) return [];
-    return result.findScenes.scenes;
+    `;
+
+    // Fetch first page to get total count
+    const firstResult = await graphqlQuery(query, {
+      performer_id: [performerId],
+      filter: { per_page: PAGE_SIZE, page: 1 },
+    });
+    if (!firstResult.findScenes) return [];
+
+    const total = firstResult.findScenes.count || 0;
+    const allScenes = [...firstResult.findScenes.scenes];
+
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+
+    // Fetch remaining pages
+    for (let page = 2; page <= totalPages; page++) {
+      const result = await graphqlQuery(query, {
+        performer_id: [performerId],
+        filter: { per_page: PAGE_SIZE, page },
+      });
+      if (result.findScenes && result.findScenes.scenes) {
+        allScenes.push(...result.findScenes.scenes);
+      }
+    }
+
+    return allScenes;
   }
 
   /**
