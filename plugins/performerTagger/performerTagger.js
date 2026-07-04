@@ -58,6 +58,18 @@
       category: "Height",
       tags: ["Tall", "Average", "Short", "Tiny"],
     },
+    {
+      category: "Genitalia",
+      tags: ["Innie Pussy", "Outie Pussy"],
+    },
+    {
+      category: "Tattoos",
+      tags: ["Tattoos", "No Tattoos"],
+    },
+    {
+      category: "Piercings",
+      tags: ["Piercings", "No Piercings"],
+    },
   ];
 
   // ============================================
