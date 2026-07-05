@@ -62,6 +62,11 @@ DEFAULT_TAG_GROUPS = [
         "category": "Height",
         "tags": ["Tall", "Average", "Short", "Tiny"],
     },
+    {
+        "category": "Genitalia",
+        "tags": ["Innie Pussy", "Outie Pussy"],
+        "lenient": True,
+    },
 ]
 
 # All tag names that this plugin manages (lowercase for fast lookup)
@@ -441,12 +446,15 @@ def derive_tags_from_scenes(scenes: list[dict], current_tag_name_to_id: dict) ->
 
     # Build lookup: managed tag name (lowercase) -> {tag_name, category_name}
     managed_tag_map: dict[str, dict] = {}
+    lenient_categories: set[str] = set()
     for group in DEFAULT_TAG_GROUPS:
         for tag_name in group["tags"]:
             managed_tag_map[tag_name.lower()] = {
                 "tag_name": tag_name,
                 "category_name": group["category"],
             }
+        if group.get("lenient"):
+            lenient_categories.add(group["category"])
 
     # Determine which categories already have a managed tag on the performer
     filled_categories: set[str] = set()
@@ -470,18 +478,17 @@ def derive_tags_from_scenes(scenes: list[dict], current_tag_name_to_id: dict) ->
             tn = managed["tag_name"]
             category_counts[cat][tn] = category_counts[cat].get(tn, 0) + 1
 
-    # Minimum threshold: 25% of total scenes (at least 2) when performer has 4+ scenes
+    # Minimum threshold: 25% of total scenes (at least 2) when performer has 4+ scenes.
+    # Lenient categories always require only 1 occurrence.
     total_scenes = len(scenes)
-    if total_scenes >= 4:
-        min_count = max(2, math.ceil(total_scenes * 0.25))
-    else:
-        min_count = 1
+    default_min_count = max(2, math.ceil(total_scenes * 0.25)) if total_scenes >= 4 else 1
 
     # Pick majority-vote winner per category
     derived = []
     for category_name, counts in category_counts.items():
         if category_name in filled_categories:
             continue
+        min_count = 1 if category_name in lenient_categories else default_min_count
         best_tag = max(counts, key=lambda t: counts[t])
         if counts[best_tag] >= min_count:
             derived.append({"tag_name": best_tag, "category_name": category_name})
