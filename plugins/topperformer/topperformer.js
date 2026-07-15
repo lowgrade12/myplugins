@@ -489,9 +489,8 @@
         // Cancel any pending debounced processing from the previous page
         clearTimeout(processingTimeout);
 
-        console.log("[TopPerformer] Page changed:", e.detail.data.location.pathname);
-
         if (shouldProcessStudios()) {
+          console.log("[TopPerformer] Page changed:", e.detail.data.location.pathname);
           // Delay to allow UI to render
           setTimeout(() => {
             processStudioCards();

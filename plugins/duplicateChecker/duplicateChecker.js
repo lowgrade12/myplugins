@@ -1041,15 +1041,16 @@
         navigationVersion++;
         pluginConfigCache = null; // Invalidate config cache on navigation
 
-        const path = e.detail?.data?.location?.pathname || window.location.pathname;
-        console.log(`${PLUGIN_NAME} Page changed:`, path);
-
         // Remove stale button from previous page
         const oldBtn = document.getElementById("dc-find-dupes-btn");
         if (oldBtn) oldBtn.parentElement?.remove();
 
-        // Schedule injection on the new page
-        scheduleInjectButton();
+        // Schedule injection only on relevant pages
+        if (isOnSinglePerformerPage() || isOnSingleStudioPage()) {
+          const path = e.detail?.data?.location?.pathname || window.location.pathname;
+          console.log(`${PLUGIN_NAME} Page changed:`, path);
+          scheduleInjectButton();
+        }
       });
     }
 
