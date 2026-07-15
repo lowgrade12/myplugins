@@ -1421,8 +1421,6 @@
         // page later in the same session still re-runs auto-tag with fresh data.
         autoTaggedPerformers.clear();
 
-        console.log("[PerformerTagger] Page changed:", e.detail.data.location.pathname);
-
         // Remove any existing panel immediately — it belongs to the old page
         const existing = document.getElementById("pt-panel");
         if (existing) {
@@ -1430,6 +1428,7 @@
         }
 
         if (isOnSinglePerformerPage()) {
+          console.log("[PerformerTagger] Page changed:", e.detail.data.location.pathname);
           setTimeout(() => injectPanel(), 500);
         }
       });
