@@ -496,7 +496,7 @@ def derive_tags_from_scenes(scenes: list[dict], current_tag_name_to_id: dict) ->
     return derived
 
 
-def process_performer_from_scenes(performer: dict) -> str:
+def process_performer_from_scenes(performer: dict, skip_tagged: bool = False) -> str:
     """
     Apply scene-inferred tags to a single performer.
     Returns 'tagged', 'skipped', or 'error'.
@@ -512,6 +512,12 @@ def process_performer_from_scenes(performer: dict) -> str:
     current_tags = performer.get("tags", [])
     for t in current_tags:
         tag_id_cache[t["name"].lower()] = t["id"]
+
+    # When skip_tagged is set, skip performers that already have any managed tag
+    if skip_tagged:
+        existing_managed = {t["name"].lower() for t in current_tags} & ALL_MANAGED_TAG_NAMES
+        if existing_managed:
+            return "skipped"
 
     current_ids = {t["id"] for t in current_tags}
     current_tag_name_to_id = {t["name"].lower(): t["id"] for t in current_tags}
@@ -552,7 +558,7 @@ def process_performer_from_scenes(performer: dict) -> str:
     return "tagged" if success else "error"
 
 
-def task_batch_tag_from_scenes():
+def task_batch_tag_from_scenes(skip_tagged: bool = False):
     """Main logic for the 'Batch Tag from Scenes' Stash task."""
     log.LogInfo("PerformerTagger: Batch Tag from Scenes starting…")
 
@@ -570,7 +576,7 @@ def task_batch_tag_from_scenes():
     def handle_page(performers):
         nonlocal processed, tagged, skipped, errors
         for performer in performers:
-            result = process_performer_from_scenes(performer)
+            result = process_performer_from_scenes(performer, skip_tagged=skip_tagged)
             processed += 1
             if result == "tagged":
                 tagged += 1
@@ -641,7 +647,7 @@ def fetch_performer_page(page: int) -> dict:
     return (data or {}).get("findPerformers", {"count": 0, "performers": []})
 
 
-def process_performer(performer: dict) -> str:
+def process_performer(performer: dict, skip_tagged: bool = False) -> str:
     """
     Auto-apply derived tags to a single performer.
     Returns 'tagged', 'skipped', or 'error'.
@@ -657,6 +663,12 @@ def process_performer(performer: dict) -> str:
     current_tags = performer.get("tags", [])
     for t in current_tags:
         tag_id_cache[t["name"].lower()] = t["id"]
+
+    # When skip_tagged is set, skip performers that already have any managed tag
+    if skip_tagged:
+        existing_managed = {t["name"].lower() for t in current_tags} & ALL_MANAGED_TAG_NAMES
+        if existing_managed:
+            return "skipped"
 
     current_ids = {t["id"] for t in current_tags}
 
@@ -715,7 +727,7 @@ def process_performer(performer: dict) -> str:
     return "tagged" if success else "error"
 
 
-def task_batch_tag_performers():
+def task_batch_tag_performers(skip_tagged: bool = False):
     """Main logic for the 'Batch Tag Performers' Stash task."""
     log.LogInfo("PerformerTagger: Batch Tag Performers starting…")
 
@@ -734,7 +746,7 @@ def task_batch_tag_performers():
     def handle_page(performers):
         nonlocal processed, tagged, skipped, errors
         for performer in performers:
-            result = process_performer(performer)
+            result = process_performer(performer, skip_tagged=skip_tagged)
             processed += 1
             if result == "tagged":
                 tagged += 1
@@ -875,14 +887,15 @@ def main():
 
     args = input_data.get("args", {})
     mode = args.get("mode", "")
+    skip_tagged = bool(args.get("skip_tagged", False))
 
     if mode == "batch_tag":
-        output = task_batch_tag_performers()
+        output = task_batch_tag_performers(skip_tagged=skip_tagged)
         print(json.dumps({"output": output}))
         return
 
     if mode == "batch_tag_from_scenes":
-        output = task_batch_tag_from_scenes()
+        output = task_batch_tag_from_scenes(skip_tagged=skip_tagged)
         print(json.dumps({"output": output}))
         return
 
