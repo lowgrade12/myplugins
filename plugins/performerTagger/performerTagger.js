@@ -8,6 +8,11 @@
   // Flag to prevent concurrent panel injections on the same page.
   let injectionInProgress = false;
 
+  // Tracks the navigationVersion for which a panel was last successfully injected.
+  // Prevents the MutationObserver from re-injecting the panel every time React
+  // removes and recreates DOM nodes during initial page hydration.
+  let lastSuccessfulInjectionVersion = -1;
+
   // Track whether Apollo client has failed (skip after first failure to reduce noise)
   let apolloFailed = false;
 
@@ -1369,6 +1374,7 @@
       const target = findInjectionTarget();
       target.element.appendChild(panel);
 
+      lastSuccessfulInjectionVersion = navVersion;
       console.log(`[PerformerTagger] Injected quick-tag panel for performer ${performerId}`);
     } catch (err) {
       console.error("[PerformerTagger] Error injecting panel:", err);
@@ -1401,7 +1407,7 @@
         clearTimeout(processingTimeout);
         processingTimeout = setTimeout(() => {
           const existing = document.getElementById("pt-panel");
-          if (!existing) {
+          if (!existing && lastSuccessfulInjectionVersion !== navigationVersion) {
             injectPanel();
           }
         }, 600);
