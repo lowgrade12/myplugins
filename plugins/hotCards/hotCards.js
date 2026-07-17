@@ -216,6 +216,10 @@ function createAndInsertHotCards(stashData, cardClass, config, isHome) {
     CONFIG.is.ratingBased &&
     (criterion === CRITERIA.rating || !criterion);
 
+  const isPerformerCard = cardClass === "performer-card";
+  // Performers whose death_date was not in the intercepted data — need a batch query
+  const deceasedCheckQueue = [];
+
   cards.forEach((card) => {
     // Skip cards that are already wrapped in a hot card element
     if (card.classList.contains("hot-border")) return;
@@ -254,8 +258,24 @@ function createAndInsertHotCards(stashData, cardClass, config, isHome) {
         segmentParams.style,
         segmentParams.cardOptions
       );
+
+      if (isPerformerCard) {
+        if (data.death_date) {
+          // death_date present in intercepted data and is set — mark immediately
+          hotCardEl.classList.add("hot-deceased");
+        } else if (data.death_date === undefined) {
+          // death_date not included in intercepted data — queue for batch lookup
+          deceasedCheckQueue.push({ id, element: hotCardEl });
+        }
+        // null means explicitly no death date — performer is alive, do nothing
+      }
     }
   });
+
+  // Batch-fetch death dates for performers whose data didn't include the field
+  if (deceasedCheckQueue.length > 0) {
+    fetchAndApplyDeceasedStyling(deceasedCheckQueue);
+  }
 }
 
 function findMatchingValueSegment(
@@ -843,6 +863,59 @@ function getHoloStylePreset() {
     70,
     "background-blend-mode: screen, overlay, hard-light, color-burn, color-dodge, normal;"
   );
+}
+
+/**
+ * Performs a GraphQL query against the Stash API.
+ * @param {string} query - GraphQL query string.
+ * @param {Object} variables - Query variables.
+ * @returns {Promise<Object>} - Parsed JSON response.
+ */
+async function graphqlQuery(query, variables = {}) {
+  const response = await fetch("/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!response.ok) {
+    throw new Error(`[hotCards] GraphQL request failed: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Fetches death dates for a batch of performers and applies the `hot-deceased`
+ * class to the elements of those who have a death date set.
+ * @param {Array<{id: string, element: HTMLElement}>} queue
+ */
+async function fetchAndApplyDeceasedStyling(queue) {
+  if (!queue.length) return;
+  const ids = queue.map((item) => item.id);
+  try {
+    const result = await graphqlQuery(
+      `query FindPerformersDeathDates($ids: [ID!]) {
+        findPerformers(
+          performer_filter: { id: { value: $ids, modifier: INCLUDES } }
+          filter: { per_page: -1 }
+        ) {
+          performers { id death_date }
+        }
+      }`,
+      { ids }
+    );
+    const deceasedIds = new Set(
+      (result?.data?.findPerformers?.performers ?? [])
+        .filter((p) => p.death_date)
+        .map((p) => p.id)
+    );
+    queue.forEach(({ id, element }) => {
+      if (deceasedIds.has(id)) {
+        element.classList.add("hot-deceased");
+      }
+    });
+  } catch (e) {
+    console.error("[hotCards] Failed to fetch performer death dates:", e);
+  }
 }
 
 hotCardsSetup();

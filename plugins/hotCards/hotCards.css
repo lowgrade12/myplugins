@@ -179,6 +179,11 @@
   }
 }
 
+/* Deceased performer - darken and desaturate while preserving the earned border color */
+.hot-deceased {
+  filter: brightness(0.6) saturate(0.65);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hot-card {
     animation: none;
