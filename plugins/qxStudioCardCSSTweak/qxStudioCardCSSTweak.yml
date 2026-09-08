@@ -1,0 +1,7 @@
+name: Qx Studio Card CSS Tweak
+description: Changes the layout of studio cards.
+version: 1.0
+url: https://github.com/lowgrade12/hotornottest.git
+ui:
+  css:
+  - qxStudioCardCSSTweak.css
