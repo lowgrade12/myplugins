@@ -98,6 +98,12 @@
   line-height: 1em;
   align-items: unset;
 }
+.scene-card .card-section .description {
+  order: 2;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0.25em 0;
+}
 .scene-card .card-section .footer {
   display: block;
   width: 100%;

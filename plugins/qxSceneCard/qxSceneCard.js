@@ -277,11 +277,20 @@
     const settings = data?.configuration?.plugins?.qxSceneCard;
     return {
       fadeWatched: settings?.fadeWatched,
+      hideDescription: settings?.hideDescription,
       hideOCounter: settings?.hideOCounter,
       hideMarkers: settings?.hideMarkers,
       hideMovies: settings?.hideMovies,
       hideStudio: settings?.hideStudio
     };
+  };
+
+  // src/components/Description.tsx
+  var Description = ({ details }) => {
+    const { TruncatedText } = components;
+    if (!details)
+      return null;
+    return /* @__PURE__ */ React.createElement(TruncatedText, { className: "description", text: details, lineCount: 3 });
   };
 
   // src/components/SceneCardDetails.tsx
@@ -299,7 +308,7 @@
       }
       PopoverButtons_default(sceneCardNode, settings);
     }, []);
-    return /* @__PURE__ */ React.createElement(SceneDateProvider, { date: scene.date }, /* @__PURE__ */ React.createElement("div", { ref: nodeRef }), /* @__PURE__ */ React.createElement(PerformerList, { performers: scene.performers }), /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement(SceneDateProvider, { date: scene.date }, /* @__PURE__ */ React.createElement("div", { ref: nodeRef }), /* @__PURE__ */ React.createElement(PerformerList, { performers: scene.performers }), !settings.hideDescription && /* @__PURE__ */ React.createElement(Description, { details: scene.details }), /* @__PURE__ */ React.createElement(
       Footer,
       {
         id: scene.id,

@@ -1,3 +1,10 @@
+# v1.2 (2026-09-08)
+
+## New Features
+
+* Scene description is now shown again (truncated to 3 lines, matching Stash's default card behaviour), which was previously omitted by this plugin's redesign.
+* New "Hide scene description" setting to disable this if not wanted.
+
 # v1.1 (2025-05-11)
 
 ## New Features

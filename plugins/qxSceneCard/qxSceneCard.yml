@@ -1,9 +1,12 @@
 name: Qx Scene Card
 description: Redesigns the scene card.
-version: 1.1
+version: 1.2
 settings:
     fadeWatched:
         displayName: Fade watched scenes
+        type: BOOLEAN
+    hideDescription:
+        displayName: Hide scene description
         type: BOOLEAN
     hideMarkers:
         displayName: Hide marker popover button
