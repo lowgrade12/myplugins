@@ -1,6 +1,6 @@
 name: Stash Performer Validator
 description: "Checks every local performer's stash-box (e.g. StashDB) IDs against the live stash-box API to find performers that have been deleted, merged into another performer, or marked deleted/inactive. Flags affected performers with a [StashDB: Needs Review] tag and logs a summary report."
-version: 0.1
+version: 0.2
 url: https://github.com/lowgrade12/myplugins
 exec:
   - python
