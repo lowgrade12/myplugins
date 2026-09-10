@@ -755,7 +755,7 @@ def fetch_performer_page(page: int) -> dict:
           gender
           tattoos
           piercings
-          tags { id name }
+          tags { id name aliases }
         }
       }
     }
@@ -798,7 +798,15 @@ def process_performer(performer: dict, skip_tagged: bool = False) -> str:
 
     # Build a per-performer name→id map directly from current tags.
     # Used for wrong-tag detection to avoid any stale global-cache issues.
-    current_tag_name_to_id = {t["name"].lower(): t["id"] for t in current_tags}
+    # Also index each tag's aliases, so a tag that was renamed/consolidated but still
+    # carries a managed name (e.g. "Piercings") as an alias is still recognised as the
+    # wrong tag and removed, instead of being left in place while a brand-new,
+    # separately-named tag is added alongside it.
+    current_tag_name_to_id: dict[str, str] = {}
+    for t in current_tags:
+        current_tag_name_to_id[t["name"].lower()] = t["id"]
+        for alias in t.get("aliases") or []:
+            current_tag_name_to_id.setdefault(alias.lower(), t["id"])
 
     # Derive tag suggestions from data fields
     derived = derive_tags(performer)
