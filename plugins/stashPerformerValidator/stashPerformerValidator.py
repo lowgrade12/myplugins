@@ -1,8 +1,10 @@
 """Stash Performer Validator
 
-Checks every local performer's stash-box (StashDB, TPDB, etc.) stash_ids
-against the live stash-box GraphQL API to detect performers that have since
-become invalid:
+Checks every local performer's StashDB (stashdb.org) stash_ids against the
+live StashDB GraphQL API to detect performers that have since become
+invalid. Other stash-box-style endpoints (e.g. theporndb.net) are
+intentionally not queried, since theporndb.net is not a real Stash-Box
+GraphQL API:
 
   * Deleted   - the stash-box no longer has a record for that id at all
   * Merged    - the stash-box performer is marked deleted=True and has since
@@ -22,12 +24,18 @@ the plugin log.
 
 import json
 import sys
+from urllib.parse import urlparse
 
 import stashapi.log as log
 from stashapi.stashapp import StashInterface
 from stashapi.stashbox import StashBoxInterface
 
 NEEDS_REVIEW_TAG = "[StashDB: Needs Review]"
+
+# Only validate stash_ids against the main StashDB instance. Other
+# stash-box-style endpoints some users configure (e.g. theporndb.net, which
+# isn't even a real stash-box GraphQL API) are intentionally skipped.
+STASHDB_HOSTNAME = "stashdb.org"
 
 # Fields we need from the stash-box Performer type. `edits` lets us try to
 # resolve what a deleted/merged performer was folded into, by looking for an
@@ -60,6 +68,10 @@ merged_ids
 
 stash_boxes = {}
 
+# Endpoints we've already logged a "skipping non-StashDB endpoint" message
+# for, so we don't repeat it for every performer/stash_id.
+skipped_non_stashdb_endpoints = set()
+
 # Whether the `edits { operation applied target { ... } }` selection on
 # Performer is known to be supported by a given endpoint. Populated lazily the
 # first time we hit a failure, so we don't repeat a doomed query (and its
@@ -74,6 +86,17 @@ full_fragment_supported = {}
 ENDPOINT_ERROR_THRESHOLD = 5
 endpoint_error_counts = {}
 disabled_endpoints = set()
+
+
+def is_stashdb_endpoint(endpoint):
+    """Return True only for the main StashDB instance (stashdb.org). Other
+    stash-box endpoints (e.g. theporndb.net) are intentionally excluded from
+    validation."""
+    try:
+        hostname = urlparse(endpoint).hostname or ""
+    except ValueError:
+        return False
+    return hostname == STASHDB_HOSTNAME or hostname.endswith(f".{STASHDB_HOSTNAME}")
 
 
 def get_stashbox(endpoint):
@@ -189,7 +212,10 @@ def checkPerformers():
     """Check every local performer's stash_ids against their configured
     stash-boxes and report/tag any that are deleted or merged."""
     performers = stash.find_performers(fragment="id name stash_ids { endpoint stash_id } tags { id }")
-    log.info(f"Checking {len(performers)} performers with stash_ids against configured stash-boxes")
+    log.info(
+        f"Checking {len(performers)} performers with stash_ids against StashDB "
+        f"({STASHDB_HOSTNAME}) only; other stash-box endpoints are skipped"
+    )
 
     flagged = []
     cleared = []
@@ -204,6 +230,13 @@ def checkPerformers():
         for sid in stash_ids:
             endpoint = sid["endpoint"]
             stash_id = sid["stash_id"]
+
+            if not is_stashdb_endpoint(endpoint):
+                if endpoint not in skipped_non_stashdb_endpoints:
+                    skipped_non_stashdb_endpoints.add(endpoint)
+                    log.debug(f"Skipping non-StashDB endpoint {endpoint} (only {STASHDB_HOSTNAME} is checked)")
+                continue
+
             checked += 1
             result = check_stashid(endpoint, stash_id)
 
