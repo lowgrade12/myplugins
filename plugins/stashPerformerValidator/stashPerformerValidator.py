@@ -1,8 +1,10 @@
 """Stash Performer Validator
 
-Checks every local performer's stash-box (StashDB, TPDB, etc.) stash_ids
-against the live stash-box GraphQL API to detect performers that have since
-become invalid:
+Checks every local performer's StashDB (stashdb.org) stash_ids against the
+live StashDB GraphQL API to detect performers that have since become
+invalid. Other stash-box-style endpoints (e.g. theporndb.net) are
+intentionally not queried, since theporndb.net is not a real Stash-Box
+GraphQL API:
 
   * Deleted   - the stash-box no longer has a record for that id at all
   * Merged    - the stash-box performer is marked deleted=True and has since
@@ -22,12 +24,18 @@ the plugin log.
 
 import json
 import sys
+from urllib.parse import urlparse
 
 import stashapi.log as log
 from stashapi.stashapp import StashInterface
 from stashapi.stashbox import StashBoxInterface
 
 NEEDS_REVIEW_TAG = "[StashDB: Needs Review]"
+
+# Only validate stash_ids against the main StashDB instance. Other
+# stash-box-style endpoints some users configure (e.g. theporndb.net, which
+# isn't even a real stash-box GraphQL API) are intentionally skipped.
+STASHDB_HOSTNAME = "stashdb.org"
 
 # Fields we need from the stash-box Performer type. `edits` lets us try to
 # resolve what a deleted/merged performer was folded into, by looking for an
@@ -60,6 +68,36 @@ merged_ids
 
 stash_boxes = {}
 
+# Endpoints we've already logged a "skipping non-StashDB endpoint" message
+# for, so we don't repeat it for every performer/stash_id.
+skipped_non_stashdb_endpoints = set()
+
+# Whether the `edits { operation applied target { ... } }` selection on
+# Performer is known to be supported by a given endpoint. Populated lazily the
+# first time we hit a failure, so we don't repeat a doomed query (and its
+# error logging) for every single performer checked against that endpoint.
+full_fragment_supported = {}
+
+# Consecutive lookup errors (not "not found", actual query failures) per
+# endpoint. Used to detect a misconfigured/unreachable endpoint (e.g. an
+# endpoint that isn't really a stash-box GraphQL API at all) and stop
+# hammering it for every remaining performer instead of failing thousands of
+# times in a row.
+ENDPOINT_ERROR_THRESHOLD = 5
+endpoint_error_counts = {}
+disabled_endpoints = set()
+
+
+def is_stashdb_endpoint(endpoint):
+    """Return True only for the main StashDB instance (stashdb.org). Other
+    stash-box endpoints (e.g. theporndb.net) are intentionally excluded from
+    validation."""
+    try:
+        hostname = urlparse(endpoint).hostname or ""
+    except ValueError:
+        return False
+    return hostname == STASHDB_HOSTNAME or hostname.endswith(f".{STASHDB_HOSTNAME}")
+
 
 def get_stashbox(endpoint):
     """Return a cached StashBoxInterface for the given endpoint, building one
@@ -71,6 +109,13 @@ def get_stashbox(endpoint):
             stashbox = StashBoxInterface(
                 {"endpoint": sbx_config["endpoint"], "api_key": sbx_config["api_key"]}
             )
+            # Make GraphQL errors raise an exception instead of only being
+            # logged and silently returning an empty response. Without this,
+            # a single unsupported field in our query fragment gets logged as
+            # 3+ error lines for *every* performer checked, and the failure
+            # is only detected indirectly (an IndexError further down the
+            # call chain) instead of being handled deliberately below.
+            stashbox.RAISE_GQL_ERRORS = True
             stash_boxes[endpoint] = stashbox
             return stashbox
     return None
@@ -94,28 +139,58 @@ def check_stashid(endpoint, stash_id):
     """Look up a single stash-box performer id and classify its status.
 
     Returns a dict: {"status": ..., "name": ..., "merged_into": {...} or None}
-    status is one of: "ok", "not_found", "merged", "deleted"
+    status is one of: "ok", "not_found", "merged", "deleted", "error",
+    "unconfigured", "skipped"
     """
+    if endpoint in disabled_endpoints:
+        return {"status": "skipped", "name": None, "merged_into": None}
+
     stashbox = get_stashbox(endpoint)
     if not stashbox:
         log.warning(f"No configured stash-box connection for endpoint {endpoint}, skipping")
         return {"status": "unconfigured", "name": None, "merged_into": None}
 
+    # Once we've learned an endpoint doesn't support the full `edits`
+    # fragment, don't keep retrying it for every subsequent performer - go
+    # straight to the basic fragment instead.
+    use_full_fragment = full_fragment_supported.get(endpoint, True)
+
     performer = None
-    used_full_fragment = True
+    used_full_fragment = use_full_fragment
+    lookup_failed = False
     try:
-        performer = stashbox.find_performer(stash_id, fragment=PERFORMER_FRAGMENT_FULL)
+        fragment = PERFORMER_FRAGMENT_FULL if use_full_fragment else PERFORMER_FRAGMENT_BASIC
+        performer = stashbox.find_performer(stash_id, fragment=fragment)
+        full_fragment_supported[endpoint] = use_full_fragment
     except Exception as e:
-        log.debug(
-            f"Full fragment lookup failed for {stash_id} on {endpoint} ({e}), "
-            "retrying with basic fragment"
-        )
-        used_full_fragment = False
-        try:
-            performer = stashbox.find_performer(stash_id, fragment=PERFORMER_FRAGMENT_BASIC)
-        except Exception as e2:
-            log.error(f"Failed to look up performer {stash_id} on {endpoint}: {e2}")
-            return {"status": "error", "name": None, "merged_into": None}
+        if use_full_fragment:
+            log.debug(
+                f"Full fragment lookup failed for {stash_id} on {endpoint} ({e}), "
+                "retrying with basic fragment"
+            )
+            full_fragment_supported[endpoint] = False
+            used_full_fragment = False
+            try:
+                performer = stashbox.find_performer(stash_id, fragment=PERFORMER_FRAGMENT_BASIC)
+            except Exception as e2:
+                lookup_failed = True
+                log.error(f"Failed to look up performer {stash_id} on {endpoint}: {e2}")
+        else:
+            lookup_failed = True
+            log.error(f"Failed to look up performer {stash_id} on {endpoint}: {e}")
+
+    if lookup_failed:
+        endpoint_error_counts[endpoint] = endpoint_error_counts.get(endpoint, 0) + 1
+        if endpoint_error_counts[endpoint] >= ENDPOINT_ERROR_THRESHOLD:
+            disabled_endpoints.add(endpoint)
+            log.error(
+                f"Disabling further checks against {endpoint} after "
+                f"{endpoint_error_counts[endpoint]} consecutive lookup errors "
+                "(endpoint may be misconfigured or unreachable)"
+            )
+        return {"status": "error", "name": None, "merged_into": None}
+
+    endpoint_error_counts[endpoint] = 0
 
     if performer is None:
         return {"status": "not_found", "name": None, "merged_into": None}
@@ -137,7 +212,10 @@ def checkPerformers():
     """Check every local performer's stash_ids against their configured
     stash-boxes and report/tag any that are deleted or merged."""
     performers = stash.find_performers(fragment="id name stash_ids { endpoint stash_id } tags { id }")
-    log.info(f"Checking {len(performers)} performers with stash_ids against configured stash-boxes")
+    log.info(
+        f"Checking {len(performers)} performers with stash_ids against StashDB "
+        f"({STASHDB_HOSTNAME}) only; other stash-box endpoints are skipped"
+    )
 
     flagged = []
     cleared = []
@@ -152,6 +230,13 @@ def checkPerformers():
         for sid in stash_ids:
             endpoint = sid["endpoint"]
             stash_id = sid["stash_id"]
+
+            if not is_stashdb_endpoint(endpoint):
+                if endpoint not in skipped_non_stashdb_endpoints:
+                    skipped_non_stashdb_endpoints.add(endpoint)
+                    log.debug(f"Skipping non-StashDB endpoint {endpoint} (only {STASHDB_HOSTNAME} is checked)")
+                continue
+
             checked += 1
             result = check_stashid(endpoint, stash_id)
 
@@ -182,7 +267,7 @@ def checkPerformers():
                     f"Could not verify {performer['name']} ({performer['id']}) "
                     f"stash_id {stash_id} on {endpoint} due to a lookup error"
                 )
-            # "ok" / "unconfigured": nothing to report
+            # "ok" / "unconfigured" / "skipped": nothing to report
 
         if performer_issues:
             flagged.append((performer, performer_issues))
