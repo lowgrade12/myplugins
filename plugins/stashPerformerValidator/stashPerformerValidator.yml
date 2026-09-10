@@ -1,5 +1,5 @@
 name: Stash Performer Validator
-description: Checks every local performer's stash-box (e.g. StashDB) IDs against the live stash-box API to find performers that have been deleted, merged into another performer, or marked deleted/inactive. Flags affected performers with a [StashDB: Needs Review] tag and logs a summary report.
+description: "Checks every local performer's stash-box (e.g. StashDB) IDs against the live stash-box API to find performers that have been deleted, merged into another performer, or marked deleted/inactive. Flags affected performers with a [StashDB: Needs Review] tag and logs a summary report."
 version: 0.1
 url: https://github.com/lowgrade12/myplugins
 exec:
@@ -9,11 +9,11 @@ interface: raw
 settings:
   tagFlagged:
     displayName: Tag flagged performers
-    description: When enabled, adds a [StashDB: Needs Review] tag to any performer with a deleted or merged stash-box ID. Disable to only produce a log report.
+    description: "When enabled, adds a [StashDB: Needs Review] tag to any performer with a deleted or merged stash-box ID. Disable to only produce a log report."
     type: BOOLEAN
   removeTagWhenResolved:
     displayName: Remove tag once resolved
-    description: When enabled, removes the [StashDB: Needs Review] tag from performers that are found to be valid again (e.g. after you fix their stash_id).
+    description: "When enabled, removes the [StashDB: Needs Review] tag from performers that are found to be valid again (e.g. after you fix their stash_id)."
     type: BOOLEAN
 
 tasks:

@@ -43,11 +43,16 @@ buildPlugin()
     version="$ymlVersion-$version"
     dep=$(grep "^# requires:" "$f" | cut -c 12- | sed -e 's/\r//')
 
+    # re-quote name/description so any YAML-significant characters
+    # (e.g. a colon in the description) don't break the generated index.yml
+    nameQuoted=$(printf '%s' "$name" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    descriptionQuoted=$(printf '%s' "$description" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+
     # write to spec index
     echo "- id: $plugin_id
-  name: $name
+  name: \"$nameQuoted\"
   metadata:
-    description: $description
+    description: \"$descriptionQuoted\"
   version: $version
   date: $updated
   path: $plugin_id.zip
