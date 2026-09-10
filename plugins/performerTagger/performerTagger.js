@@ -1360,7 +1360,18 @@
         return;
       }
 
-      const activeTagIds = new Set(performer.tags.map((t) => t.id));
+      let activeTagIds = new Set(performer.tags.map((t) => t.id));
+
+      // Auto-apply tags derived from this performer's data fields (e.g. Piercings,
+      // Tattoos) once per performer per navigation, so categories with no manual
+      // pill stay in sync automatically when the page is opened, without requiring
+      // the user to click "Auto Tag" or remove stale tags by hand.
+      if (!autoTaggedPerformers.has(performerId)) {
+        autoTaggedPerformers.add(performerId);
+        const { savedTagIds } = await autoApplyDerivedTags(performerId, performer, activeTagIds);
+        if (navVersion !== navigationVersion) return;
+        activeTagIds = savedTagIds;
+      }
 
       const collapsed = await shouldStartCollapsed();
       if (navVersion !== navigationVersion) return;

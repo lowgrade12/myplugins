@@ -1,6 +1,6 @@
 name: PerformerTagger
 description: Injects a quick-tag panel on performer detail pages for one-click attribute tagging (hair color, body type, bust size, ethnicity, age range). Also provides a server-side batch task that auto-tags all performers from Stash's Task Queue.
-version: 1.6.0
+version: 1.6.1
 url: https://github.com/lowgrade12/myplugins
 ui:
   javascript:
