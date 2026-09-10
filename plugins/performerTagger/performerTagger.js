@@ -546,6 +546,15 @@
     const newTagIds = new Set(currentTagIds);
     const logItems = [];
 
+    // Build a per-performer name -> id map directly from the performer's own current
+    // tags. Used for wrong-tag detection instead of the shared global tagIdCache, so a
+    // stale/missing cache entry (e.g. a tag never queried yet this session) can never
+    // cause an existing wrong tag — like "No Piercings" — to be silently left in place
+    // when the correct tag — "Piercings" — is applied.
+    const currentTagNameToId = new Map(
+      (performer.tags || []).map((t) => [t.name.toLowerCase(), t.id])
+    );
+
     // --- All categories: always apply the correct tag, replacing any wrong managed tags ---
     // For every category where a value can be derived from the performer's Stash data,
     // ensure the correct tag is present and remove any incorrect managed tags in that
@@ -560,12 +569,14 @@
       let hasCorrectTag = false;
 
       for (const tagName of group.tags) {
-        const cachedId = tagIdCache.get(tagName.toLowerCase());
-        if (cachedId && newTagIds.has(cachedId)) {
+        // Use the performer's own tag map so we never miss a tag due to a stale
+        // or missing entry in the shared global cache (mirrors the Python batch task).
+        const tid = currentTagNameToId.get(tagName.toLowerCase());
+        if (tid && newTagIds.has(tid)) {
           if (tagName.toLowerCase() === correctNameLower) {
             hasCorrectTag = true;
           } else {
-            newTagIds.delete(cachedId); // remove wrong tag
+            newTagIds.delete(tid); // remove wrong tag
             logItems.push(`${group.category}: remove "${tagName}"`);
           }
         }
