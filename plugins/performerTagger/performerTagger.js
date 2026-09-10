@@ -380,7 +380,7 @@
       query FindPerformerFull($id: ID!) {
         findPerformer(id: $id) {
           id
-          tags { id name }
+          tags { id name aliases }
           hair_color
           eye_color
           ethnicity
@@ -551,9 +551,19 @@
     // stale/missing cache entry (e.g. a tag never queried yet this session) can never
     // cause an existing wrong tag — like "No Piercings" — to be silently left in place
     // when the correct tag — "Piercings" — is applied.
-    const currentTagNameToId = new Map(
-      (performer.tags || []).map((t) => [t.name.toLowerCase(), t.id])
-    );
+    // Also index each tag's aliases (not just its primary name), so a tag that was
+    // renamed/consolidated but still carries a managed name (e.g. "Piercings") as an
+    // alias is still recognised as the wrong tag and removed, instead of being left in
+    // place while a brand-new, separately-named tag is added alongside it.
+    const currentTagNameToId = new Map();
+    for (const t of performer.tags || []) {
+      currentTagNameToId.set(t.name.toLowerCase(), t.id);
+      for (const alias of t.aliases || []) {
+        if (!currentTagNameToId.has(alias.toLowerCase())) {
+          currentTagNameToId.set(alias.toLowerCase(), t.id);
+        }
+      }
+    }
 
     // --- All categories: always apply the correct tag, replacing any wrong managed tags ---
     // For every category where a value can be derived from the performer's Stash data,
