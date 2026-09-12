@@ -1,0 +1,9 @@
+name: O History Backfill
+description: Add selected O history timestamps from a scene's prior watch history.
+version: 1.0.0
+url: https://github.com/lowgrade12/myplugins
+ui:
+    javascript:
+        - oHistoryBackfill.js
+    css:
+        - oHistoryBackfill.css
