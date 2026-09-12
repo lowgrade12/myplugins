@@ -1,0 +1,125 @@
+.ohb-button {
+  margin-right: 0.5rem;
+}
+
+.ohb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+}
+
+.ohb-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.ohb-modal {
+  position: relative;
+  z-index: 1;
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  margin: 1rem auto;
+  padding: 1rem;
+  background: var(--bs-body-bg, #1f1f1f);
+  color: var(--bs-body-color, #f8f9fa);
+  border: 1px solid var(--bs-border-color, rgba(255, 255, 255, 0.15));
+  border-radius: 0.5rem;
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ohb-header,
+.ohb-footer,
+.ohb-toolbar,
+.ohb-candidate {
+  display: flex;
+  align-items: center;
+}
+
+.ohb-header,
+.ohb-footer {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ohb-header {
+  margin-bottom: 0.75rem;
+}
+
+.ohb-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.ohb-subtitle {
+  margin-top: 0.25rem;
+  opacity: 0.8;
+  word-break: break-word;
+}
+
+.ohb-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ohb-body {
+  overflow: auto;
+}
+
+.ohb-help {
+  margin-bottom: 0.75rem;
+}
+
+.ohb-error {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+  background: rgba(220, 53, 69, 0.15);
+  color: #ffb3bd;
+}
+
+.ohb-toolbar {
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ohb-count {
+  margin-left: auto;
+  opacity: 0.8;
+}
+
+.ohb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ohb-candidate {
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--bs-border-color, rgba(255, 255, 255, 0.15));
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.ohb-candidate input {
+  margin: 0;
+}
+
+.ohb-empty,
+.ohb-loading {
+  padding: 1rem 0;
+  opacity: 0.8;
+}
+
+.ohb-footer {
+  margin-top: 1rem;
+}
