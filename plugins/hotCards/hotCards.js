@@ -30,6 +30,8 @@ const STYLES = {
   holo: getHoloStylePreset(),
   feature: getFeatureStylePreset(),
   pee: getPeeStylePreset(),
+  missing: getMissingStylePreset(),
+  diaper: getDiaperStylePreset(),
 };
 /**
  * URL regex patterns for each card type.
@@ -890,6 +892,57 @@ function getPeeStylePreset() {
       "hsl(60, 90%, 40%)",
       "hsl(58, 80%, 28%)",
       "hsl(55, 70%, 18%)",
+    ],
+    "4s alternate infinite"
+  );
+}
+
+/**
+ * "missing" preset: near-black gradient with subtle silvery highlights,
+ * using the same diagonal movement (gradient + hover animation timing) as
+ * the "bronze"/"silver"/"gold" presets. The lightness stays low (5-30%) so
+ * the card reads as black at rest, while the desaturated highlight stops
+ * give it the same sense of motion/shine as the other metallic presets.
+ */
+function getMissingStylePreset() {
+  return createCardStyle(
+    "#333333",
+    "6s ease-in-out infinite",
+    "linear",
+    "45deg",
+    [
+      "hsl(0, 0%, 5%)",
+      "hsl(0, 0%, 18%)",
+      "hsl(0, 0%, 8%)",
+      "hsl(0, 0%, 25%)",
+      "hsl(0, 0%, 3%)",
+      "hsl(0, 0%, 15%)",
+      "hsl(0, 0%, 30%)",
+      "hsl(0, 0%, 10%)",
+    ],
+    "8s ease-in-out infinite"
+  );
+}
+
+/**
+ * "diaper" preset: pink gradient, bright at the top fading to a darker
+ * magenta at the bottom (where the scene info sits). Mirrors the "feature"
+ * (cyan) preset's structure/movement (gradient + hover animation timing),
+ * just with the hue shifted from cyan (~180) to pink (~330).
+ */
+function getDiaperStylePreset() {
+  return createCardStyle(
+    "#ffb7d5",
+    "3s ease-in-out infinite",
+    "linear",
+    "180deg",
+    [
+      "hsl(330, 90%, 85%)",
+      "hsl(330, 85%, 75%)",
+      "hsl(330, 80%, 60%)",
+      "hsl(330, 75%, 45%)",
+      "hsl(330, 70%, 30%)",
+      "hsl(330, 65%, 20%)",
     ],
     "4s alternate infinite"
   );
