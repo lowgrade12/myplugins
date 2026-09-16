@@ -30,14 +30,9 @@ const STYLES = {
   holo: getHoloStylePreset(),
   feature: getFeatureStylePreset(),
   pee: getPeeStylePreset(),
-  onyx: getOnyxStylePreset(),
+  missing: getMissingStylePreset(),
   diaper: getDiaperStylePreset(),
 };
-// Allow raw hex color values already in use to resolve directly to their
-// matching named preset, so existing configurations get the preset's
-// gradient/hover motion instead of falling back to a flat fixed color.
-STYLES["#000000"] = STYLES.onyx;
-STYLES["#FFB7D5"] = STYLES.diaper;
 /**
  * URL regex patterns for each card type.
  * Maps card type keys to the routes where that card type should be processed.
@@ -903,13 +898,13 @@ function getPeeStylePreset() {
 }
 
 /**
- * "onyx" preset: near-black gradient with subtle silvery highlights, using
- * the same diagonal movement (gradient + hover animation timing) as the
- * "bronze"/"silver"/"gold" presets. The lightness stays low (5-30%) so the
- * card reads as black at rest, while the desaturated highlight stops give
- * it the same sense of motion/shine as the other metallic presets.
+ * "missing" preset: near-black gradient with subtle silvery highlights,
+ * using the same diagonal movement (gradient + hover animation timing) as
+ * the "bronze"/"silver"/"gold" presets. The lightness stays low (5-30%) so
+ * the card reads as black at rest, while the desaturated highlight stops
+ * give it the same sense of motion/shine as the other metallic presets.
  */
-function getOnyxStylePreset() {
+function getMissingStylePreset() {
   return createCardStyle(
     "#333333",
     "6s ease-in-out infinite",
