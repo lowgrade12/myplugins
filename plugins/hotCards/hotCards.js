@@ -28,6 +28,8 @@ const STYLES = {
   silver: getSilverStylePreset(),
   gold: getGoldStylePreset(),
   holo: getHoloStylePreset(),
+  feature: getFeatureStylePreset(),
+  pee: getPeeStylePreset(),
 };
 /**
  * URL regex patterns for each card type.
@@ -841,6 +843,52 @@ function getGoldStylePreset() {
       "hsl(14.9, 75.8%, 32.4%)",
     ],
     "8s ease-in-out infinite"
+  );
+}
+
+/**
+ * "feature" preset: cyan gradient, bright at the top fading to a darker
+ * teal at the bottom (where the scene info sits), using the same
+ * movement (gradient + hover animation timing) as the default preset.
+ */
+function getFeatureStylePreset() {
+  return createCardStyle(
+    "#22d3ee",
+    "3s ease-in-out infinite",
+    "linear",
+    "180deg",
+    [
+      "hsl(180, 90%, 75%)",
+      "hsl(185, 85%, 60%)",
+      "hsl(190, 80%, 45%)",
+      "hsl(195, 75%, 35%)",
+      "hsl(195, 70%, 25%)",
+      "hsl(195, 65%, 18%)",
+    ],
+    "4s alternate infinite"
+  );
+}
+
+/**
+ * "pee" preset: bright yellow gradient at the top fading to a darker,
+ * muted yellow at the bottom, using the same movement (gradient + hover
+ * animation timing) as the default preset.
+ */
+function getPeeStylePreset() {
+  return createCardStyle(
+    "#fde047",
+    "3s ease-in-out infinite",
+    "linear",
+    "180deg",
+    [
+      "hsl(55, 95%, 75%)",
+      "hsl(50, 90%, 60%)",
+      "hsl(48, 85%, 45%)",
+      "hsl(45, 80%, 32%)",
+      "hsl(42, 75%, 22%)",
+      "hsl(40, 70%, 15%)",
+    ],
+    "4s alternate infinite"
   );
 }
 
