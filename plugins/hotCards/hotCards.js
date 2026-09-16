@@ -870,23 +870,26 @@ function getFeatureStylePreset() {
 }
 
 /**
- * "pee" preset: bright yellow gradient at the top fading to a darker,
- * muted yellow at the bottom, using the same movement (gradient + hover
- * animation timing) as the default preset.
+ * "pee" preset: bright, saturated yellow-green gradient at the top fading
+ * to a darker chartreuse at the bottom, using the same movement (gradient
+ * + hover animation timing) as the default preset. The hue is pushed
+ * further toward green (60-72) and kept lighter/more saturated than the
+ * "gold" preset (which sits in the amber/orange-brown range) so the two
+ * presets remain visually distinct.
  */
 function getPeeStylePreset() {
   return createCardStyle(
-    "#fde047",
+    "#e8ff2e",
     "3s ease-in-out infinite",
     "linear",
     "180deg",
     [
-      "hsl(55, 95%, 75%)",
-      "hsl(50, 90%, 60%)",
-      "hsl(48, 85%, 45%)",
-      "hsl(45, 80%, 32%)",
-      "hsl(42, 75%, 22%)",
-      "hsl(40, 70%, 15%)",
+      "hsl(68, 100%, 82%)",
+      "hsl(65, 100%, 68%)",
+      "hsl(62, 95%, 54%)",
+      "hsl(60, 90%, 40%)",
+      "hsl(58, 80%, 28%)",
+      "hsl(55, 70%, 18%)",
     ],
     "4s alternate infinite"
   );
