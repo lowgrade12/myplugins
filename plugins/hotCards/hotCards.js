@@ -32,6 +32,7 @@ const STYLES = {
   pee: getPeeStylePreset(),
   missing: getMissingStylePreset(),
   diaper: getDiaperStylePreset(),
+  machine: getMachineStylePreset(),
 };
 /**
  * URL regex patterns for each card type.
@@ -945,6 +946,34 @@ function getDiaperStylePreset() {
       "hsl(330, 65%, 20%)",
     ],
     "4s alternate infinite"
+  );
+}
+
+/**
+ * "machine" preset: cool steel-blue metallic gradient, using the same
+ * diagonal movement (gradient + hover animation timing) as the
+ * "bronze"/"silver"/"gold" metallic presets, but shifted to a chrome/steel
+ * hue (~200-210) instead of gold's warm amber or silver's neutral gray, so
+ * it reads as machined metal for a "machine" tag while staying visually
+ * distinct from the other metallic presets.
+ */
+function getMachineStylePreset() {
+  return createCardStyle(
+    "#5a7a8c",
+    "6s ease-in-out infinite",
+    "linear",
+    "45deg",
+    [
+      "hsl(205, 30%, 60%)",
+      "hsl(205, 35%, 40%)",
+      "hsl(205, 40%, 28%)",
+      "hsl(205, 30%, 48%)",
+      "hsl(205, 45%, 18%)",
+      "hsl(205, 25%, 35%)",
+      "hsl(205, 20%, 65%)",
+      "hsl(205, 40%, 22%)",
+    ],
+    "8s ease-in-out infinite"
   );
 }
 
