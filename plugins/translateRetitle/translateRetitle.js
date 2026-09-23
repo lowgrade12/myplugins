@@ -285,8 +285,29 @@
     }
   }
 
-  function findInjectionTarget() {
+  function findInjectionTarget(fields) {
+    const candidates = [fields.titleField, fields.detailsField, fields.codeField];
+    for (const field of candidates) {
+      const form = field?.closest("form");
+      if (!form) {
+        continue;
+      }
+
+      const actionButtons = form.querySelector(".form-actions, .btn-toolbar, .card-footer, .panel-footer");
+      if (actionButtons) {
+        return actionButtons;
+      }
+
+      const submitButton = form.querySelector("button[type='submit'], .btn.btn-primary");
+      if (submitButton?.parentElement) {
+        return submitButton.parentElement;
+      }
+
+      return form;
+    }
+
     return (
+      document.querySelector(".scene-edit-details") ||
       document.querySelector(".detail-header-buttons") ||
       document.querySelector(".detail-header-group .details-edit")?.parentElement ||
       document.querySelector(".detail-header-group") ||
@@ -313,7 +334,7 @@
       return;
     }
 
-    const target = findInjectionTarget();
+    const target = findInjectionTarget(fields);
     if (!target || target.querySelector(`[${BUTTON_ATTR}]`)) {
       return;
     }
