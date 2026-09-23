@@ -30,6 +30,11 @@ import urllib.parse
 import urllib.request
 
 STASHDB_ENDPOINT = "https://stashdb.org/graphql"
+TPDB_ENDPOINTS = (
+    "https://theporndb.net/graphql",
+    "https://theporndb.net/graphql?type=JAV",
+    "https://theporndb.net/graphql?type=jav",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -83,12 +88,12 @@ def stash_graphql(server_connection: dict, query: str, variables: dict | None = 
 # Queries / mutations
 # ---------------------------------------------------------------------------
 
-FIND_TPDB_SCENES_QUERY = """
-query FindTPDBScenes {
+FIND_SCENES_BY_ENDPOINT_QUERY = """
+query FindScenesByEndpoint($endpoint: String!) {
   findScenes(
     scene_filter: {
       stash_id_endpoint: {
-        endpoint: "https://theporndb.net/graphql"
+        endpoint: $endpoint
         modifier: NOT_NULL
       }
     }
@@ -177,15 +182,34 @@ def _is_tpdb_jav(endpoint: str) -> bool:
     return any(str(value).upper() == "JAV" for value in type_values)
 
 
+def _log(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+def _find_tpdb_scenes(server_connection: dict) -> list[dict]:
+    scenes_by_id: dict[str, dict] = {}
+    for endpoint in TPDB_ENDPOINTS:
+        data = stash_graphql(
+            server_connection,
+            FIND_SCENES_BY_ENDPOINT_QUERY,
+            {"endpoint": endpoint},
+        )
+        scenes = data.get("findScenes", {}).get("scenes", [])
+        for scene in scenes:
+            scene_id = scene.get("id")
+            if scene_id:
+                scenes_by_id[scene_id] = scene
+    return list(scenes_by_id.values())
+
+
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
 
 def clean_tpdb_ids(server_connection: dict) -> None:
-    print("[TPDBCleaner] Fetching scenes with ThePornDB IDs...")
-    data = stash_graphql(server_connection, FIND_TPDB_SCENES_QUERY)
-    scenes = data.get("findScenes", {}).get("scenes", [])
-    print(f"[TPDBCleaner] Found {len(scenes)} scene(s) with a ThePornDB ID. Checking for StashDB duplicates...")
+    _log("[TPDBCleaner] Fetching scenes with ThePornDB IDs...")
+    scenes = _find_tpdb_scenes(server_connection)
+    _log(f"[TPDBCleaner] Found {len(scenes)} scene(s) with a ThePornDB ID. Checking for StashDB duplicates...")
 
     updated_count = 0
 
@@ -209,16 +233,15 @@ def clean_tpdb_ids(server_connection: dict) -> None:
                 {"id": scene_id, "stash_ids": new_stash_ids},
             )
             updated_count += 1
-            print(f"[TPDBCleaner] Scene {scene_id}: removed ThePornDB ID.")
+            _log(f"[TPDBCleaner] Scene {scene_id}: removed ThePornDB ID.")
 
-    print(f"[TPDBCleaner] Done. Updated {updated_count} scene(s).")
+    _log(f"[TPDBCleaner] Done. Updated {updated_count} scene(s).")
 
 
 def clean_javstash_tpdb_jav_ids(server_connection: dict) -> None:
-    print("[TPDBCleaner] Fetching scenes with ThePornDB IDs...")
-    data = stash_graphql(server_connection, FIND_TPDB_SCENES_QUERY)
-    scenes = data.get("findScenes", {}).get("scenes", [])
-    print(
+    _log("[TPDBCleaner] Fetching scenes with ThePornDB IDs...")
+    scenes = _find_tpdb_scenes(server_connection)
+    _log(
         f"[TPDBCleaner] Found {len(scenes)} scene(s) with a ThePornDB ID. "
         "Checking for JAVstash + TPDB(type=JAV) duplicates..."
     )
@@ -244,37 +267,36 @@ def clean_javstash_tpdb_jav_ids(server_connection: dict) -> None:
                 {"id": scene_id, "stash_ids": new_stash_ids},
             )
             updated_count += 1
-            print(f"[TPDBCleaner] Scene {scene_id}: removed ThePornDB type=JAV ID.")
+            _log(f"[TPDBCleaner] Scene {scene_id}: removed ThePornDB type=JAV ID.")
 
-    print(f"[TPDBCleaner] Done. Updated {updated_count} scene(s).")
+    _log(f"[TPDBCleaner] Done. Updated {updated_count} scene(s).")
 
 
 def _wait_for_job(server_connection: dict, job_id: str) -> str:
     """Poll Stash until the background job reaches a terminal state."""
-    print(f"[TPDBCleaner] Waiting for identify task (Job ID: {job_id}) to finish...")
+    _log(f"[TPDBCleaner] Waiting for identify task (Job ID: {job_id}) to finish...")
     while True:
         data = stash_graphql(server_connection, CHECK_JOB_QUERY, {"jobId": job_id})
         status = data.get("findJob", {}).get("status", "")
         if status in ("FINISHED", "CANCELLED", "FAILED"):
-            print(f"[TPDBCleaner] Job {job_id} completed with status: {status}")
+            _log(f"[TPDBCleaner] Job {job_id} completed with status: {status}")
             return status
         time.sleep(5)
 
 
 def scrape_and_clean(server_connection: dict) -> None:
     """Trigger StashDB identify on all TPDB-tagged scenes, wait, then clean."""
-    print("[TPDBCleaner] Phase 1: Finding scenes with ThePornDB IDs...")
-    data = stash_graphql(server_connection, FIND_TPDB_SCENES_QUERY)
-    scenes = data.get("findScenes", {}).get("scenes", [])
+    _log("[TPDBCleaner] Phase 1: Finding scenes with ThePornDB IDs...")
+    scenes = _find_tpdb_scenes(server_connection)
 
     if not scenes:
-        print("[TPDBCleaner] No TPDB scenes found. Nothing to do!")
+        _log("[TPDBCleaner] No TPDB scenes found. Nothing to do!")
         return
 
     scene_ids = [scene["id"] for scene in scenes]
-    print(f"[TPDBCleaner] Found {len(scene_ids)} scene(s) tagged with ThePornDB.")
+    _log(f"[TPDBCleaner] Found {len(scene_ids)} scene(s) tagged with ThePornDB.")
 
-    print("[TPDBCleaner] Phase 2: Triggering StashDB identify task...")
+    _log("[TPDBCleaner] Phase 2: Triggering StashDB identify task...")
     result = stash_graphql(
         server_connection,
         TRIGGER_IDENTIFY_MUTATION,
@@ -286,11 +308,11 @@ def scrape_and_clean(server_connection: dict) -> None:
 
     status = _wait_for_job(server_connection, str(job_id))
     if status == "FAILED":
-        print("[TPDBCleaner] Warning: identify job failed. Proceeding with cleanup anyway.")
+        _log("[TPDBCleaner] Warning: identify job failed. Proceeding with cleanup anyway.")
 
-    print("[TPDBCleaner] Phase 3: Cleaning up old ThePornDB IDs...")
+    _log("[TPDBCleaner] Phase 3: Cleaning up old ThePornDB IDs...")
     clean_tpdb_ids(server_connection)
-    print(
+    _log(
         f"[TPDBCleaner] Scrape & clean complete. "
         f"Processed {len(scene_ids)} scene(s)."
     )
@@ -315,7 +337,7 @@ def main() -> int:
             clean_tpdb_ids(server_connection)
         return 0
     except Exception as exc:
-        print(f"[TPDBCleaner] ERROR: {exc}", file=sys.stderr)
+        _log(f"[TPDBCleaner] ERROR: {exc}")
         return 1
 
 
