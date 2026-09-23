@@ -5,3 +5,6 @@ url: https://github.com/lowgrade12/myplugins
 ui:
   javascript:
     - translateRetitle.js
+  csp:
+    connect-src:
+      - https://translate.googleapis.com
