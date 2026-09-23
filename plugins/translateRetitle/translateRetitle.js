@@ -108,6 +108,10 @@
     return { detailsField, titleField, codeField };
   }
 
+  function getFieldContainer(field) {
+    return field?.closest(".form-group, .input-group, .row, .form-floating") || field?.parentElement || null;
+  }
+
   function splitForTranslate(text) {
     const paragraphs = text.split("\n");
     const chunks = [];
@@ -286,32 +290,19 @@
   }
 
   function findInjectionTarget(fields) {
-    const candidates = [fields.titleField, fields.detailsField, fields.codeField];
-    for (const field of candidates) {
-      const form = field?.closest("form");
-      if (!form) {
-        continue;
-      }
+    const preferredTargets = [
+      getFieldContainer(fields.codeField),
+      getFieldContainer(fields.titleField),
+      getFieldContainer(fields.detailsField),
+    ];
 
-      const actionButtons = form.querySelector(".form-actions, .btn-toolbar, .card-footer, .panel-footer");
-      if (actionButtons) {
-        return actionButtons;
+    for (const target of preferredTargets) {
+      if (target && isVisible(target)) {
+        return target;
       }
-
-      const submitButton = form.querySelector("button[type='submit'], .btn.btn-primary");
-      if (submitButton?.parentElement) {
-        return submitButton.parentElement;
-      }
-
-      return form;
     }
 
     return (
-      document.querySelector(".scene-edit-details") ||
-      document.querySelector(".detail-header-buttons") ||
-      document.querySelector(".detail-header-group .details-edit")?.parentElement ||
-      document.querySelector(".detail-header-group") ||
-      document.querySelector(".details-edit")?.parentElement ||
       document.querySelector(".detail-header") ||
       document.querySelector(".detail-container") ||
       null
@@ -324,6 +315,7 @@
     button.className = "btn btn-secondary btn-sm";
     button.setAttribute(BUTTON_ATTR, "true");
     button.textContent = "Translate + Retitle";
+    button.title = "Translate details to English and replace title with code";
     button.addEventListener("click", () => runWorkflow(button));
     return button;
   }
@@ -339,7 +331,13 @@
       return;
     }
 
-    target.prepend(createButton());
+    const wrapper = document.createElement("div");
+    wrapper.style.marginTop = "0.5rem";
+    wrapper.style.display = "flex";
+    wrapper.style.justifyContent = "flex-end";
+    wrapper.appendChild(createButton());
+
+    target.appendChild(wrapper);
   }
 
   function onRouteOrDomChange() {

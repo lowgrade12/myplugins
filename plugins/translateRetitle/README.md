@@ -19,4 +19,5 @@ When you click **Translate + Retitle**, it:
 
 - This plugin is **manual only** and never runs automatically.
 - It does **not** auto-save; review the result and save in Stash as normal.
+- The button is injected near the edit fields instead of the native save actions.
 - Translation uses `https://translate.googleapis.com/translate_a/single`.

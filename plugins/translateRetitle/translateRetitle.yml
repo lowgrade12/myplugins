@@ -1,6 +1,6 @@
 name: Translate Retitle
 description: Manual helper to prepend title to details, translate details, then replace title with code.
-version: 1.0.0
+version: 1.0.1
 url: https://github.com/lowgrade12/myplugins
 ui:
   javascript:
