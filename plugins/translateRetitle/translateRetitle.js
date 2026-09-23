@@ -203,7 +203,20 @@
   }
 
   function setFieldValue(field, value) {
-    field.value = value;
+    const prototype = Object.getPrototypeOf(field);
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+    const previousValue = field.value;
+
+    if (descriptor && typeof descriptor.set === "function") {
+      descriptor.set.call(field, value);
+    } else {
+      field.value = value;
+    }
+
+    if (field._valueTracker) {
+      field._valueTracker.setValue(previousValue);
+    }
+
     field.dispatchEvent(new Event("input", { bubbles: true }));
     field.dispatchEvent(new Event("change", { bubbles: true }));
   }
