@@ -11,6 +11,10 @@ Stash plugin with two tasks:
                      StashDB identify task on them, waits for the background
                      job to finish, and then runs the same clean-up step above.
 
+  clean_javstash_tpdb_jav – finds scenes with both ThePornDB `type=JAV` and
+                     JAVstash stash IDs, then removes the ThePornDB `type=JAV`
+                     stash ID.
+
 Plugin input is read from stdin as JSON (Stash raw interface).
 The server_connection block supplies the host/port/auth so the script works
 with any Stash instance without hard-coded URLs.
@@ -158,6 +162,21 @@ def _is_tpdb(endpoint: str) -> bool:
     return host == "theporndb.net" or host.endswith(".theporndb.net")
 
 
+def _is_javstash(endpoint: str) -> bool:
+    host = _endpoint_host(endpoint)
+    return host == "javstash.org" or host.endswith(".javstash.org")
+
+
+def _is_tpdb_jav(endpoint: str) -> bool:
+    if not _is_tpdb(endpoint):
+        return False
+    parsed = urllib.parse.urlparse(endpoint)
+    query = urllib.parse.parse_qs(parsed.query)
+    lowered_query = {key.lower(): values for key, values in query.items()}
+    type_values = lowered_query.get("type", [])
+    return any(str(value).upper() == "JAV" for value in type_values)
+
+
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
@@ -191,6 +210,41 @@ def clean_tpdb_ids(server_connection: dict) -> None:
             )
             updated_count += 1
             print(f"[TPDBCleaner] Scene {scene_id}: removed ThePornDB ID.")
+
+    print(f"[TPDBCleaner] Done. Updated {updated_count} scene(s).")
+
+
+def clean_javstash_tpdb_jav_ids(server_connection: dict) -> None:
+    print("[TPDBCleaner] Fetching scenes with ThePornDB IDs...")
+    data = stash_graphql(server_connection, FIND_TPDB_SCENES_QUERY)
+    scenes = data.get("findScenes", {}).get("scenes", [])
+    print(
+        f"[TPDBCleaner] Found {len(scenes)} scene(s) with a ThePornDB ID. "
+        "Checking for JAVstash + TPDB(type=JAV) duplicates..."
+    )
+
+    updated_count = 0
+
+    for scene in scenes:
+        scene_id = scene["id"]
+        stash_ids = scene.get("stash_ids", [])
+
+        has_javstash = any(_is_javstash(sid["endpoint"]) for sid in stash_ids)
+        has_tpdb_jav = any(_is_tpdb_jav(sid["endpoint"]) for sid in stash_ids)
+
+        if has_javstash and has_tpdb_jav:
+            new_stash_ids = [
+                {"endpoint": sid["endpoint"], "stash_id": sid["stash_id"]}
+                for sid in stash_ids
+                if not _is_tpdb_jav(sid["endpoint"])
+            ]
+            stash_graphql(
+                server_connection,
+                UPDATE_SCENE_STASH_IDS_MUTATION,
+                {"id": scene_id, "stash_ids": new_stash_ids},
+            )
+            updated_count += 1
+            print(f"[TPDBCleaner] Scene {scene_id}: removed ThePornDB type=JAV ID.")
 
     print(f"[TPDBCleaner] Done. Updated {updated_count} scene(s).")
 
@@ -255,6 +309,8 @@ def main() -> int:
 
         if mode == "scrape_and_clean":
             scrape_and_clean(server_connection)
+        elif mode == "clean_javstash_tpdb_jav":
+            clean_javstash_tpdb_jav_ids(server_connection)
         else:
             clean_tpdb_ids(server_connection)
         return 0
