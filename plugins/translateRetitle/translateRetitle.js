@@ -109,7 +109,11 @@
   }
 
   function getFieldContainer(field) {
-    return field?.closest(".form-group, .input-group, .row, .form-floating") || field?.parentElement || null;
+    if (!field) {
+      return null;
+    }
+
+    return field.closest(".form-group, .row, .form-floating, .mb-3") || field.closest(".input-group")?.parentElement || field.parentElement || null;
   }
 
   function splitForTranslate(text) {
