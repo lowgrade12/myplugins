@@ -3,6 +3,7 @@
 
   const PLUGIN_PREFIX = "[TranslateRetitle]";
   const BUTTON_ATTR = "data-translate-retitle-button";
+  const BULK_BUTTON_ATTR = "data-translate-retitle-bulk-button";
   const ROUTE_POLL_MS = 750;
   const TARGET_LANGUAGE = "en";
   const TRANSLATE_MAX_CHARS = 1200;
@@ -202,6 +203,63 @@
     return translatedChunks.join("\n");
   }
 
+  async function graphqlQuery(query, variables = {}) {
+    const response = await fetch("/graphql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`GraphQL request failed: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (payload.errors && payload.errors.length) {
+      throw new Error(payload.errors[0]?.message || "GraphQL error.");
+    }
+
+    if (!payload.data) {
+      throw new Error("GraphQL response missing data.");
+    }
+
+    return payload.data;
+  }
+
+  async function getSceneForBulkWorkflow(sceneId) {
+    const query = `
+      query FindSceneForTranslateRetitle($id: ID!) {
+        findScene(id: $id) {
+          id
+          title
+          details
+          code
+        }
+      }
+    `;
+    const data = await graphqlQuery(query, { id: sceneId });
+    return data.findScene || null;
+  }
+
+  async function updateSceneForBulkWorkflow(sceneId, title, details) {
+    const mutation = `
+      mutation SceneUpdateForTranslateRetitle($input: SceneUpdateInput!) {
+        sceneUpdate(input: $input) {
+          id
+        }
+      }
+    `;
+    await graphqlQuery(mutation, {
+      input: {
+        id: sceneId,
+        title,
+        details,
+      },
+    });
+  }
+
   function setFieldValue(field, value) {
     const prototype = Object.getPrototypeOf(field);
     const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
@@ -337,6 +395,106 @@
     return button;
   }
 
+  function getSelectedSceneIds() {
+    const checkedBoxes = Array.from(document.querySelectorAll(".scene-card .card-check:checked"));
+    const ids = new Set();
+
+    for (const checkbox of checkedBoxes) {
+      const card = checkbox.closest(".scene-card");
+      if (!card) {
+        continue;
+      }
+
+      const link = card.querySelector("a.scene-card-link[href*='/scenes/'], a[href*='/scenes/']");
+      const href = link?.getAttribute("href") || "";
+      const match = href.match(/\/scenes\/([^/?#]+)/);
+      const sceneId = normalizeSpace(match?.[1] || "");
+      if (sceneId) {
+        ids.add(sceneId);
+      }
+    }
+
+    return Array.from(ids);
+  }
+
+  function createBulkButton() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-primary btn-sm";
+    button.setAttribute(BULK_BUTTON_ATTR, "true");
+    button.title = "Translate details to English and replace title with code for selected scenes";
+    button.addEventListener("click", () => runBulkWorkflow(button));
+    return button;
+  }
+
+  async function runBulkWorkflow(button) {
+    if (processing) {
+      return;
+    }
+
+    const sceneIds = getSelectedSceneIds();
+    if (!sceneIds.length) {
+      showToast("Select at least one scene first.", "error");
+      return;
+    }
+
+    const confirmed = window.confirm(`Translate + retitle ${sceneIds.length} selected scene${sceneIds.length === 1 ? "" : "s"}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    processing = true;
+    button.disabled = true;
+    const originalText = button.textContent;
+
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    try {
+      for (let i = 0; i < sceneIds.length; i += 1) {
+        const sceneId = sceneIds[i];
+        button.textContent = `Translating ${i + 1}/${sceneIds.length}…`;
+
+        try {
+          const scene = await getSceneForBulkWorkflow(sceneId);
+          if (!scene) {
+            failed += 1;
+            continue;
+          }
+
+          const title = normalizeSpace(scene.title);
+          const details = normalizeSpace(scene.details);
+          const code = normalizeSpace(scene.code);
+          if (!title || !details || !code) {
+            skipped += 1;
+            continue;
+          }
+
+          const composedDetails = `${title}\n\n${details}`;
+          const translatedDetails = await translateText(composedDetails);
+          if (!translatedDetails) {
+            failed += 1;
+            continue;
+          }
+
+          await updateSceneForBulkWorkflow(sceneId, code, translatedDetails);
+          updated += 1;
+        } catch (error) {
+          failed += 1;
+          logError(`Bulk workflow failed for scene ${sceneId}.`, error);
+        }
+      }
+
+      const summary = `Done. Updated ${updated}/${sceneIds.length} scene${sceneIds.length === 1 ? "" : "s"}${skipped ? `, skipped ${skipped}` : ""}${failed ? `, failed ${failed}` : ""}.`;
+      showToast(summary, failed ? "error" : "success");
+    } finally {
+      processing = false;
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+
   function ensureButton() {
     const fields = getFields();
     if (!fields) {
@@ -357,11 +515,43 @@
     target.appendChild(wrapper);
   }
 
+  function ensureBulkButton() {
+    const selectedCount = getSelectedSceneIds().length;
+    const existing = document.querySelector(`[${BULK_BUTTON_ATTR}]`);
+
+    if (!selectedCount) {
+      if (existing?.parentElement) {
+        existing.parentElement.remove();
+      }
+      return;
+    }
+
+    let button = existing;
+    if (!button) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "fixed";
+      wrapper.style.right = "1rem";
+      wrapper.style.bottom = "4.5rem";
+      wrapper.style.zIndex = "1080";
+      wrapper.style.display = "flex";
+      wrapper.style.gap = "0.5rem";
+      wrapper.setAttribute("data-translate-retitle-bulk-wrapper", "true");
+
+      button = createBulkButton();
+      wrapper.appendChild(button);
+      document.body.appendChild(wrapper);
+    }
+
+    button.textContent = `Translate Selected (${selectedCount})`;
+    button.disabled = processing;
+  }
+
   function onRouteOrDomChange() {
     if (window.location.pathname !== lastPathname) {
       lastPathname = window.location.pathname;
     }
     ensureButton();
+    ensureBulkButton();
   }
 
   function startObserver() {
