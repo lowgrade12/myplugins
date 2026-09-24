@@ -20,4 +20,6 @@ When you click **Translate + Retitle**, it:
 - This plugin is **manual only** and never runs automatically.
 - It does **not** auto-save; review the result and save in Stash as normal.
 - The button is injected near the edit fields instead of the native save actions.
+- On scene list pages, a **Translate Selected Scenes** button appears in the bottom-right once scene selection checkboxes are available.
+- The bulk button stays disabled until at least one scene is selected.
 - Translation uses `https://translate.googleapis.com/translate_a/single`.
