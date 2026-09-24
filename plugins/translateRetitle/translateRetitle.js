@@ -4,6 +4,7 @@
   const PLUGIN_PREFIX = "[TranslateRetitle]";
   const BUTTON_ATTR = "data-translate-retitle-button";
   const BULK_BUTTON_ATTR = "data-translate-retitle-bulk-button";
+  const BULK_WRAPPER_ATTR = "data-translate-retitle-bulk-wrapper";
   const ROUTE_POLL_MS = 750;
   const TARGET_LANGUAGE = "en";
   const TRANSLATE_MAX_CHARS = 1200;
@@ -427,6 +428,10 @@
     return button;
   }
 
+  function hasSceneSelectionControls() {
+    return Boolean(document.querySelector(".scene-card .card-check"));
+  }
+
   async function runBulkWorkflow(button) {
     if (processing) {
       return;
@@ -516,12 +521,14 @@
   }
 
   function ensureBulkButton() {
+    const hasSelectionUi = hasSceneSelectionControls();
     const selectedCount = getSelectedSceneIds().length;
     const existing = document.querySelector(`[${BULK_BUTTON_ATTR}]`);
+    const existingWrapper = document.querySelector(`[${BULK_WRAPPER_ATTR}]`);
 
-    if (!selectedCount) {
-      if (existing?.parentElement) {
-        existing.parentElement.remove();
+    if (!hasSelectionUi) {
+      if (existingWrapper) {
+        existingWrapper.remove();
       }
       return;
     }
@@ -535,15 +542,22 @@
       wrapper.style.zIndex = "1080";
       wrapper.style.display = "flex";
       wrapper.style.gap = "0.5rem";
-      wrapper.setAttribute("data-translate-retitle-bulk-wrapper", "true");
+      wrapper.setAttribute(BULK_WRAPPER_ATTR, "true");
 
       button = createBulkButton();
       wrapper.appendChild(button);
       document.body.appendChild(wrapper);
     }
 
-    button.textContent = `Translate Selected (${selectedCount})`;
-    button.disabled = processing;
+    const buttonLabel = selectedCount ? `Translate Selected (${selectedCount})` : "Translate Selected Scenes";
+    if (button.textContent !== buttonLabel) {
+      button.textContent = buttonLabel;
+    }
+
+    const shouldDisable = processing || !selectedCount;
+    if (button.disabled !== shouldDisable) {
+      button.disabled = shouldDisable;
+    }
   }
 
   function onRouteOrDomChange() {
