@@ -4,7 +4,6 @@ import json
 import os
 import re
 import ssl
-import subprocess
 import sys
 import time
 import uuid
@@ -564,6 +563,12 @@ class Stash:
                 urls
                 organized
                 performers { id name }
+                visual_files {
+                    ... on ImageFile {
+                        id
+                        path
+                    }
+                }
             }
         }
         """
@@ -737,25 +742,13 @@ class BabepediaClient:
 
         try:
             import cloudscraper  # type: ignore
-            import requests  # type: ignore
         except ImportError:
-            VENDOR_DIR.mkdir(parents=True, exist_ok=True)
-            command = [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--disable-pip-version-check",
-                "--target",
-                str(VENDOR_DIR),
-                "cloudscraper",
-            ]
-            log("Installing cloudscraper for Babepedia Cloudflare fallback")
-            subprocess.check_call(command)
-            import cloudscraper  # type: ignore
-            import requests  # type: ignore
+            raise RuntimeError(
+                "Babepedia is returning a Cloudflare challenge. Install the "
+                "'cloudscraper' Python package in the Stash plugin environment "
+                "to enable Babepedia fallback scraping."
+            )
 
-        self._requests = requests
         self._scraper = cloudscraper.create_scraper()
         return self._scraper
 
@@ -1036,8 +1029,10 @@ def parse_babepedia_performer(html_text, page_url):
             measurements = cup_size + "-" + measurement_match.group(2) + "-" + measurement_match.group(3)
 
     nationality_html = extract_labeled_span_html(html_text, "Nationality")
-    nationality_match = re.search(r"fi\s+fi-([a-z]{2})", nationality_html, flags=re.IGNORECASE)
-    country = nationality_match.group(1).upper() if nationality_match else None
+    country = None
+    nationality_text = strip_tags(nationality_html)
+    if nationality_text:
+        country = re.split(r"\s*/\s*|\s*,\s*|\s+-\s+", nationality_text, maxsplit=1)[0].strip() or None
 
     social_urls = []
     social_block = extract_first_group(r"<div[^>]*id=[\"']socialicons[\"'][^>]*>(.*?)</div>", html_text)
@@ -1446,7 +1441,7 @@ def finalize_import(stash, import_id, request_id=None):
             })
             continue
 
-        stash.update_image_metadata(
+        updated_image = stash.update_image_metadata(
             image=image,
             source_url=source_url,
             performer_ids=[target.get("id")],
@@ -1455,9 +1450,9 @@ def finalize_import(stash, import_id, request_id=None):
         updated_count += 1
 
         if source_url:
-            current_path = existing_path_from_image(image) or path
+            current_path = existing_path_from_image(updated_image) or path
             history[source_url] = {
-                "id": image.get("id"),
+                "id": updated_image.get("id"),
                 "path": current_path,
                 "updated_at": time.time(),
             }

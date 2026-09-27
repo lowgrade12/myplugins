@@ -11,6 +11,8 @@
   let currentBabepediaPerformer = null;
   let lastSearchQuery = "";
   let autoLoadedPerformerId = null;
+  let injectScheduled = false;
+  let observerStarted = false;
   const selectedUrls = new Set();
 
   function escapeHtml(value) {
@@ -901,6 +903,58 @@
     await runSearch(performer.name);
   }
 
+  function scheduleInject() {
+    if (injectScheduled) {
+      return;
+    }
+
+    injectScheduled = true;
+    window.requestAnimationFrame(function () {
+      injectScheduled = false;
+      inject();
+    });
+  }
+
+  function startObserver() {
+    if (observerStarted) {
+      return;
+    }
+
+    observerStarted = true;
+
+    if (window.history && !window.history.__babepediaPatched) {
+      window.history.__babepediaPatched = true;
+
+      ["pushState", "replaceState"].forEach(function (methodName) {
+        const original = window.history[methodName];
+
+        if (typeof original !== "function") {
+          return;
+        }
+
+        window.history[methodName] = function () {
+          const result = original.apply(this, arguments);
+          window.dispatchEvent(new Event("babepedia:routechange"));
+          return result;
+        };
+      });
+    }
+
+    window.addEventListener("popstate", scheduleInject);
+    window.addEventListener("babepedia:routechange", scheduleInject);
+
+    if (document.body) {
+      const observer = new MutationObserver(function () {
+        scheduleInject();
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+    }
+  }
+
   function inject() {
     if (!window.location.pathname.startsWith("/performers/")) {
       autoLoadedPerformerId = null;
@@ -971,5 +1025,6 @@
     }
   }, true);
 
-  setInterval(inject, 600);
+  startObserver();
+  scheduleInject();
 })();
