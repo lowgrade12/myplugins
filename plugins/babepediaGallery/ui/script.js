@@ -282,7 +282,7 @@
           return currentTargetPerformer;
         }
       } catch (error) {
-        console.warn("Babepedia could not load performer name from GraphQL", error);
+        console.warn("[Babepedia] Could not load performer name from GraphQL", error);
       }
     }
 
@@ -740,7 +740,7 @@
       renderSearchResults(results);
       setStatus("Choose a Babepedia performer result.", "info");
     } catch (error) {
-      console.error("Babepedia search failed", error);
+      console.error("[Babepedia] Search failed", error);
       setStatus(error.message || "Babepedia search failed.", "error");
     }
   }
@@ -778,7 +778,7 @@
       renderPerformer(currentBabepediaPerformer);
       setStatus("Loaded Babepedia performer.", "success");
     } catch (error) {
-      console.error("Babepedia performer load failed", error);
+      console.error("[Babepedia] Performer load failed", error);
       setStatus(error.message || "Babepedia performer load failed.", "error");
     }
   }
@@ -875,7 +875,7 @@
 
       setStatus(message.join(" "), "success");
     } catch (error) {
-      console.error("Babepedia import failed", error);
+      console.error("[Babepedia] Import failed", error);
       setStatus(error.message || "Babepedia import failed.", "error");
     }
   }

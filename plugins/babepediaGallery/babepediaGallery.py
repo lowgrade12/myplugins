@@ -1215,7 +1215,7 @@ def search_performer(client, query, request_id=None):
     }
 
 
-def load_performer(client, url, performer_id=None, request_id=None):
+def load_performer(client, stash, url, performer_id=None, request_id=None):
     write_progress(request_id, "load", "Loading Babepedia performer", detail=url)
     performer = client.load_performer(url)
     target = None
@@ -1536,7 +1536,7 @@ def main():
             performer_id = str(args.get("performer_id") or "").strip()
             if not url:
                 raise ValueError("No Babepedia performer URL was provided.")
-            payload = load_performer(client, url, performer_id=performer_id or None, request_id=request_id)
+            payload = load_performer(client, stash, url, performer_id=performer_id or None, request_id=request_id)
         elif mode == "preflight_import":
             performer_id = str(args.get("performer_id") or "").strip()
             performer_url = str(args.get("performer_url") or "").strip()
