@@ -654,7 +654,9 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
         window.history.replaceState(
             state,
             "",
-            currentGlobalSafeUrl()
+            window.location.pathname
+            + window.location.search
+            + window.location.hash
         );
 
         return pendingSearch;
