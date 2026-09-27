@@ -457,6 +457,104 @@ class Stash:
         data = self.query(query_text, {"id": performer_id})
         return data.get("findPerformer")
 
+    def gallery_selection(self):
+        return """
+            id
+            title
+            urls
+            organized
+            performers { id }
+        """
+
+    def find_gallery_by_url(self, url):
+        query_text = """
+        query BabepediaFindGalleryByURL($filter: FindFilterType, $gallery_filter: GalleryFilterType) {
+            findGalleries(filter: $filter, gallery_filter: $gallery_filter) {
+                galleries {
+                    id
+                    title
+                    urls
+                    organized
+                    performers { id }
+                }
+            }
+        }
+        """
+        data = self.query(query_text, {
+            "filter": {"per_page": 20},
+            "gallery_filter": {
+                "url": {
+                    "value": url,
+                    "modifier": "EQUALS",
+                }
+            },
+        })
+        galleries = data.get("findGalleries", {}).get("galleries", [])
+
+        for gallery in galleries:
+            if url in (gallery.get("urls") or []):
+                return gallery
+
+        return None
+
+    def create_gallery(self, title, url, performer_ids, organized=None):
+        query_text = """
+        mutation BabepediaGalleryCreate($input: GalleryCreateInput!) {
+            galleryCreate(input: $input) {
+                id
+                title
+                urls
+                organized
+                performers { id }
+            }
+        }
+        """
+        gallery_input = {
+            "title": title,
+            "urls": [url],
+            "performer_ids": list(dict.fromkeys(performer_ids or [])),
+        }
+
+        if organized is not None:
+            gallery_input["organized"] = bool(organized)
+
+        data = self.query(query_text, {"input": gallery_input})
+        return data["galleryCreate"]
+
+    def update_gallery_metadata(self, gallery, title, url, performer_ids, organized=None):
+        query_text = """
+        mutation BabepediaGalleryUpdate($input: GalleryUpdateInput!) {
+            galleryUpdate(input: $input) {
+                id
+                title
+                urls
+                organized
+                performers { id }
+            }
+        }
+        """
+        existing_urls = list(gallery.get("urls") or [])
+        existing_performers = [item.get("id") for item in (gallery.get("performers") or []) if item.get("id")]
+        urls = list(existing_urls)
+
+        if url and url not in urls:
+            urls.append(url)
+
+        gallery_input = {
+            "id": gallery["id"],
+            "urls": urls,
+            "performer_ids": list(dict.fromkeys(existing_performers + list(performer_ids or []))),
+        }
+
+        if title:
+            gallery_input["title"] = title
+
+        if organized is not None:
+            gallery_input["organized"] = bool(organized)
+
+        data = self.query(query_text, {"input": gallery_input})
+        return data["galleryUpdate"]
+
     def image_selection(self):
         return """
             id
@@ -464,6 +562,7 @@ class Stash:
             urls
             organized
             performers { id }
+            galleries { id }
             visual_files {
                 ... on ImageFile {
                     id
@@ -482,6 +581,7 @@ class Stash:
                     urls
                     organized
                     performers { id }
+                    galleries { id }
                     visual_files {
                         ... on ImageFile {
                             id
@@ -519,6 +619,7 @@ class Stash:
                     urls
                     organized
                     performers { id }
+                    galleries { id }
                     visual_files {
                         ... on ImageFile {
                             id
@@ -557,6 +658,7 @@ class Stash:
                 urls
                 organized
                 performers { id }
+                galleries { id }
                 visual_files {
                     ... on ImageFile {
                         id
@@ -569,7 +671,7 @@ class Stash:
         data = self.query(query_text, {"id": image_id})
         return data.get("findImage")
 
-    def update_image_metadata(self, image, source_url, performer_ids, organized=None):
+    def update_image_metadata(self, image, source_url, performer_ids, organized=None, gallery_id=None):
         query_text = """
         mutation BabepediaImageUpdate($input: ImageUpdateInput!) {
             imageUpdate(input: $input) {
@@ -577,6 +679,7 @@ class Stash:
                 urls
                 organized
                 performers { id name }
+                galleries { id }
                 visual_files {
                     ... on ImageFile {
                         id
@@ -588,15 +691,20 @@ class Stash:
         """
         existing_urls = list(image.get("urls") or [])
         existing_performers = [item.get("id") for item in (image.get("performers") or []) if item.get("id")]
+        existing_galleries = [item.get("id") for item in (image.get("galleries") or []) if item.get("id")]
         urls = list(existing_urls)
+        galleries = list(existing_galleries)
 
         if source_url and source_url not in urls:
             urls.append(source_url)
+        if gallery_id and gallery_id not in galleries:
+            galleries.append(gallery_id)
 
         image_input = {
             "id": image["id"],
             "urls": urls,
             "performer_ids": list(dict.fromkeys(existing_performers + list(performer_ids or []))),
+            "gallery_ids": galleries,
         }
 
         if organized is not None:
@@ -1435,6 +1543,31 @@ def finalize_import(stash, import_id, request_id=None):
     updated_count = 0
     missing = []
     history = load_import_history()
+    gallery_id = None
+    gallery_title = None
+
+    performer_url = str(manifest.get("performer_url") or "").strip()
+    if performer_url:
+        write_progress(request_id, "gallery", "Preparing Stash gallery", detail=performer_url)
+        gallery_title = str(target.get("name") or "Babepedia").strip() + " · Babepedia"
+        existing_gallery = stash.find_gallery_by_url(performer_url)
+        if existing_gallery:
+            updated_gallery = stash.update_gallery_metadata(
+                gallery=existing_gallery,
+                title=gallery_title,
+                url=performer_url,
+                performer_ids=[target.get("id")],
+                organized=manifest.get("organized"),
+            )
+        else:
+            updated_gallery = stash.create_gallery(
+                title=gallery_title,
+                url=performer_url,
+                performer_ids=[target.get("id")],
+                organized=manifest.get("organized"),
+            )
+        gallery_id = updated_gallery.get("id")
+        gallery_title = updated_gallery.get("title") or gallery_title
 
     entries = manifest.get("entries") or []
     for index, entry in enumerate(entries, start=1):
@@ -1463,6 +1596,7 @@ def finalize_import(stash, import_id, request_id=None):
             source_url=source_url,
             performer_ids=[target.get("id")],
             organized=manifest.get("organized"),
+            gallery_id=gallery_id,
         )
         updated_count += 1
 
@@ -1492,6 +1626,8 @@ def finalize_import(stash, import_id, request_id=None):
         "missing_count": len(missing),
         "missing": missing,
         "performer_updated": performer_updated,
+        "gallery_id": gallery_id,
+        "gallery_title": gallery_title,
     }
 
 
