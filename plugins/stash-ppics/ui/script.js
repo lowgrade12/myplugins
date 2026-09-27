@@ -672,10 +672,19 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
             return null;
         }
 
-        const performer =
-            await currentPerformer();
+        let performer = String(
+            currentPerformerName || ""
+        ).trim();
 
-        if (!performer) {
+        if (performer.length < 2) {
+            performer =
+                await currentPerformer()
+                || "";
+            performer =
+                String(performer).trim();
+        }
+
+        if (performer.length < 2) {
             return null;
         }
 
@@ -901,7 +910,10 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                     performer &&
                     performer.name
                 ) {
-                    return performer.name.trim();
+                    currentPerformerName =
+                        performer.name.trim();
+
+                    return currentPerformerName;
                 }
             } catch (error) {
                 console.warn(
@@ -933,7 +945,10 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                 element.textContent &&
                 element.textContent.trim()
             ) {
-                return element.textContent.trim();
+                currentPerformerName =
+                    element.textContent.trim();
+
+                return currentPerformerName;
             }
         }
 
