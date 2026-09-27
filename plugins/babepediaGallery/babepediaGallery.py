@@ -466,7 +466,7 @@ class Stash:
             performers { id }
         """
 
-    def find_gallery_by_url(self, url):
+    def find_gallery_by_url(self, url, performer_id=None):
         query_text = """
         query BabepediaFindGalleryByURL($filter: FindFilterType, $gallery_filter: GalleryFilterType) {
             findGalleries(filter: $filter, gallery_filter: $gallery_filter) {
@@ -491,8 +491,18 @@ class Stash:
         })
         galleries = data.get("findGalleries", {}).get("galleries", [])
 
+        wanted_performer = str(performer_id or "").strip()
         for gallery in galleries:
-            if url in (gallery.get("urls") or []):
+            if url not in (gallery.get("urls") or []):
+                continue
+            if wanted_performer:
+                performer_ids = {
+                    str(item.get("id") or "").strip()
+                    for item in (gallery.get("performers") or [])
+                    if str(item.get("id") or "").strip()
+                }
+                if wanted_performer not in performer_ids:
+                    continue
                 return gallery
 
         return None
@@ -1550,7 +1560,7 @@ def finalize_import(stash, import_id, request_id=None):
     if performer_url:
         write_progress(request_id, "gallery", "Preparing Stash gallery", detail=performer_url)
         gallery_title = str(target.get("name") or "Babepedia").strip() + " · Babepedia"
-        existing_gallery = stash.find_gallery_by_url(performer_url)
+        existing_gallery = stash.find_gallery_by_url(performer_url, performer_id=target.get("id"))
         if existing_gallery:
             updated_gallery = stash.update_gallery_metadata(
                 gallery=existing_gallery,
