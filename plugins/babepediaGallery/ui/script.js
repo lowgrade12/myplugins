@@ -11,6 +11,7 @@
   let currentBabepediaPerformer = null;
   let lastSearchQuery = "";
   let autoLoadedPerformerId = null;
+  let activePerformerPageId = null;
   let injectScheduled = false;
   let observerStarted = false;
   const selectedUrls = new Set();
@@ -956,12 +957,28 @@
   }
 
   function inject() {
-    if (!window.location.pathname.startsWith("/performers/")) {
+    const performerId = currentPerformerIdFromUrl();
+
+    if (!performerId) {
+      activePerformerPageId = null;
       autoLoadedPerformerId = null;
+      currentPerformerName = null;
+      currentTargetPerformer = null;
       currentBabepediaPerformer = null;
+      lastSearchQuery = "";
       selectedUrls.clear();
       deactivateBabepediaView();
       return;
+    }
+
+    if (activePerformerPageId !== performerId) {
+      activePerformerPageId = performerId;
+      autoLoadedPerformerId = null;
+      currentPerformerName = null;
+      currentTargetPerformer = null;
+      currentBabepediaPerformer = null;
+      lastSearchQuery = "";
+      selectedUrls.clear();
     }
 
     ensureMount();

@@ -17,6 +17,10 @@ from urllib.request import Request, urlopen
 
 PLUGIN_ID = "babepediaGallery"
 BASE_URL = "https://www.babepedia.com"
+ALLOWED_BABEPEDIA_HOSTS = {
+    "babepedia.com",
+    "www.babepedia.com",
+}
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -245,6 +249,16 @@ def is_within_path(child_path, parent_path):
         return True
     except Exception:
         return False
+
+
+def validate_babepedia_url(url):
+    parsed = urlparse(str(url or "").strip())
+    host = str(parsed.netloc or "").split("@")[-1].casefold()
+
+    if parsed.scheme not in ("http", "https") or host not in ALLOWED_BABEPEDIA_HOSTS:
+        raise RuntimeError("Babepedia redirected to an unexpected host: " + str(url))
+
+    return url
 
 
 def boolean_setting(settings, key, default=False):
@@ -766,6 +780,7 @@ class BabepediaClient:
         return response.status_code, response.url, dict(response.headers), response.content
 
     def request(self, method, url, headers=None, data=None, allow_cloudscraper=True):
+        validate_babepedia_url(url)
         headers = dict(headers or {})
 
         try:
@@ -784,6 +799,8 @@ class BabepediaClient:
 
         if status_code >= 400:
             raise RuntimeError("Babepedia request failed with HTTP " + str(status_code))
+
+        validate_babepedia_url(final_url)
 
         return {
             "status_code": status_code,
@@ -892,7 +909,9 @@ class BabepediaClient:
             slug = str(item.get("value") or "").strip()
             if not name or not slug:
                 continue
-            url = BASE_URL + "/babe/" + quote(slug.replace(" ", "_"), safe="_()-'")
+            url = validate_babepedia_url(
+                BASE_URL + "/babe/" + quote(slug.replace(" ", "_"), safe="_()-'")
+            )
             if url in seen:
                 continue
             seen.add(url)
@@ -904,6 +923,7 @@ class BabepediaClient:
         return results
 
     def load_performer(self, url):
+        validate_babepedia_url(url)
         html_text, final_url = self.get_text(url, referer=BASE_URL + "/")
         performer = parse_babepedia_performer(html_text, final_url)
         performer["url"] = final_url
@@ -1245,6 +1265,7 @@ def preflight_import(client, stash, performer_id, performer_url, selection, requ
     new_count = 0
 
     for index, source_url in enumerate(selected_urls, start=1):
+        validate_babepedia_url(source_url)
         write_progress(request_id, "preflight", "Checking selected images", current=index, total=len(selected_urls), detail=source_url)
         image = stash.find_image_by_url(source_url)
         if image:
@@ -1255,8 +1276,6 @@ def preflight_import(client, stash, performer_id, performer_url, selection, requ
             reusable_file_count += 1
             continue
         new_count += 1
-
-    performer = client.load_performer(performer_url)
 
     return {
         "status": "ok",
@@ -1269,8 +1288,6 @@ def preflight_import(client, stash, performer_id, performer_url, selection, requ
             "id": target.get("id"),
             "name": target.get("name"),
         },
-        "performer_name": performer.get("name"),
-        "image_count": performer.get("image_count"),
     }
 
 
@@ -1300,6 +1317,7 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
     failed = []
 
     for index, source_url in enumerate(selected_urls, start=1):
+        validate_babepedia_url(source_url)
         write_progress(request_id, "download", "Preparing selected image", current=index, total=len(selected_urls), detail=source_url)
         existing_image = stash.find_image_by_url(source_url)
         if existing_image:
@@ -1497,6 +1515,14 @@ def main():
         print(json.dumps({
             "output": {
                 "message": "Babepedia cache cleared. " + str(removed) + " cached file(s) removed.",
+            }
+        }))
+        return
+
+    if mode == "ui_status":
+        print(json.dumps({
+            "output": {
+                "message": "Open a performer page and use the Babepedia tab to browse and import images.",
             }
         }))
         return

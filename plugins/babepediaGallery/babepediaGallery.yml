@@ -29,6 +29,8 @@ settings:
 tasks:
   - name: Open Babepedia
     description: Search Babepedia and import performer images
+    defaultArgs:
+      mode: ui_status
 
   - name: Clear Babepedia cache
     description: Clear cached Babepedia task responses and progress files.
