@@ -129,7 +129,9 @@
           throw new Error(finalData.error || "Babepedia task failed.");
         }
 
-        return finalData;
+        if (finalData.status !== "pending") {
+          return finalData;
+        }
       }
 
       if (typeof onProgress === "function") {

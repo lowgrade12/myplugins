@@ -1541,6 +1541,11 @@ def main():
     if not server_connection:
         raise ValueError("No server_connection was received from Stash.")
 
+    write_cache(request_id, {
+        "status": "pending",
+    })
+    write_progress(request_id, "queued", "Waiting for Babepedia task")
+
     client = BabepediaClient()
     global stash
     stash = Stash(server_connection)
