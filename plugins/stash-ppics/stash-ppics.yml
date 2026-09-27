@@ -1,0 +1,71 @@
+name: PornPics Importer
+description: Browse, review and import full-size PornPics images into Stash.
+version: 2.1.0
+url: https://github.com/lowgrade12/myplugins
+
+exec:
+  - python
+  - "{pluginDir}/ppics.py"
+
+interface: raw
+errLog: info
+
+settings:
+  outputPath:
+    displayName: Download folder
+    description: Folder used for downloaded PornPics images. Must be inside a Stash library path that scans images.
+    type: STRING
+
+  searchLimit:
+    displayName: Scenes per page
+    description: Maximum number of PornPics scenes loaded on one results page. 0 uses 20.
+    type: NUMBER
+
+  genderMode:
+    displayName: Performer display mode
+    description: Choose Female only, Male only, or Female and male - female first. Female only is used when this setting is empty. The current performer is always kept.
+    type: STRING
+
+  skipTags:
+    displayName: Skip tags
+    description: Do not import PornPics scene tags. The PornPics Importer marker tag is still used.
+    type: BOOLEAN
+
+  skipStudio:
+    displayName: Skip studio
+    description: Do not import PornPics studio metadata.
+    type: BOOLEAN
+
+  skipPerformers:
+    displayName: Skip performers
+    description: Do not import PornPics performer metadata.
+    type: BOOLEAN
+
+  hideAgeVerificationScenes:
+    displayName: Hide age-verification scenes
+    description: Hide PornPics scenes when the gallery request is replaced by a regional age-verification page. Off by default.
+    type: BOOLEAN
+
+tasks:
+  - name: Open PornPics
+    description: Browse or import PornPics images
+
+  - name: Clear PornPics cache
+    description: Clear cached PornPics task responses and progress files.
+    defaultArgs:
+      mode: clear_cache
+
+  - name: Clear PornPics session data
+    description: Reset PornPics browser selections, page state and in-memory session data on the next PornPics request.
+    defaultArgs:
+      mode: clear_session
+
+ui:
+  javascript:
+    - ui/script.js
+
+  css:
+    - ui/style.css
+
+  assets:
+    /: ./assets

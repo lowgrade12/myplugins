@@ -1,0 +1,3878 @@
+.ppics-browser {
+    width: 100%;
+    min-height: max(760px, calc(100vh - 180px));
+    padding-bottom: 4.5rem;
+}
+
+.ppics-eyebrow {
+    margin-bottom: 0.35rem;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    opacity: 0.66;
+}
+
+.ppics-hero,
+.ppics-scene-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+    padding: 1.2rem 1.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    background:
+        linear-gradient(
+            145deg,
+            rgba(255, 255, 255, 0.045),
+            rgba(255, 255, 255, 0.018)
+        );
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+.ppics-hero h2,
+.ppics-scene-header h2 {
+    margin: 0;
+    line-height: 1.22;
+}
+
+.ppics-hero-subtitle {
+    margin-top: 0.45rem;
+    opacity: 0.7;
+}
+
+.ppics-hero-badge {
+    flex: 0 0 auto;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    opacity: 0.8;
+}
+
+.ppics-toolbar {
+    min-height: 58px;
+    margin: 1rem 0;
+    padding: 0.75rem 0.85rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.65rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.ppics-selection-count {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+}
+
+.ppics-selection-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.7;
+}
+
+.ppics-button-count {
+    display: inline-flex;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    margin-left: 0.35rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.2);
+    font-size: 0.78rem;
+}
+
+.ppics-pagination {
+    min-height: 44px;
+    margin: 1rem 0;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 1rem;
+}
+
+.ppics-page-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    text-align: center;
+}
+
+.ppics-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.25rem;
+    align-items: start;
+}
+
+.ppics-card {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.032);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+    transition:
+        transform 140ms ease,
+        border-color 140ms ease,
+        box-shadow 140ms ease;
+}
+
+.ppics-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.24);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.ppics-card.ppics-is-selected,
+.ppics-image-card.ppics-is-selected {
+    border-color: rgba(90, 170, 255, 0.85);
+    box-shadow:
+        0 0 0 2px rgba(90, 170, 255, 0.18),
+        0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.ppics-image-wrap {
+    position: relative;
+    width: 100%;
+    height: 315px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(255, 255, 255, 0.035),
+            rgba(0, 0, 0, 0.22)
+        );
+    cursor: pointer;
+}
+
+.ppics-image-wrap img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+    transition: transform 160ms ease;
+}
+
+.ppics-card:hover .ppics-image-wrap img {
+    transform: scale(1.015);
+}
+
+.ppics-no-image {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    opacity: 0.58;
+}
+
+.ppics-check,
+.ppics-image-select {
+    position: absolute;
+    left: 0.6rem;
+    bottom: 0.6rem;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0.42rem 0.62rem;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 0.45rem;
+    background: rgba(10, 10, 10, 0.84);
+    color: #fff;
+    cursor: pointer;
+    user-select: none;
+    backdrop-filter: blur(8px);
+}
+
+.ppics-zoom-button {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    z-index: 7;
+    width: 39px;
+    height: 39px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    background: rgba(10, 10, 10, 0.8);
+    color: #fff;
+    font-size: 17px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition:
+        transform 120ms ease,
+        background 120ms ease;
+}
+
+.ppics-zoom-button:hover {
+    transform: scale(1.08);
+    background: rgba(0, 0, 0, 0.96);
+}
+
+.ppics-card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.9rem;
+}
+
+.ppics-card-title {
+    width: 100%;
+    margin-bottom: 0.65rem;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.ppics-card-meta {
+    width: 100%;
+    min-height: 106px;
+    margin-bottom: 0.85rem;
+}
+
+.ppics-card-meta-loading {
+    min-height: 70px;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.85rem;
+    opacity: 0.6;
+}
+
+.ppics-card-studio {
+    margin-bottom: 0.45rem;
+    font-size: 0.96rem;
+    font-weight: 700;
+}
+
+.ppics-card-statline {
+    display: flex;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.55rem;
+    font-size: 0.78rem;
+    opacity: 0.62;
+}
+
+.ppics-card-chips,
+.ppics-chip-row {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.ppics-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0.25rem 0.48rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    line-height: 1.15;
+}
+
+.ppics-chip-performer {
+    background: rgba(90, 150, 255, 0.12);
+    border: 1px solid rgba(90, 150, 255, 0.18);
+}
+
+.ppics-chip-tag {
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.ppics-chip-more {
+    opacity: 0.7;
+}
+
+.ppics-scene-header-main {
+    min-width: 0;
+    flex: 1;
+}
+
+.ppics-scene-header-actions {
+    flex: 0 0 auto;
+}
+
+.ppics-scene-studio {
+    margin-top: 0.7rem;
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+
+.ppics-scene-facts {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    margin-top: 0.6rem;
+    font-size: 0.88rem;
+    opacity: 0.68;
+}
+
+.ppics-detail-section {
+    margin-top: 1rem;
+}
+
+.ppics-detail-label {
+    margin-bottom: 0.45rem;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.58;
+}
+
+.ppics-image-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(auto-fill, minmax(245px, 1fr));
+    gap: 1rem;
+}
+
+.ppics-image-card {
+    position: relative;
+    height: 365px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 0.65rem;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(255, 255, 255, 0.035),
+            rgba(0, 0, 0, 0.2)
+        );
+}
+
+.ppics-image-open {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
+}
+
+.ppics-image-open img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+}
+
+.ppics-loading-shell {
+    min-height: max(590px, calc(100vh - 270px));
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 6rem 1rem 4rem;
+}
+
+.ppics-loading-card,
+.ppics-state-card {
+    width: min(700px, 100%);
+    display: flex;
+    align-items: center;
+    gap: 1.3rem;
+    padding: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.035);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.14);
+}
+
+.ppics-loading-spinner {
+    width: 2.5rem;
+    height: 2.5rem;
+    flex: 0 0 auto;
+}
+
+.ppics-loading-copy h2 {
+    margin: 0 0 0.4rem;
+    font-size: 1.45rem;
+}
+
+.ppics-state-icon {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    font-size: 1.3rem;
+    font-weight: 800;
+    background: rgba(220, 70, 70, 0.16);
+}
+
+.ppics-empty-state {
+    grid-column: 1 / -1;
+    min-height: 320px;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    text-align: center;
+    opacity: 0.75;
+}
+
+.ppics-empty-icon {
+    margin-bottom: 0.5rem;
+    font-size: 2rem;
+}
+
+.ppics-review-summary {
+    display: grid;
+    grid-template-columns:
+        minmax(110px, auto)
+        minmax(110px, auto)
+        minmax(280px, 1fr);
+    gap: 0.8rem;
+    margin: 1rem 0;
+}
+
+.ppics-review-summary > div {
+    padding: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.6rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-review-summary strong {
+    font-size: 1.05rem;
+}
+
+.ppics-output-path {
+    min-width: 0;
+}
+
+.ppics-output-path strong {
+    overflow-wrap: anywhere;
+}
+
+.ppics-review-list {
+    min-height: 240px;
+    display: grid;
+    gap: 0.85rem;
+    margin: 1rem 0;
+}
+
+.ppics-review-scene {
+    padding: 0.9rem;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.65rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-review-scene-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.ppics-review-action {
+    flex: 0 0 auto;
+    padding: 0.3rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    font-size: 0.75rem;
+}
+
+.ppics-review-thumbs {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    margin-top: 0.8rem;
+    padding-bottom: 0.25rem;
+}
+
+.ppics-review-thumbs img {
+    width: 86px;
+    height: 116px;
+    flex: 0 0 auto;
+    object-fit: contain;
+    border-radius: 0.35rem;
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.ppics-section-heading h3 {
+    margin-bottom: 0.2rem;
+}
+
+.ppics-section-heading p {
+    margin: 0;
+    opacity: 0.65;
+}
+
+.ppics-entity-section {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.65rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-entity-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.7rem 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.ppics-entity-row:first-of-type {
+    border-top: 0;
+}
+
+.ppics-entity-found {
+    display: inline-flex;
+    padding: 0.3rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(80, 180, 110, 0.14);
+    font-size: 0.78rem;
+}
+
+.ppics-create-label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ppics-soft-alert {
+    border-radius: 0.6rem;
+}
+
+.ppics-import-result {
+    min-height: 120px;
+    display: grid;
+    grid-template-columns:
+        repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.ppics-import-result > div {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.6rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-import-result strong {
+    font-size: 1.25rem;
+}
+
+.ppics-import-result span {
+    opacity: 0.65;
+}
+
+.ppics-output-finished {
+    padding: 0.8rem;
+    overflow-wrap: anywhere;
+    border-radius: 0.55rem;
+    background: rgba(255, 255, 255, 0.03);
+    opacity: 0.75;
+}
+
+.ppics-spotlight {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(5, 5, 7, 0.96);
+    backdrop-filter: blur(8px);
+}
+
+.ppics-spotlight-stage {
+    position: relative;
+    width: min(1500px, 100%);
+    height: min(94vh, 1000px);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0.75rem;
+    background: rgba(16, 16, 18, 0.98);
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.5);
+}
+
+.ppics-spotlight-topbar {
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.65rem 0.8rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ppics-spotlight-counter {
+    min-width: 72px;
+    font-weight: 700;
+    opacity: 0.75;
+}
+
+.ppics-spotlight-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.ppics-spotlight-tool {
+    min-width: 38px;
+    height: 38px;
+    padding: 0 0.65rem;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 0.45rem;
+    background: rgba(255, 255, 255, 0.055);
+    color: #fff;
+    cursor: pointer;
+}
+
+.ppics-spotlight-tool:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.ppics-spotlight-zoom-value {
+    min-width: 58px;
+    text-align: center;
+    font-size: 0.78rem;
+    opacity: 0.68;
+}
+
+.ppics-spotlight-media-shell {
+    min-width: 0;
+    min-height: 0;
+    padding: 0.75rem 4.8rem;
+    overflow: hidden;
+}
+
+.ppics-spotlight-media {
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    background:
+        radial-gradient(
+            circle at center,
+            rgba(255, 255, 255, 0.035),
+            rgba(0, 0, 0, 0.15)
+        );
+}
+
+.ppics-spotlight-image {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    display: block;
+    object-fit: contain;
+    transform-origin: center center;
+    transition: transform 120ms ease;
+}
+
+.ppics-spotlight-arrow {
+    position: absolute;
+    top: 50%;
+    z-index: 5;
+    width: 48px;
+    height: 64px;
+    margin-top: -32px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 0.55rem;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 2.2rem;
+    line-height: 1;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+}
+
+.ppics-spotlight-prev {
+    left: 1rem;
+}
+
+.ppics-spotlight-next {
+    right: 1rem;
+}
+
+.ppics-spotlight-arrow:hover {
+    background: rgba(0, 0, 0, 0.85);
+}
+
+.ppics-spotlight-footer {
+    min-height: 86px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.8rem 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ppics-spotlight-info {
+    min-width: 0;
+    flex: 1;
+}
+
+.ppics-spotlight-title {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ppics-spotlight-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 0.3rem;
+    font-size: 0.82rem;
+    opacity: 0.66;
+}
+
+.ppics-spotlight-studio {
+    font-weight: 700;
+    opacity: 1;
+}
+
+.ppics-spotlight-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.ppics-spotlight-select {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.45rem;
+    background: rgba(255, 255, 255, 0.055);
+    cursor: pointer;
+    user-select: none;
+}
+
+@media (max-width: 900px) {
+    .ppics-grid {
+        grid-template-columns:
+            repeat(auto-fill, minmax(260px, 1fr));
+    }
+
+    .ppics-image-wrap {
+        height: 285px;
+    }
+
+    .ppics-image-grid {
+        grid-template-columns:
+            repeat(auto-fill, minmax(205px, 1fr));
+    }
+
+    .ppics-image-card {
+        height: 330px;
+    }
+
+    .ppics-scene-header {
+        flex-direction: column;
+    }
+
+    .ppics-spotlight-media-shell {
+        padding-left: 3.8rem;
+        padding-right: 3.8rem;
+    }
+}
+
+@media (max-width: 700px) {
+    .ppics-browser {
+        min-height: max(680px, calc(100vh - 145px));
+        padding-bottom: 3rem;
+    }
+
+    .ppics-hero,
+    .ppics-scene-header {
+        padding: 1rem;
+    }
+
+    .ppics-pagination {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .ppics-page-status {
+        grid-column: 1 / -1;
+        grid-row: 1;
+    }
+
+    .ppics-review-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-entity-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .ppics-loading-shell {
+        min-height: max(520px, calc(100vh - 220px));
+        padding: 4rem 0 3rem;
+    }
+
+    .ppics-loading-card {
+        align-items: flex-start;
+    }
+
+    .ppics-spotlight {
+        padding: 0;
+    }
+
+    .ppics-spotlight-stage {
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+        border-left: 0;
+        border-right: 0;
+    }
+
+    .ppics-spotlight-topbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .ppics-spotlight-tools {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .ppics-spotlight-media-shell {
+        padding: 0.5rem 3.1rem;
+    }
+
+    .ppics-spotlight-arrow {
+        width: 40px;
+        height: 56px;
+        margin-top: -28px;
+    }
+
+    .ppics-spotlight-prev {
+        left: 0.35rem;
+    }
+
+    .ppics-spotlight-next {
+        right: 0.35rem;
+    }
+
+    .ppics-spotlight-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .ppics-spotlight-actions {
+        width: 100%;
+    }
+
+    .ppics-spotlight-actions > * {
+        flex: 1;
+    }
+}
+
+@media (max-width: 540px) {
+    .ppics-grid,
+    .ppics-image-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-image-wrap,
+    .ppics-image-card {
+        height: 390px;
+    }
+}
+
+/* -------------------------------------------------------------------------
+   PornPics Importer v0.7 polish
+   Internal selectors intentionally retain the ppics prefix.
+   ------------------------------------------------------------------------- */
+
+.ppics-browser {
+    position: relative;
+    scroll-margin-top: 140px;
+    padding-top: 0.65rem;
+}
+
+.ppics-chip-woman {
+    border-color: rgba(255, 112, 174, 0.34);
+    background: rgba(255, 92, 164, 0.18);
+    color: #ffd6e8;
+}
+
+.ppics-chip-man {
+    border-color: rgba(92, 157, 255, 0.34);
+    background: rgba(73, 138, 255, 0.18);
+    color: #d8e8ff;
+}
+
+.ppics-chip-neutral {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.ppics-loading-orbit {
+    position: relative;
+    width: 3.2rem;
+    height: 3.2rem;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.ppics-loading-status {
+    margin-top: 0.2rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.ppics-loading-detail {
+    margin-top: 0.32rem;
+    line-height: 1.4;
+}
+
+.ppics-organized-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    margin: 1rem 0;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 0.65rem;
+    background: rgba(255, 255, 255, 0.025);
+    cursor: pointer;
+}
+
+.ppics-organized-option input {
+    margin-top: 0.2rem;
+}
+
+.ppics-organized-option span {
+    display: flex;
+    flex-direction: column;
+    gap: 0.16rem;
+}
+
+.ppics-organized-option small {
+    opacity: 0.64;
+}
+
+.ppics-review-control-block {
+    margin-top: 0.9rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.ppics-review-control-label {
+    margin-bottom: 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+    opacity: 0.66;
+}
+
+.ppics-cover-choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+    gap: 0.6rem;
+}
+
+.ppics-cover-choice {
+    position: relative;
+    min-width: 0;
+    margin: 0;
+    padding: 0.45rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    align-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.55rem;
+    background: rgba(255, 255, 255, 0.025);
+    cursor: pointer;
+    transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.ppics-cover-choice:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.22);
+}
+
+.ppics-cover-choice:has(.ppics-cover-radio:checked) {
+    border-color: rgba(90, 170, 255, 0.8);
+    background: rgba(90, 170, 255, 0.1);
+    box-shadow: 0 0 0 2px rgba(90, 170, 255, 0.12);
+}
+
+.ppics-cover-choice img {
+    width: 100%;
+    height: 102px;
+    object-fit: contain;
+    border-radius: 0.35rem;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.ppics-cover-choice span {
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.ppics-cover-radio {
+    position: absolute;
+    top: 0.35rem;
+    left: 0.35rem;
+    z-index: 2;
+}
+
+.ppics-scene-link-row {
+    display: grid;
+    grid-template-columns: minmax(240px, 0.9fr) minmax(260px, 1.1fr);
+    gap: 0.75rem;
+    align-items: stretch;
+}
+
+.ppics-scene-link-select {
+    min-width: 0;
+}
+
+.ppics-scene-link-preview {
+    min-height: 92px;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 0.55rem;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.ppics-scene-link-preview > img {
+    width: 128px;
+    height: 78px;
+    flex: 0 0 auto;
+    object-fit: cover;
+    border-radius: 0.4rem;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.ppics-scene-link-copy {
+    min-width: 0;
+}
+
+.ppics-scene-link-copy strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ppics-scene-link-performers {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    margin-top: 0.4rem;
+}
+
+.ppics-scene-link-performers span {
+    padding: 0.2rem 0.4rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    font-size: 0.7rem;
+}
+
+.ppics-scene-link-empty {
+    opacity: 0.58;
+    font-size: 0.84rem;
+}
+
+.ppics-entity-main {
+    min-width: 180px;
+    flex: 1;
+}
+
+.ppics-entity-action {
+    flex: 0 0 auto;
+}
+
+.ppics-entity-subline {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    margin-top: 0.25rem;
+}
+
+.ppics-tag-map {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: 0.25rem;
+    padding: 0.7rem;
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 0.5rem;
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.ppics-tag-map-heading {
+    margin-bottom: 0.5rem;
+    font-size: 0.79rem;
+    opacity: 0.72;
+}
+
+.ppics-tag-search-wrap {
+    position: relative;
+}
+
+.ppics-tag-search-results {
+    position: absolute;
+    top: calc(100% + 0.3rem);
+    left: 0;
+    right: 0;
+    z-index: 40;
+    max-height: 280px;
+    display: none;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 0.5rem;
+    background: rgba(28, 28, 31, 0.99);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+}
+
+.ppics-tag-search-results.ppics-is-open {
+    display: block;
+}
+
+.ppics-tag-search-result {
+    width: 100%;
+    padding: 0.65rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.065);
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ppics-tag-search-result:hover {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.ppics-tag-search-result span {
+    font-size: 0.75rem;
+    opacity: 0.58;
+}
+
+.ppics-tag-search-empty {
+    padding: 0.8rem;
+    opacity: 0.6;
+}
+
+.ppics-tag-mapped-state {
+    margin-top: 0.5rem;
+}
+
+.ppics-tag-mapped-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(80, 180, 110, 0.12);
+    border: 1px solid rgba(80, 180, 110, 0.18);
+    font-size: 0.78rem;
+}
+
+.ppics-tag-map-clear {
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    cursor: pointer;
+}
+
+.ppics-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 110000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(4, 4, 6, 0.82);
+    backdrop-filter: blur(7px);
+}
+
+.ppics-confirm-dialog {
+    width: min(520px, 100%);
+    padding: 1.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 0.75rem;
+    background: rgba(28, 28, 31, 0.99);
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.45);
+}
+
+.ppics-confirm-dialog h3 {
+    margin-top: 0;
+}
+
+.ppics-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    margin-top: 1.1rem;
+}
+
+.ppics-import-progress-shell {
+    min-height: max(610px, calc(100vh - 260px));
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 5rem 1rem 4rem;
+}
+
+.ppics-import-progress-card {
+    width: min(820px, 100%);
+    padding: 1.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.032);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.16);
+}
+
+.ppics-import-progress-head {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+}
+
+.ppics-import-progress-head h2 {
+    margin: 0.15rem 0 0.25rem;
+}
+
+.ppics-import-progress-message {
+    font-weight: 700;
+}
+
+.ppics-import-progress-detail {
+    margin-top: 0.25rem;
+}
+
+.ppics-import-meter-wrap {
+    margin: 1.2rem 0 1rem;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.7rem;
+    align-items: center;
+}
+
+.ppics-import-meter {
+    height: 9px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.ppics-import-meter-fill {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0.76;
+    transition: width 180ms ease;
+}
+
+.ppics-import-meter-text {
+    min-width: 44px;
+    text-align: right;
+    font-size: 0.78rem;
+    opacity: 0.65;
+}
+
+.ppics-import-steps {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(70px, 1fr));
+    gap: 0.35rem;
+    margin-top: 0.8rem;
+}
+
+.ppics-import-step {
+    position: relative;
+    min-width: 0;
+    padding-top: 1.1rem;
+    text-align: center;
+    font-size: 0.7rem;
+    line-height: 1.2;
+    opacity: 0.42;
+}
+
+.ppics-import-step::before {
+    content: "";
+    position: absolute;
+    top: 4px;
+    left: -50%;
+    width: 100%;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.09);
+}
+
+.ppics-import-step:first-child::before {
+    display: none;
+}
+
+.ppics-import-step-dot {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    border: 2px solid rgba(255, 255, 255, 0.28);
+    border-radius: 50%;
+    background: rgba(20, 20, 22, 1);
+}
+
+.ppics-import-step.ppics-step-current,
+.ppics-import-step.ppics-step-done {
+    opacity: 1;
+}
+
+.ppics-import-step.ppics-step-current .ppics-import-step-dot {
+    border-color: currentColor;
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.07);
+}
+
+.ppics-import-step.ppics-step-done .ppics-import-step-dot {
+    border-color: currentColor;
+    background: currentColor;
+}
+
+.ppics-result-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.65rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-result-section h3 {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+}
+
+.ppics-result-links {
+    display: flex;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.ppics-result-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    max-width: 100%;
+}
+
+.ppics-result-link span:first-child {
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Free-flow spotlight: wheel zoom around the pointer, middle-button pan. */
+.ppics-spotlight-media {
+    position: relative;
+    overflow: hidden;
+    cursor: default;
+    touch-action: none;
+    user-select: none;
+}
+
+.ppics-spotlight-media.ppics-is-panning {
+    cursor: grabbing;
+}
+
+.ppics-spotlight-image {
+    flex: 0 0 auto;
+    max-width: 100%;
+    max-height: 100%;
+    transform-origin: center center;
+    will-change: transform;
+    transition: none;
+    pointer-events: none;
+    user-select: none;
+}
+
+.ppics-spotlight-mini-chips {
+    display: inline-flex;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+}
+
+.ppics-spotlight-mini-chips .ppics-chip {
+    min-height: 22px;
+    padding: 0.18rem 0.4rem;
+    font-size: 0.68rem;
+}
+
+.ppics-spotlight-select {
+    min-width: 170px;
+}
+
+.ppics-spotlight-select input {
+    flex: 0 0 auto;
+}
+
+.ppics-open-scene-image:focus-visible,
+.ppics-image-open:focus-visible,
+.ppics-zoom-button:focus-visible,
+.ppics-spotlight-tool:focus-visible,
+.ppics-spotlight-arrow:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+    .ppics-scene-link-row {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-import-steps {
+        grid-template-columns: repeat(4, 1fr);
+        row-gap: 0.8rem;
+    }
+
+    .ppics-import-step::before {
+        display: none;
+    }
+}
+
+@media (max-width: 700px) {
+    .ppics-cover-choices {
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    }
+
+    .ppics-import-progress-shell {
+        min-height: max(540px, calc(100vh - 210px));
+        padding: 3.2rem 0 3rem;
+    }
+
+    .ppics-import-progress-head {
+        align-items: flex-start;
+    }
+
+    .ppics-import-steps {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .ppics-confirm-actions {
+        flex-direction: column-reverse;
+    }
+
+    .ppics-confirm-actions .btn {
+        width: 100%;
+    }
+}
+\n\n/* v0.8.0 - stable Stash mount and responsive masonry browser */\n.ppics-native-content-hidden {\n    display: none !important;\n}\n\n.ppics-plugin-root {\n    width: 100%;\n    min-height: max(760px, calc(100vh - 180px));\n}\n\n.ppics-grid {\n    grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));\n    grid-auto-rows: 8px;\n    column-gap: 1.15rem;\n    row-gap: 1.15rem;\n    align-items: start;\n}\n\n.ppics-card {\n    align-self: start;\n}\n\n.ppics-image-wrap {\n    height: auto;\n    min-height: 185px;\n    max-height: none;\n    aspect-ratio: 4 / 3;\n    background: rgba(0, 0, 0, 0.18);\n}\n\n.ppics-image-wrap .ppics-scene-thumb {\n    width: 100%;\n    height: 100%;\n    opacity: 0;\n    object-fit: cover;\n    transition:\n        opacity 180ms ease,\n        transform 160ms ease;\n}\n\n.ppics-image-wrap .ppics-scene-thumb.ppics-image-loaded {\n    opacity: 1;\n}\n\n.ppics-image-skeleton {\n    position: absolute;\n    inset: 0;\n    z-index: 1;\n    overflow: hidden;\n    background: rgba(255, 255, 255, 0.045);\n    transition: opacity 180ms ease;\n}\n\n.ppics-image-skeleton::after {\n    content: "";\n    position: absolute;\n    inset: 0;\n    transform: translateX(-100%);\n    background: linear-gradient(\n        90deg,\n        transparent,\n        rgba(255, 255, 255, 0.085),\n        transparent\n    );\n    animation: ppics-skeleton-shimmer 1.25s infinite;\n}\n\n.ppics-skeleton-hidden {\n    opacity: 0;\n    pointer-events: none;\n}\n\n@keyframes ppics-skeleton-shimmer {\n    100% {\n        transform: translateX(100%);\n    }\n}\n\n.ppics-image-wrap .ppics-check,\n.ppics-image-wrap .ppics-zoom-button {\n    z-index: 7;\n}\n\n.ppics-card-body {\n    padding: 0.82rem 0.88rem 0.9rem;\n}\n\n.ppics-card-title {\n    margin-bottom: 0.5rem;\n    font-size: 0.96rem;\n    line-height: 1.35;\n}\n\n.ppics-card-meta {\n    min-height: 94px;\n    margin-bottom: 0.7rem;\n}\n\n.ppics-card-studio {\n    margin-bottom: 0.35rem;\n    font-size: 0.9rem;\n}\n\n.ppics-card-statline {\n    margin-bottom: 0.45rem;\n    gap: 0.35rem;\n    font-size: 0.74rem;\n}\n\n.ppics-card-statline span:not(:last-child)::after {\n    content: "·";\n    margin-left: 0.35rem;\n    opacity: 0.55;\n}\n\n.ppics-card-chips {\n    gap: 0.32rem;\n}\n\n.ppics-card-chips .ppics-chip {\n    min-height: 24px;\n    padding: 0.2rem 0.42rem;\n    font-size: 0.71rem;\n}\n\n@media (max-width: 1100px) {\n    .ppics-grid {\n        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));\n    }\n}\n\n@media (max-width: 760px) {\n    .ppics-plugin-root,\n    .ppics-browser {\n        min-height: max(680px, calc(100vh - 145px));\n    }\n\n    .ppics-grid {\n        grid-template-columns: repeat(2, minmax(0, 1fr));\n        column-gap: 0.75rem;\n        row-gap: 0.75rem;\n    }\n\n    .ppics-card-body {\n        padding: 0.7rem;\n    }\n\n    .ppics-card-meta {\n        min-height: 88px;\n    }\n\n    .ppics-card-chips .ppics-chip {\n        max-width: 100%;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n    }\n}\n\n@media (max-width: 520px) {\n    .ppics-grid {\n        grid-template-columns: 1fr;\n    }\n\n    .ppics-image-wrap {\n        min-height: 210px;\n    }\n\n    .ppics-toolbar {\n        position: sticky;\n        bottom: 0.55rem;\n        z-index: 20;\n        margin-left: -0.15rem;\n        margin-right: -0.15rem;\n        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.32);\n        backdrop-filter: blur(12px);\n    }\n}\n
+
+/* v0.8.1 - dedicated performer tab content mount */
+.ppics-plugin-root {
+    display: block;
+    position: relative;
+    clear: both;
+}
+
+.ppics-plugin-root[style*="display: none"] {
+    display: none !important;
+}
+
+.tab-content[data-ppics-hidden="true"] {
+    display: none !important;
+}
+
+
+/* v0.8.2 - import status and selection drawer */
+
+.ppics-card-status-stack {
+    position: absolute;
+    top: 0.6rem;
+    left: 0.6rem;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    pointer-events: none;
+}
+
+.ppics-status-badge {
+    display: none;
+    padding: 0.32rem 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 999px;
+    background: rgba(8, 8, 10, 0.82);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.15;
+    white-space: nowrap;
+    backdrop-filter: blur(9px);
+    box-shadow: 0 5px 18px rgba(0, 0, 0, 0.2);
+}
+
+.ppics-status-badge.ppics-status-visible {
+    display: inline-flex;
+    align-items: center;
+}
+
+.ppics-imported-badge,
+.ppics-image-imported-badge {
+    background: rgba(37, 119, 73, 0.92);
+}
+
+.ppics-imported-badge::before,
+.ppics-image-imported-badge::before {
+    content: "✓";
+    margin-right: 0.3rem;
+}
+
+.ppics-selected-badge {
+    background: rgba(55, 112, 190, 0.92);
+}
+
+.ppics-image-imported-badge {
+    position: absolute;
+    top: 0.6rem;
+    left: 0.6rem;
+    z-index: 7;
+    pointer-events: none;
+}
+
+.ppics-selection-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 100050;
+}
+
+.ppics-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(3px);
+}
+
+.ppics-drawer-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: min(560px, 94vw);
+    height: 100%;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(18, 18, 21, 0.985);
+    box-shadow: -18px 0 60px rgba(0, 0, 0, 0.4);
+    animation: ppics-drawer-enter 160ms ease-out;
+}
+
+@keyframes ppics-drawer-enter {
+    from {
+        transform: translateX(28px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.ppics-drawer-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.15rem 1.2rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.ppics-drawer-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0;
+    font-size: 1.35rem;
+}
+
+.ppics-drawer-count {
+    min-width: 1.8rem;
+    height: 1.8rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    font-size: 0.78rem;
+}
+
+.ppics-drawer-close {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.045);
+    color: inherit;
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.ppics-drawer-body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.9rem 1rem 1.5rem;
+}
+
+.ppics-drawer-scene {
+    padding: 0.85rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ppics-drawer-scene:last-child {
+    border-bottom: 0;
+}
+
+.ppics-drawer-scene-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.7rem;
+}
+
+.ppics-drawer-scene-heading > div {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+}
+
+.ppics-drawer-scene-heading span {
+    font-size: 0.78rem;
+    opacity: 0.62;
+}
+
+.ppics-drawer-thumbs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.ppics-drawer-thumb {
+    position: relative;
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 0.45rem;
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.ppics-drawer-thumb img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+}
+
+.ppics-drawer-remove {
+    position: absolute;
+    top: 0.28rem;
+    right: 0.28rem;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.78);
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.ppics-drawer-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(18, 18, 21, 0.98);
+}
+
+.ppics-drawer-empty {
+    min-height: 55vh;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    text-align: center;
+    opacity: 0.72;
+}
+
+.ppics-drawer-empty h3 {
+    margin: 0.5rem 0 0.25rem;
+}
+
+.ppics-drawer-empty p {
+    margin: 0;
+}
+
+@media (max-width: 700px) {
+    .ppics-drawer-panel {
+        top: auto;
+        bottom: 0;
+        width: 100%;
+        height: min(82vh, 760px);
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        border-left: 0;
+        border-radius: 0.9rem 0.9rem 0 0;
+        animation: ppics-drawer-mobile-enter 170ms ease-out;
+    }
+
+    @keyframes ppics-drawer-mobile-enter {
+        from {
+            transform: translateY(28px);
+            opacity: 0;
+        }
+
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    .ppics-drawer-thumbs {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .ppics-drawer-footer {
+        padding-bottom: max(
+            0.9rem,
+            env(safe-area-inset-bottom)
+        );
+    }
+}
+
+@media (max-width: 420px) {
+    .ppics-drawer-thumbs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+
+/* v0.8.3 - larger near-fullscreen spotlight
+   Keep the existing viewer behaviour, but give the media much more
+   of the available viewport on desktop and tablet. */
+
+.ppics-spotlight {
+    padding: 0.45rem;
+}
+
+.ppics-spotlight-stage {
+    width: calc(100vw - 0.9rem);
+    height: calc(100vh - 0.9rem);
+    max-width: none;
+    max-height: none;
+    border-radius: 0.55rem;
+}
+
+.ppics-spotlight-topbar {
+    min-height: 52px;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
+
+.ppics-spotlight-media-shell {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+    padding-left: 4.15rem;
+    padding-right: 4.15rem;
+}
+
+.ppics-spotlight-footer {
+    min-height: 72px;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+}
+
+.ppics-spotlight-image {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+.ppics-spotlight-prev {
+    left: 0.7rem;
+}
+
+.ppics-spotlight-next {
+    right: 0.7rem;
+}
+
+@media (max-width: 1100px) {
+    .ppics-spotlight {
+        padding: 0.3rem;
+    }
+
+    .ppics-spotlight-stage {
+        width: calc(100vw - 0.6rem);
+        height: calc(100vh - 0.6rem);
+        border-radius: 0.4rem;
+    }
+
+    .ppics-spotlight-media-shell {
+        padding-left: 3.6rem;
+        padding-right: 3.6rem;
+    }
+}
+
+@media (max-width: 700px) {
+    .ppics-spotlight {
+        padding: 0;
+    }
+
+    .ppics-spotlight-stage {
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+    }
+
+    .ppics-spotlight-media-shell {
+        padding-top: 0.35rem;
+        padding-bottom: 0.35rem;
+        padding-left: 3rem;
+        padding-right: 3rem;
+    }
+}
+
+
+/* v0.8.4 - dense mixed-orientation masonry browser */
+.ppics-grid {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    grid-auto-flow: dense;
+    grid-auto-rows: 7px;
+    column-gap: 0.7rem;
+    row-gap: 0.7rem;
+}
+
+.ppics-card {
+    border-radius: 0.62rem;
+    box-shadow: 0 7px 22px rgba(0, 0, 0, 0.13);
+}
+
+.ppics-card-body {
+    padding: 0.72rem 0.78rem 0.8rem;
+}
+
+.ppics-card-title {
+    margin-bottom: 0.42rem;
+    font-size: 0.94rem;
+}
+
+.ppics-card-meta {
+    min-height: 82px;
+    margin-bottom: 0.58rem;
+}
+
+.ppics-card-meta-loading,
+.ppics-card-meta-unavailable {
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    opacity: 0.58;
+}
+
+.ppics-card-studio {
+    margin-bottom: 0.3rem;
+    font-size: 0.88rem;
+}
+
+.ppics-card-chips {
+    gap: 0.28rem;
+}
+
+.ppics-card-chips .ppics-chip {
+    min-height: 22px;
+    padding: 0.17rem 0.38rem;
+    font-size: 0.69rem;
+}
+
+.ppics-large-import-warning,
+.ppics-confirm-large-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+}
+
+.ppics-large-import-warning strong,
+.ppics-confirm-large-warning strong {
+    flex: 0 0 auto;
+}
+
+.ppics-confirm-large-warning {
+    margin: 0.9rem 0 0.2rem;
+    padding: 0.75rem 0.8rem;
+    border: 1px solid rgba(255, 190, 80, 0.25);
+    border-radius: 0.55rem;
+    background: rgba(255, 180, 70, 0.08);
+    font-size: 0.88rem;
+}
+
+.ppics-import-timing {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.6rem;
+    margin: 1rem 0;
+}
+
+.ppics-import-timing > div {
+    min-width: 0;
+    padding: 0.72rem 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 0.52rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-import-timing span {
+    font-size: 0.73rem;
+    opacity: 0.58;
+}
+
+.ppics-import-timing strong {
+    overflow: hidden;
+    font-size: 0.98rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ppics-global-error {
+    position: fixed;
+    inset: 0;
+    z-index: 100200;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+}
+
+.ppics-global-error-card {
+    width: min(720px, 96vw);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1.15rem;
+    border: 1px solid rgba(255, 110, 110, 0.25);
+    border-radius: 0.75rem;
+    background: rgba(22, 18, 20, 0.985);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+
+.ppics-global-error-icon {
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(220, 70, 70, 0.16);
+    font-size: 1.35rem;
+    font-weight: 800;
+}
+
+.ppics-global-error-content h2 {
+    margin: 0 0 0.55rem;
+}
+
+.ppics-global-error-content p {
+    margin: 0.35rem 0;
+}
+
+.ppics-global-error-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    margin-top: 1rem;
+}
+
+.ppics-error-details {
+    margin-top: 0.8rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.45rem;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.ppics-error-details summary {
+    cursor: pointer;
+    font-size: 0.82rem;
+    opacity: 0.72;
+}
+
+.ppics-error-details pre {
+    max-height: 220px;
+    margin: 0.65rem 0 0;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.76rem;
+}
+
+@media (min-width: 1800px) {
+    .ppics-grid {
+        grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .ppics-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: 0.65rem;
+        row-gap: 0.65rem;
+    }
+}
+
+@media (max-width: 620px) {
+    .ppics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-import-timing {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .ppics-import-timing > div:last-child {
+        grid-column: 1 / -1;
+    }
+
+    .ppics-global-error-card {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-global-error-icon {
+        width: 40px;
+        height: 40px;
+    }
+
+    .ppics-global-error-actions {
+        flex-direction: column-reverse;
+    }
+
+    .ppics-global-error-actions .btn {
+        width: 100%;
+    }
+}
+
+
+/* v0.8.5 - verified import status */
+.ppics-image-imported-badge.ppics-status-visible {
+    display: inline-flex;
+}
+
+.ppics-imported-badge,
+.ppics-image-imported-badge {
+    letter-spacing: 0.01em;
+}
+
+
+/* v0.9.0 - shared global browser, quick scene selection and viewer polish */
+
+.ppics-card-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-top: auto;
+}
+
+.ppics-card-actions .btn {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    white-space: normal;
+}
+
+.ppics-add-all-icon {
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.ppics-hero-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.ppics-spotlight-stage {
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+
+.ppics-spotlight-thumbs {
+    min-height: 76px;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding: 0.45rem 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(0, 0, 0, 0.18);
+    scrollbar-width: thin;
+}
+
+.ppics-spotlight-thumb {
+    width: 64px;
+    height: 58px;
+    flex: 0 0 auto;
+    padding: 0;
+    overflow: hidden;
+    border: 2px solid transparent;
+    border-radius: 0.4rem;
+    background: rgba(255, 255, 255, 0.035);
+    opacity: 0.58;
+    cursor: pointer;
+    transition: opacity 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.ppics-spotlight-thumb:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.ppics-spotlight-thumb.ppics-spotlight-thumb-active {
+    opacity: 1;
+    border-color: rgba(100, 165, 255, 0.92);
+}
+
+.ppics-spotlight-thumb img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+}
+
+.ppics-global-root {
+    width: 100%;
+    min-height: calc(100vh - 110px);
+}
+
+.ppics-global-browser {
+    width: min(1500px, 100%);
+    margin: 0 auto;
+}
+
+.ppics-global-search-form {
+    margin: 1rem 0 1.25rem;
+    padding: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-global-search-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.65rem;
+}
+
+.ppics-global-search-input {
+    min-height: 44px;
+}
+
+.ppics-global-search-submit {
+    min-width: 110px;
+}
+
+.ppics-global-types {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+}
+
+.ppics-global-type {
+    min-height: 34px;
+    padding: 0.38rem 0.7rem;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.035);
+    color: inherit;
+    cursor: pointer;
+}
+
+.ppics-global-type:hover,
+.ppics-global-type.ppics-global-type-active {
+    border-color: rgba(95, 160, 255, 0.65);
+    background: rgba(70, 130, 210, 0.16);
+}
+
+.ppics-global-results {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.9rem;
+}
+
+.ppics-global-result-card {
+    min-width: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 0.7rem;
+    background: rgba(255, 255, 255, 0.028);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 130ms ease, border-color 130ms ease, background 130ms ease;
+}
+
+.ppics-global-result-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.ppics-global-result-image {
+    min-height: 120px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.ppics-global-result-image img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+}
+
+.ppics-global-result-placeholder {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    opacity: 0.5;
+}
+
+.ppics-global-result-copy {
+    min-width: 0;
+    padding: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.3rem;
+}
+
+.ppics-global-result-type {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    opacity: 0.58;
+}
+
+.ppics-global-result-copy strong {
+    font-size: 1.05rem;
+}
+
+.ppics-global-result-meta {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+    opacity: 0.65;
+}
+
+.ppics-global-welcome,
+.ppics-global-empty {
+    grid-column: 1 / -1;
+    min-height: 330px;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    text-align: center;
+    padding: 2rem;
+    border: 1px dashed rgba(255, 255, 255, 0.11);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.ppics-global-welcome h3,
+.ppics-global-empty h3 {
+    margin: 0.6rem 0 0.3rem;
+}
+
+.ppics-global-welcome p,
+.ppics-global-empty p {
+    max-width: 620px;
+    margin: 0;
+    opacity: 0.65;
+}
+
+.ppics-global-welcome-icon {
+    font-size: 2.6rem;
+    line-height: 1;
+    opacity: 0.55;
+}
+
+.ppics-result-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 700px) {
+    .ppics-card-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-global-search-row {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-global-search-submit {
+        width: 100%;
+    }
+
+    .ppics-global-result-card {
+        grid-template-columns: 92px minmax(0, 1fr);
+    }
+
+    .ppics-spotlight-thumbs {
+        min-height: 68px;
+        padding-left: 0.4rem;
+        padding-right: 0.4rem;
+    }
+
+    .ppics-spotlight-thumb {
+        width: 56px;
+        height: 50px;
+    }
+}
+
+
+/* v0.9.2 - global search polish and imported filters */
+
+.ppics-global-search-form {
+    position: sticky;
+    top: 0;
+    z-index: 24;
+    background: rgba(18, 18, 21, 0.94);
+    backdrop-filter: blur(14px);
+}
+
+.ppics-global-input-shell {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ppics-global-search-icon {
+    position: absolute;
+    top: 50%;
+    left: 0.9rem;
+    z-index: 2;
+    transform: translateY(-50%);
+    opacity: 0.58;
+    pointer-events: none;
+}
+
+.ppics-global-input-shell .ppics-global-search-input {
+    width: 100%;
+    padding-left: 2.45rem;
+}
+
+.ppics-global-results {
+    display: block;
+}
+
+.ppics-global-result-group {
+    margin-top: 1.2rem;
+}
+
+.ppics-global-result-group:first-child {
+    margin-top: 0;
+}
+
+.ppics-global-result-group-head {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin-bottom: 0.65rem;
+}
+
+.ppics-global-result-group-head h3 {
+    margin: 0;
+    font-size: 0.96rem;
+    font-weight: 700;
+}
+
+.ppics-global-result-group-head span {
+    min-width: 1.6rem;
+    height: 1.6rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    font-size: 0.7rem;
+    opacity: 0.8;
+}
+
+.ppics-global-result-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fill,
+        minmax(285px, 1fr)
+    );
+    gap: 0.72rem;
+}
+
+.ppics-global-result-card {
+    width: 100%;
+    min-height: 108px;
+}
+
+.ppics-global-result-placeholder {
+    font-size: 1.15rem;
+    font-weight: 800;
+}
+
+.ppics-global-result-placeholder[data-result-type="performer"] {
+    background: rgba(181, 83, 129, 0.24);
+}
+
+.ppics-global-result-placeholder[data-result-type="studio"] {
+    background: rgba(91, 126, 187, 0.24);
+}
+
+.ppics-global-result-placeholder[data-result-type="tag"] {
+    background: rgba(153, 112, 68, 0.24);
+}
+
+.ppics-global-result-placeholder[data-result-type="keyword"] {
+    background: rgba(82, 139, 105, 0.24);
+}
+
+.ppics-global-searching,
+.ppics-global-inline-error {
+    min-height: 145px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.85rem;
+    padding: 1.2rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 0.7rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-global-searching strong,
+.ppics-global-searching span {
+    display: block;
+}
+
+.ppics-global-searching span:last-child {
+    margin-top: 0.15rem;
+    font-size: 0.8rem;
+    opacity: 0.62;
+}
+
+.ppics-global-inline-error {
+    min-height: 110px;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.ppics-global-inline-error span {
+    font-size: 0.84rem;
+    opacity: 0.72;
+}
+
+.ppics-global-small-state {
+    min-height: 170px;
+}
+
+.ppics-scene-filters {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 0.55rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-scene-filter {
+    min-height: 32px;
+    padding: 0.3rem 0.55rem;
+    border: 0;
+    border-radius: 0.4rem;
+    background: transparent;
+    color: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+    opacity: 0.68;
+}
+
+.ppics-scene-filter:hover,
+.ppics-scene-filter.ppics-scene-filter-active {
+    background: rgba(255, 255, 255, 0.1);
+    opacity: 1;
+}
+
+.ppics-scene-filter-hidden {
+    display: none !important;
+}
+
+.ppics-context-kind {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0.15rem 0.42rem;
+    margin-right: 0.4rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.ppics-add-all-scene.ppics-add-all-complete {
+    border-color: rgba(85, 166, 112, 0.45);
+    background: rgba(49, 116, 72, 0.22);
+}
+
+@media (max-width: 760px) {
+    .ppics-global-search-form {
+        margin-left: -0.4rem;
+        margin-right: -0.4rem;
+        padding-left: 0.4rem;
+        padding-right: 0.4rem;
+    }
+
+    .ppics-global-types {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        scrollbar-width: thin;
+    }
+
+    .ppics-global-type {
+        flex: 0 0 auto;
+        min-height: 42px;
+    }
+
+    .ppics-global-result-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-scene-filters {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .ppics-scene-filter {
+        flex: 1 0 auto;
+        min-height: 40px;
+    }
+}
+
+@media (max-width: 520px) {
+    .ppics-global-search-row {
+        gap: 0.55rem;
+    }
+
+    .ppics-global-search-submit {
+        min-height: 44px;
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+    }
+
+    .ppics-global-search-input {
+        min-height: 44px;
+    }
+}
+
+
+/* v0.9.3 - release-candidate hardening and result polish */
+
+.ppics-import-issues {
+    margin-top: 1rem;
+    border: 1px solid rgba(214, 162, 76, 0.3);
+    border-radius: 0.65rem;
+    background: rgba(181, 125, 44, 0.07);
+    overflow: hidden;
+}
+
+.ppics-import-issues > summary {
+    padding: 0.8rem 0.95rem;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.ppics-import-issues-list {
+    padding: 0 0.95rem 0.95rem;
+}
+
+.ppics-import-issue-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    align-items: start;
+    padding: 0.75rem 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ppics-import-issue-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.ppics-import-issue-copy strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ppics-import-issue-copy span,
+.ppics-import-issue-more {
+    font-size: 0.8rem;
+    opacity: 0.72;
+}
+
+.ppics-import-issue-tech {
+    max-width: min(420px, 46vw);
+    font-size: 0.75rem;
+}
+
+.ppics-import-issue-tech summary {
+    cursor: pointer;
+    opacity: 0.78;
+}
+
+.ppics-import-issue-tech div,
+.ppics-import-issue-tech pre {
+    margin-top: 0.45rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.ppics-import-failure-card p {
+    margin-bottom: 0.45rem;
+}
+
+.ppics-import-eta {
+    font-variant-numeric: tabular-nums;
+}
+
+.ppics-scene-actions .btn,
+.ppics-global-search-submit,
+.ppics-result-actions .btn {
+    min-height: 38px;
+}
+
+@media (max-width: 700px) {
+    .ppics-import-issue-row {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-import-issue-tech {
+        max-width: 100%;
+    }
+
+    .ppics-scene-actions .btn,
+    .ppics-result-actions .btn {
+        min-height: 44px;
+    }
+}
+
+
+/* v1.0.0 - direct PornPics URL input */
+
+.ppics-global-url-hint {
+    margin-top: 0.55rem;
+    font-size: 0.76rem;
+    line-height: 1.35;
+    opacity: 0.62;
+}
+
+.ppics-global-search-input:focus + .ppics-global-url-hint {
+    opacity: 0.8;
+}
+
+@media (max-width: 760px) {
+    .ppics-global-url-hint {
+        padding-left: 0.15rem;
+        padding-right: 0.15rem;
+    }
+}
+
+
+/* v1.2 - per-image PornPics tag assignment */
+
+.ppics-image-tag-review {
+    margin-top: 0.85rem;
+    padding: 0.85rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 0.7rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-image-tag-review-empty {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.ppics-image-tag-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.ppics-image-tag-heading p {
+    max-width: 860px;
+    margin: 0.3rem 0 0;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    opacity: 0.68;
+}
+
+.ppics-image-tag-modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+}
+
+.ppics-image-tag-mode {
+    min-height: 34px;
+    padding: 0.4rem 0.65rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.48rem;
+    background: rgba(255, 255, 255, 0.03);
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.78rem;
+}
+
+.ppics-image-tag-mode:hover {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.ppics-image-tag-mode-active {
+    border-color: rgba(106, 156, 214, 0.55);
+    background: rgba(72, 121, 177, 0.2);
+}
+
+.ppics-image-tag-custom {
+    display: none;
+    margin-top: 0.85rem;
+}
+
+.ppics-image-tag-custom-open .ppics-image-tag-custom {
+    display: block;
+}
+
+.ppics-image-tag-custom-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.65rem;
+}
+
+.ppics-image-tag-custom-head strong {
+    font-size: 0.82rem;
+}
+
+.ppics-image-tag-custom-head span {
+    font-size: 0.74rem;
+    opacity: 0.62;
+}
+
+.ppics-image-tag-images {
+    display: grid;
+    gap: 0.6rem;
+}
+
+.ppics-image-tag-image {
+    display: grid;
+    grid-template-columns: 118px minmax(0, 1fr);
+    gap: 0.7rem;
+    align-items: start;
+    padding: 0.55rem;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 0.58rem;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.ppics-image-tag-thumb {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 0.45rem;
+    background: rgba(0, 0, 0, 0.22);
+}
+
+.ppics-image-tag-thumb img {
+    display: block;
+    width: 100%;
+    height: 86px;
+    object-fit: cover;
+}
+
+.ppics-image-tag-thumb span {
+    position: absolute;
+    right: 0.3rem;
+    bottom: 0.3rem;
+    padding: 0.14rem 0.34rem;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.72);
+    font-size: 0.65rem;
+}
+
+.ppics-image-tag-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.38rem;
+    align-content: flex-start;
+}
+
+.ppics-image-tag-choice {
+    margin: 0;
+    cursor: pointer;
+}
+
+.ppics-image-tag-choice input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.ppics-image-tag-choice span {
+    min-height: 30px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.035);
+    font-size: 0.72rem;
+}
+
+.ppics-image-tag-choice:hover span {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.ppics-image-tag-choice input:checked + span {
+    border-color: rgba(86, 164, 113, 0.6);
+    background: rgba(49, 118, 73, 0.25);
+}
+
+@media (max-width: 700px) {
+    .ppics-image-tag-modes {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-image-tag-mode {
+        min-height: 42px;
+        text-align: left;
+    }
+
+    .ppics-image-tag-custom-head {
+        display: block;
+    }
+
+    .ppics-image-tag-custom-head span {
+        display: block;
+        margin-top: 0.2rem;
+    }
+
+    .ppics-image-tag-image {
+        grid-template-columns: 92px minmax(0, 1fr);
+    }
+
+    .ppics-image-tag-thumb img {
+        height: 76px;
+    }
+}
+
+@media (max-width: 480px) {
+    .ppics-image-tag-image {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-image-tag-thumb {
+        max-width: 150px;
+    }
+
+    .ppics-image-tag-thumb img {
+        height: 96px;
+    }
+}
+
+
+/* v1.3 - multi-step review wizard */
+
+.ppics-review-wizard {
+    max-width: 1500px;
+    margin: 0 auto;
+}
+
+.ppics-review-stepper {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fit,
+        minmax(150px, 1fr)
+    );
+    gap: 0.45rem;
+    margin: 1rem 0;
+}
+
+.ppics-review-stepper-item {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.6rem;
+    background: rgba(255, 255, 255, 0.025);
+    opacity: 0.58;
+}
+
+.ppics-review-stepper-item > span {
+    width: 26px;
+    height: 26px;
+    flex: 0 0 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.ppics-review-stepper-item > strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+}
+
+.ppics-review-stepper-active {
+    border-color: rgba(89, 148, 212, 0.55);
+    background: rgba(64, 112, 166, 0.18);
+    opacity: 1;
+}
+
+.ppics-review-stepper-active > span {
+    background: rgba(83, 145, 214, 0.35);
+}
+
+.ppics-review-stepper-complete {
+    opacity: 0.86;
+}
+
+.ppics-review-stepper-complete > span {
+    background: rgba(54, 131, 80, 0.32);
+}
+
+.ppics-review-step {
+    display: none;
+    scroll-margin-top: 1rem;
+}
+
+.ppics-review-step-active {
+    display: block;
+}
+
+.ppics-review-step-heading {
+    margin-bottom: 0.9rem;
+}
+
+.ppics-review-step-heading h3 {
+    margin-bottom: 0.2rem;
+}
+
+.ppics-review-step-heading p {
+    max-width: 900px;
+    margin: 0;
+    opacity: 0.68;
+}
+
+.ppics-review-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.7rem;
+    background: rgba(18, 18, 21, 0.94);
+    backdrop-filter: blur(14px);
+}
+
+.ppics-image-tag-thumb.ppics-image-tag-preview {
+    appearance: none;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    cursor: zoom-in;
+    text-align: left;
+}
+
+.ppics-image-tag-thumb.ppics-image-tag-preview:hover img {
+    transform: scale(1.025);
+}
+
+.ppics-image-tag-thumb.ppics-image-tag-preview img {
+    transition: transform 120ms ease;
+}
+
+.ppics-image-tag-index {
+    position: absolute;
+    left: 0.3rem;
+    bottom: 0.3rem;
+}
+
+.ppics-image-tag-zoom {
+    position: absolute;
+    right: 0.3rem;
+    top: 0.3rem;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.72);
+    font-size: 0.75rem;
+}
+
+.ppics-image-tag-choice-body {
+    min-height: 36px;
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.05rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 0.55rem;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.ppics-image-tag-choice-name {
+    font-size: 0.72rem;
+    font-weight: 650;
+}
+
+.ppics-image-tag-choice-status {
+    font-size: 0.62rem;
+    opacity: 0.58;
+}
+
+.ppics-image-tag-choice:hover .ppics-image-tag-choice-body {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.ppics-image-tag-choice input:checked + .ppics-image-tag-choice-body {
+    border-color: rgba(86, 164, 113, 0.6);
+    background: rgba(49, 118, 73, 0.25);
+}
+
+.ppics-image-tag-choice-unavailable {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.ppics-image-tag-choice-unavailable .ppics-image-tag-choice-body {
+    border-style: dashed;
+}
+
+.ppics-final-review-decisions {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fit,
+        minmax(150px, 1fr)
+    );
+    gap: 0.55rem;
+    margin: 0.9rem 0;
+}
+
+.ppics-final-review-decisions > div {
+    min-height: 74px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0.7rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.6rem;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ppics-final-review-decisions strong {
+    font-size: 1.1rem;
+}
+
+.ppics-final-review-decisions span {
+    margin-top: 0.1rem;
+    font-size: 0.72rem;
+    opacity: 0.62;
+}
+
+.ppics-review-final-scenes {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.ppics-review-final-scene {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 0.55rem;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.ppics-review-final-scene > div {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.ppics-review-final-scene > div > span,
+.ppics-review-final-scene > span {
+    font-size: 0.72rem;
+    opacity: 0.65;
+}
+
+@media (max-width: 700px) {
+    .ppics-review-stepper {
+        display: flex;
+        overflow-x: auto;
+        padding-bottom: 0.2rem;
+    }
+
+    .ppics-review-stepper-item {
+        flex: 0 0 auto;
+        min-width: 135px;
+    }
+
+    .ppics-review-footer {
+        gap: 0.5rem;
+    }
+
+    .ppics-review-footer .btn {
+        min-height: 44px;
+    }
+
+    .ppics-review-final-scene {
+        align-items: flex-start;
+    }
+}
+
+
+/* v1.4 - branched tag workflow and compact global search header */
+
+.ppics-global-hero {
+    margin: 0 0 0.65rem;
+    padding: 0.15rem 0.1rem 0.25rem;
+}
+
+.ppics-global-hero .ppics-eyebrow {
+    margin-bottom: 0.2rem;
+}
+
+.ppics-global-hero h2 {
+    margin: 0;
+    font-size: clamp(1.55rem, 2vw, 2rem);
+    line-height: 1.15;
+}
+
+.ppics-global-hero .ppics-hero-subtitle {
+    max-width: 780px;
+    margin-top: 0.3rem;
+    font-size: 0.92rem;
+}
+
+.ppics-global-browser .ppics-global-search-form {
+    margin-top: 0.55rem;
+}
+
+.ppics-review-step-disabled {
+    display: none !important;
+}
+
+.ppics-metadata-section-hidden {
+    display: none !important;
+}
+
+.ppics-tag-mode-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        3,
+        minmax(0, 1fr)
+    );
+    gap: 0.7rem;
+}
+
+.ppics-tag-mode-card {
+    appearance: none;
+    min-width: 0;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+    padding: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 0.72rem;
+    background: rgba(255, 255, 255, 0.025);
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    transition:
+        border-color 120ms ease,
+        background 120ms ease,
+        transform 120ms ease;
+}
+
+.ppics-tag-mode-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.ppics-tag-mode-card-active {
+    border-color: rgba(91, 156, 224, 0.7);
+    background: rgba(64, 117, 176, 0.2);
+    box-shadow: 0 0 0 1px rgba(91, 156, 224, 0.16);
+}
+
+.ppics-tag-mode-icon {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.55rem;
+    background: rgba(255, 255, 255, 0.07);
+    font-weight: 800;
+}
+
+.ppics-tag-mode-card strong {
+    font-size: 0.95rem;
+}
+
+.ppics-tag-mode-card > span:not(.ppics-tag-mode-icon) {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    opacity: 0.75;
+}
+
+.ppics-tag-mode-card small {
+    margin-top: auto;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    opacity: 0.55;
+}
+
+.ppics-image-tag-custom {
+    display: block;
+    margin-top: 0.85rem;
+}
+
+@media (max-width: 850px) {
+    .ppics-tag-mode-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ppics-tag-mode-card {
+        min-height: 0;
+    }
+}
+
+
+/* ============================================================
+   PornPics Importer v2.0
+   Startup splash + smoother application transitions
+   ============================================================ */
+
+.ppics-splash {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background:
+        radial-gradient(
+            circle at 50% 42%,
+            rgba(93, 45, 57, 0.22),
+            transparent 35%
+        ),
+        linear-gradient(
+            145deg,
+            rgba(14, 10, 12, 0.985),
+            rgba(28, 17, 20, 0.985)
+        );
+    opacity: 0;
+    visibility: hidden;
+    transition:
+        opacity 360ms ease,
+        visibility 360ms ease;
+}
+
+.ppics-splash-visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.ppics-splash-leaving {
+    opacity: 0;
+    visibility: hidden;
+}
+
+.ppics-splash-atmosphere {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.ppics-splash-atmosphere span {
+    position: absolute;
+    display: block;
+    border-radius: 999px;
+    filter: blur(2px);
+    background:
+        radial-gradient(
+            circle,
+            rgba(207, 117, 140, 0.18),
+            rgba(207, 117, 140, 0)
+        );
+    animation:
+        ppics-splash-float 4.2s ease-in-out infinite alternate;
+}
+
+.ppics-splash-atmosphere span:nth-child(1) {
+    width: 38vw;
+    height: 38vw;
+    left: -12vw;
+    top: -14vw;
+}
+
+.ppics-splash-atmosphere span:nth-child(2) {
+    width: 28vw;
+    height: 28vw;
+    right: -7vw;
+    bottom: -10vw;
+    animation-delay: -1.2s;
+}
+
+.ppics-splash-atmosphere span:nth-child(3) {
+    width: 18vw;
+    height: 18vw;
+    right: 17vw;
+    top: 14vh;
+    animation-delay: -2.4s;
+}
+
+.ppics-splash-content {
+    position: relative;
+    z-index: 2;
+    width: min(420px, calc(100vw - 44px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    color: #f8e8e8;
+    transform: translateY(12px) scale(0.985);
+    opacity: 0;
+}
+
+.ppics-splash-visible .ppics-splash-content {
+    animation:
+        ppics-splash-content-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        80ms forwards;
+}
+
+.ppics-splash-mark {
+    position: relative;
+    width: 78px;
+    height: 78px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+.ppics-splash-mark-ring {
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(239, 169, 183, 0.4);
+    border-radius: 50%;
+    box-shadow:
+        0 0 0 8px rgba(239, 169, 183, 0.03),
+        0 0 42px rgba(196, 91, 118, 0.14);
+    animation:
+        ppics-splash-ring 1.8s ease-in-out infinite;
+}
+
+.ppics-splash-mark-core {
+    width: 54px;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 17px;
+    background:
+        linear-gradient(
+            145deg,
+            rgba(122, 55, 72, 0.95),
+            rgba(77, 34, 45, 0.95)
+        );
+    border: 1px solid rgba(255, 215, 222, 0.16);
+    box-shadow:
+        0 14px 42px rgba(0, 0, 0, 0.32),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.06em;
+}
+
+.ppics-splash-title {
+    font-size: clamp(2rem, 6vw, 3.1rem);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -0.045em;
+}
+
+.ppics-splash-subtitle {
+    margin-top: 0.35rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: 0.58;
+}
+
+.ppics-splash-progress {
+    width: min(260px, 70vw);
+    height: 3px;
+    margin-top: 1.45rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.ppics-splash-progress span {
+    display: block;
+    width: 38%;
+    height: 100%;
+    border-radius: inherit;
+    background:
+        linear-gradient(
+            90deg,
+            rgba(220, 135, 155, 0.25),
+            rgba(246, 190, 201, 0.9),
+            rgba(220, 135, 155, 0.25)
+        );
+    transform: translateX(-120%);
+    animation:
+        ppics-splash-progress 950ms cubic-bezier(0.4, 0, 0.2, 1)
+        100ms forwards;
+}
+
+.ppics-splash-version {
+    margin-top: 0.65rem;
+    font-size: 0.68rem;
+    opacity: 0.42;
+}
+
+/* Main app view transitions */
+
+.ppics-view-enter {
+    animation:
+        ppics-view-enter 420ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        both;
+}
+
+.ppics-view-enter .ppics-hero,
+.ppics-view-enter .ppics-global-hero,
+.ppics-view-enter .ppics-review-stepper {
+    animation:
+        ppics-view-header-enter 480ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        both;
+}
+
+.ppics-view-enter .ppics-toolbar,
+.ppics-view-enter .ppics-global-search-form {
+    animation:
+        ppics-view-header-enter 500ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        55ms both;
+}
+
+.ppics-view-enter .ppics-card,
+.ppics-view-enter .ppics-global-result-card,
+.ppics-view-enter .ppics-image-card,
+.ppics-view-enter .ppics-review-scene {
+    animation:
+        ppics-card-enter 430ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        both;
+}
+
+.ppics-view-enter .ppics-card:nth-child(2),
+.ppics-view-enter .ppics-global-result-card:nth-child(2),
+.ppics-view-enter .ppics-image-card:nth-child(2) {
+    animation-delay: 35ms;
+}
+
+.ppics-view-enter .ppics-card:nth-child(3),
+.ppics-view-enter .ppics-global-result-card:nth-child(3),
+.ppics-view-enter .ppics-image-card:nth-child(3) {
+    animation-delay: 65ms;
+}
+
+.ppics-view-enter .ppics-card:nth-child(4),
+.ppics-view-enter .ppics-global-result-card:nth-child(4),
+.ppics-view-enter .ppics-image-card:nth-child(4) {
+    animation-delay: 90ms;
+}
+
+.ppics-view-enter .ppics-card:nth-child(5),
+.ppics-view-enter .ppics-global-result-card:nth-child(5),
+.ppics-view-enter .ppics-image-card:nth-child(5) {
+    animation-delay: 110ms;
+}
+
+.ppics-view-enter .ppics-card:nth-child(6),
+.ppics-view-enter .ppics-global-result-card:nth-child(6),
+.ppics-view-enter .ppics-image-card:nth-child(6) {
+    animation-delay: 125ms;
+}
+
+.ppics-review-step-active.ppics-review-step-enter {
+    animation:
+        ppics-review-step-enter 330ms cubic-bezier(0.2, 0.8, 0.2, 1)
+        both;
+}
+
+.ppics-review-stepper-item {
+    transition:
+        opacity 180ms ease,
+        background 180ms ease,
+        border-color 180ms ease,
+        transform 180ms ease;
+}
+
+.ppics-review-stepper-active {
+    transform: translateY(-1px);
+}
+
+.ppics-tag-mode-card,
+.ppics-global-result-card,
+.ppics-card,
+.ppics-image-card,
+.ppics-scene-filter,
+.ppics-global-type {
+    transition:
+        transform 150ms ease,
+        background 150ms ease,
+        border-color 150ms ease,
+        box-shadow 150ms ease,
+        opacity 150ms ease;
+}
+
+.ppics-global-result-card:hover,
+.ppics-card:hover,
+.ppics-tag-mode-card:hover {
+    transform: translateY(-2px);
+}
+
+.ppics-image-card:hover {
+    transform: translateY(-1px);
+}
+
+@keyframes ppics-splash-content-in {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.975);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes ppics-splash-ring {
+    0%,
+    100% {
+        transform: scale(0.96);
+        opacity: 0.62;
+    }
+
+    50% {
+        transform: scale(1.055);
+        opacity: 1;
+    }
+}
+
+@keyframes ppics-splash-progress {
+    from {
+        transform: translateX(-120%);
+    }
+
+    to {
+        transform: translateX(265%);
+    }
+}
+
+@keyframes ppics-splash-float {
+    from {
+        transform:
+            translate3d(-10px, -6px, 0)
+            scale(0.96);
+        opacity: 0.45;
+    }
+
+    to {
+        transform:
+            translate3d(14px, 10px, 0)
+            scale(1.04);
+        opacity: 0.85;
+    }
+}
+
+@keyframes ppics-view-enter {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes ppics-view-header-enter {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes ppics-card-enter {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.992);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes ppics-review-step-enter {
+    from {
+        opacity: 0;
+        transform: translateX(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ppics-splash,
+    .ppics-splash-content,
+    .ppics-splash-mark-ring,
+    .ppics-splash-progress span,
+    .ppics-splash-atmosphere span,
+    .ppics-view-enter,
+    .ppics-view-enter *,
+    .ppics-review-step-active.ppics-review-step-enter {
+        animation: none !important;
+        transition: none !important;
+    }
+
+    .ppics-splash-visible .ppics-splash-content {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+
+.ppics-age-verification-hidden {
+    opacity: 0 !important;
+    transform: scale(0.96) translateY(-6px) !important;
+    pointer-events: none;
+    transition:
+        opacity 170ms ease,
+        transform 170ms ease !important;
+}
+
+.ppics-age-verification-card {
+    border-color: rgba(214, 157, 72, 0.22);
+}
+
+.ppics-age-verification-note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+    padding: 0.55rem 0.6rem;
+    border-radius: 0.5rem;
+    background: rgba(172, 116, 42, 0.1);
+}
+
+.ppics-age-verification-note strong {
+    font-size: 0.76rem;
+}
+
+.ppics-age-verification-note span {
+    font-size: 0.7rem;
+    line-height: 1.35;
+    opacity: 0.68;
+}
+
+.ppics-age-verification-view .ppics-state-icon {
+    width: 58px;
+    min-width: 58px;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+
+
+
+/* v2.1 - native Stash navbar clone
+   PornPics now reuses the complete HTML/classes/icon of a built-in Stash
+   navbar item, so spacing is controlled entirely by Stash itself. */
+
+[data-ppics-native-nav-item="1"] {
+    box-sizing: border-box;
+}
