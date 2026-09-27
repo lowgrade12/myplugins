@@ -2044,9 +2044,14 @@ def validate_download_url(url):
             "Invalid image URL: " + url
         )
 
-    host = parsed.netloc.lower()
+    host = str(
+        parsed.hostname or ""
+    ).strip().lower().rstrip(".")
 
-    if not host.endswith("pornpics.com"):
+    if host not in (
+        "pornpics.com",
+        "www.pornpics.com"
+    ):
         raise RuntimeError(
             "Unexpected image host. Download cancelled: "
             + host

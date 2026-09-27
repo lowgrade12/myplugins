@@ -8,7 +8,7 @@ import math
 import os
 import random
 import re
-import ssl
+
 import time
 
 
@@ -505,10 +505,6 @@ class PPics:
             ),
         }
 
-        self.ssl_context = (
-            ssl._create_unverified_context()
-        )
-
     def fetch_page(
         self,
         url,
@@ -530,7 +526,6 @@ class PPics:
 
         with urlopen(
             req,
-            context=self.ssl_context,
             timeout=30
         ) as response:
             html = response.read().decode(
@@ -1121,14 +1116,24 @@ class PPics:
 
         lowered = value.lower()
 
-        return (
-            "://" in value
-            or lowered.startswith(
-                "pornpics.com/"
-            )
-            or lowered.startswith(
-                "www.pornpics.com/"
-            )
+        if lowered.startswith(
+            "pornpics.com/"
+        ) or lowered.startswith(
+            "www.pornpics.com/"
+        ):
+            return True
+
+        if "://" not in value:
+            return False
+
+        parsed = urlparse(value)
+        host = str(
+            parsed.hostname or ""
+        ).strip().lower().rstrip(".")
+
+        return host in (
+            "pornpics.com",
+            "www.pornpics.com"
         )
 
     def _normalize_pornpics_url(
