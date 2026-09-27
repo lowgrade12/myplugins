@@ -661,11 +661,12 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
     }
 
     async function detectPendingGlobalSearch() {
-        if (
-            !window.location.pathname.startsWith(
-                "/performers/"
-            )
-        ) {
+        const performerDetailRoute =
+            window.location.pathname.match(
+                /^\/performers\/[^/]+\/?$/
+            );
+
+        if (!performerDetailRoute) {
             return null;
         }
 
