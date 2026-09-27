@@ -1,0 +1,46 @@
+name: Babepedia Gallery Importer
+description: Search Babepedia performers and import selected gallery images into Stash.
+version: 0.1.0
+url: https://github.com/lowgrade12/myplugins
+
+exec:
+  - python
+  - "{pluginDir}/babepediaGallery.py"
+
+interface: raw
+errLog: info
+
+settings:
+  outputPath:
+    displayName: Download folder
+    description: Folder used for downloaded Babepedia images. Must be inside a Stash library path that scans images.
+    type: STRING
+
+  organized:
+    displayName: Mark imported images organized
+    description: When enabled, imported images are marked organized in Stash.
+    type: BOOLEAN
+
+  syncPerformerMetadata:
+    displayName: Sync performer metadata
+    description: Merge Babepedia performer aliases, URLs and missing profile metadata into the active Stash performer.
+    type: BOOLEAN
+
+tasks:
+  - name: Open Babepedia
+    description: Search Babepedia and import performer images
+
+  - name: Clear Babepedia cache
+    description: Clear cached Babepedia task responses and progress files.
+    defaultArgs:
+      mode: clear_cache
+
+ui:
+  javascript:
+    - ui/script.js
+
+  css:
+    - ui/style.css
+
+  assets:
+    /: ./assets
