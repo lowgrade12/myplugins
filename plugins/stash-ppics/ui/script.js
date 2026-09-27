@@ -730,7 +730,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
         if (
             pendingSearch.query.length >= 2
         ) {
-            runGlobalSearch(
+            await runGlobalSearch(
                 pendingSearch.query,
                 pendingSearch.searchType
                     || "performer",
