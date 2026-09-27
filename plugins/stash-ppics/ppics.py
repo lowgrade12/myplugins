@@ -2050,7 +2050,8 @@ def validate_download_url(url):
 
     if host not in (
         "pornpics.com",
-        "www.pornpics.com"
+        "www.pornpics.com",
+        "cdni.pornpics.com"
     ):
         raise RuntimeError(
             "Unexpected image host. Download cancelled: "
