@@ -626,14 +626,113 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
         );
     }
 
-    function currentPerformer() {
-        const name = document.querySelector(".performer-name");
+    function currentPerformerIdFromUrl() {
+        const match = window.location.pathname.match(
+            /^\/performers\/([^/]+)(?:\/|$)/
+        );
 
-        if (!name) {
+        if (!match || !match[1]) {
             return null;
         }
 
-        return name.textContent.trim();
+        return match[1];
+    }
+
+    async function fetchPerformerById(performerId) {
+        if (!performerId) {
+            return null;
+        }
+
+        const query = `
+            query PPicsCurrentPerformer($id: ID!) {
+                findPerformer(id: $id) {
+                    id
+                    name
+                }
+            }
+        `;
+
+        const response = await fetch("/graphql", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({
+                query: query,
+                variables: {
+                    id: performerId
+                }
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.errors && result.errors.length) {
+            throw new Error(
+                result.errors.map(function (error) {
+                    return error.message;
+                }).join(", ")
+            );
+        }
+
+        if (!result.data) {
+            return null;
+        }
+
+        return result.data.findPerformer || null;
+    }
+
+    async function currentPerformer() {
+        const performerId = currentPerformerIdFromUrl();
+
+        if (performerId) {
+            try {
+                const performer = await fetchPerformerById(
+                    performerId
+                );
+
+                if (
+                    performer &&
+                    performer.name
+                ) {
+                    return performer.name.trim();
+                }
+            } catch (error) {
+                console.warn(
+                    "PornPics could not load performer name from GraphQL",
+                    error
+                );
+            }
+        }
+
+        const selectors = [
+            ".detail-header h2",
+            ".detail-header h3",
+            ".performer-head h2",
+            ".performer-head h3",
+            ".performer-name"
+        ];
+
+        for (
+            let index = 0;
+            index < selectors.length;
+            index += 1
+        ) {
+            const element = document.querySelector(
+                selectors[index]
+            );
+
+            if (
+                element &&
+                element.textContent &&
+                element.textContent.trim()
+            ) {
+                return element.textContent.trim();
+            }
+        }
+
+        return null;
     }
 
     function performerTabsNav() {
@@ -10991,7 +11090,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
 
             tab.classList.add("active");
 
-            const performer = currentPerformer();
+            const performer = await currentPerformer();
 
             if (!performer) {
                 renderError("Could not determine performer.");
