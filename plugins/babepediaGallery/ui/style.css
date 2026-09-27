@@ -183,6 +183,8 @@
 .babepedia-result {
   flex-direction: column;
   text-align: left;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
 }
 
