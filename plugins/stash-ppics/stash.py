@@ -1102,17 +1102,18 @@ class Stash:
         if title:
             gallery_input["title"] = title
 
-        existing_studio = gallery.get("studio")
-
-        if existing_studio and existing_studio.get("id"):
-            gallery_input["studio_id"] = existing_studio["id"]
-        elif studio_id:
+        if studio_id:
             gallery_input["studio_id"] = studio_id
+        else:
+            existing_studio = gallery.get("studio")
 
-        if gallery.get("date"):
-            gallery_input["date"] = gallery["date"]
-        elif date:
+            if existing_studio and existing_studio.get("id"):
+                gallery_input["studio_id"] = existing_studio["id"]
+
+        if date:
             gallery_input["date"] = date
+        elif gallery.get("date"):
+            gallery_input["date"] = gallery["date"]
 
         if organized is not None:
             gallery_input["organized"] = bool(organized)
@@ -1391,12 +1392,13 @@ class Stash:
             "gallery_ids": galleries
         }
 
-        existing_studio = image.get("studio")
-
-        if existing_studio and existing_studio.get("id"):
-            image_input["studio_id"] = existing_studio["id"]
-        elif studio_id:
+        if studio_id:
             image_input["studio_id"] = studio_id
+        else:
+            existing_studio = image.get("studio")
+
+            if existing_studio and existing_studio.get("id"):
+                image_input["studio_id"] = existing_studio["id"]
 
         if organized is not None:
             image_input["organized"] = bool(organized)
