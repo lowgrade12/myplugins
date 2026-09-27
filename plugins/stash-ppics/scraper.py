@@ -14,6 +14,10 @@ import time
 
 BASE_URL = "https://www.pornpics.com"
 SEARCH_INDEX_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+BARE_PORNPICS_URL_PATTERN = re.compile(
+    r"^(?:www\.)?pornpics\.com(?::\d+)?/.+",
+    re.IGNORECASE
+)
 
 
 class PageLabelParser(HTMLParser):
@@ -1114,12 +1118,8 @@ class PPics:
             value or ""
         ).strip()
 
-        lowered = value.lower()
-
-        if lowered.startswith(
-            "pornpics.com/"
-        ) or lowered.startswith(
-            "www.pornpics.com/"
+        if BARE_PORNPICS_URL_PATTERN.match(
+            value
         ):
             return True
 
@@ -1149,15 +1149,8 @@ class PPics:
         ):
             return None
 
-        lowered = value.lower()
-
-        if (
-            lowered.startswith(
-                "pornpics.com/"
-            )
-            or lowered.startswith(
-                "www.pornpics.com/"
-            )
+        if BARE_PORNPICS_URL_PATTERN.match(
+            value
         ):
             value = (
                 "https://"
@@ -1476,7 +1469,7 @@ class PPics:
             context_type
         )
 
-        if context_type == "all":
+        if context_type == "all" and not result:
             keyword = self.keyword_context_result(
                 query
             )
