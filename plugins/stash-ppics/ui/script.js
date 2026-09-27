@@ -9,10 +9,14 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
     const SELECTION_STORAGE_PREFIX = "pornpics-importer-selection:";
     const SESSION_RESET_TOKEN_KEY = "pornpics-importer-session-reset-token";
     const GLOBAL_ROUTE_PATH = "/plugin/pornpics";
-    const GLOBAL_SAFE_URL =
+    const GLOBAL_SAFE_FALLBACK_URL =
         "/scenes"
         + String.fromCharCode(63)
         + "ppics=pornpics";
+    const GLOBAL_ROUTE_SOURCE_URL_KEY =
+        "ppicsGlobalRouteSourceUrl";
+    const GLOBAL_ROUTE_PENDING_SEARCH_KEY =
+        "ppicsGlobalRoutePendingSearch";
 
     const GLOBAL_SEARCH_STORAGE_KEY =
         "pornpics-importer-global-search-state";
@@ -521,22 +525,232 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
     }
 
     function isGlobalPornPicsSafeUrl() {
-        if (
-            window.location.pathname !==
-            "/scenes"
-        ) {
-            return false;
-        }
-
         const params =
             new URLSearchParams(
                 window.location.search
             );
 
         return (
-            params.get("ppics") ===
+            window.location.pathname !==
+            GLOBAL_ROUTE_PATH
+            && params.get("ppics") ===
             "pornpics"
         );
+    }
+
+    function cloneHistoryState() {
+        if (
+            window.history.state
+            && typeof window.history.state === "object"
+        ) {
+            return Object.assign(
+                {},
+                window.history.state
+            );
+        }
+
+        return {};
+    }
+
+    function sanitizeGlobalRouteSourceUrl(url) {
+        try {
+            const parsed =
+                new URL(
+                    url || window.location.href,
+                    window.location.origin
+                );
+
+            if (
+                parsed.pathname ===
+                GLOBAL_ROUTE_PATH
+            ) {
+                return GLOBAL_SAFE_FALLBACK_URL;
+            }
+
+            parsed.searchParams.delete(
+                "ppics"
+            );
+
+            const search =
+                parsed.searchParams.toString();
+
+            return (
+                parsed.pathname
+                + (search ? "?" + search : "")
+                + parsed.hash
+            );
+        } catch (error) {
+            return GLOBAL_SAFE_FALLBACK_URL;
+        }
+    }
+
+    function globalSafeUrlForSourceUrl(sourceUrl) {
+        try {
+            const parsed =
+                new URL(
+                    sanitizeGlobalRouteSourceUrl(
+                        sourceUrl
+                    ),
+                    window.location.origin
+                );
+
+            parsed.searchParams.set(
+                "ppics",
+                "pornpics"
+            );
+
+            const search =
+                parsed.searchParams.toString();
+
+            return (
+                parsed.pathname
+                + (search ? "?" + search : "")
+                + parsed.hash
+            );
+        } catch (error) {
+            return GLOBAL_SAFE_FALLBACK_URL;
+        }
+    }
+
+    function currentGlobalSourceUrl() {
+        const state =
+            cloneHistoryState();
+
+        return sanitizeGlobalRouteSourceUrl(
+            state[
+                GLOBAL_ROUTE_SOURCE_URL_KEY
+            ]
+            || (
+                window.location.pathname
+                + window.location.search
+                + window.location.hash
+            )
+        );
+    }
+
+    function currentGlobalSafeUrl() {
+        return globalSafeUrlForSourceUrl(
+            currentGlobalSourceUrl()
+        );
+    }
+
+    function consumePendingGlobalSearch() {
+        const state =
+            cloneHistoryState();
+        const pendingSearch =
+            state[
+                GLOBAL_ROUTE_PENDING_SEARCH_KEY
+            ]
+            || null;
+
+        if (!pendingSearch) {
+            return null;
+        }
+
+        delete state[
+            GLOBAL_ROUTE_PENDING_SEARCH_KEY
+        ];
+
+        window.history.replaceState(
+            state,
+            "",
+            window.location.pathname
+            + window.location.search
+            + window.location.hash
+        );
+
+        return pendingSearch;
+    }
+
+    async function detectPendingGlobalSearch() {
+        const performerDetailRoute =
+            window.location.pathname.match(
+                /^\/performers\/[^/]+\/?$/
+            );
+
+        if (!performerDetailRoute) {
+            return null;
+        }
+
+        let performer = String(
+            currentPerformerName || ""
+        ).trim();
+
+        if (performer.length < 2) {
+            performer =
+                await currentPerformer()
+                || "";
+            performer =
+                String(performer).trim();
+        }
+
+        if (performer.length < 2) {
+            return null;
+        }
+
+        return {
+            query: performer,
+            searchType: "performer"
+        };
+    }
+
+    async function buildGlobalRouteState() {
+        const state =
+            cloneHistoryState();
+        const pendingSearch =
+            await detectPendingGlobalSearch();
+
+        state[
+            GLOBAL_ROUTE_SOURCE_URL_KEY
+        ] = currentGlobalSourceUrl();
+
+        if (
+            pendingSearch &&
+            pendingSearch.query
+        ) {
+            state[
+                GLOBAL_ROUTE_PENDING_SEARCH_KEY
+            ] = pendingSearch;
+        } else {
+            delete state[
+                GLOBAL_ROUTE_PENDING_SEARCH_KEY
+            ];
+        }
+
+        return state;
+    }
+
+    async function renderPendingGlobalSearch() {
+        const pendingSearch =
+            consumePendingGlobalSearch();
+
+        if (
+            !pendingSearch
+            || !pendingSearch.query
+        ) {
+            return false;
+        }
+
+        renderGlobalSearchPage(
+            pendingSearch.query,
+            pendingSearch.searchType
+                || "performer",
+            [],
+            true
+        );
+
+        if (
+            pendingSearch.query.length >= 2
+        ) {
+            await runGlobalSearch(
+                pendingSearch.query,
+                pendingSearch.searchType
+                    || "performer",
+                true
+            );
+        }
+
+        return true;
     }
 
     function isRegisteredGlobalPornPicsPath() {
@@ -561,7 +775,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
         window.history.replaceState(
             window.history.state,
             "",
-            GLOBAL_SAFE_URL
+            currentGlobalSafeUrl()
         );
     }
 
@@ -696,7 +910,10 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                     performer &&
                     performer.name
                 ) {
-                    return performer.name.trim();
+                    currentPerformerName =
+                        performer.name.trim();
+
+                    return currentPerformerName;
                 }
             } catch (error) {
                 console.warn(
@@ -728,7 +945,10 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                 element.textContent &&
                 element.textContent.trim()
             ) {
-                return element.textContent.trim();
+                currentPerformerName =
+                    element.textContent.trim();
+
+                return currentPerformerName;
             }
         }
 
@@ -10431,7 +10651,13 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                     maskGlobalPornPicsUrl();
 
                     window.setTimeout(
-                        function () {
+                        async function () {
+                            if (
+                                await renderPendingGlobalSearch()
+                            ) {
+                                return;
+                            }
+
                             const state =
                                 restoreGlobalSearchState();
 
@@ -10487,7 +10713,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
         return true;
     }
 
-    function navigateToGlobalPornPics() {
+    async function navigateToGlobalPornPics() {
         const routeReady =
             registerGlobalPornPicsRoute();
 
@@ -10504,6 +10730,12 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
         if (isRegisteredGlobalPornPicsPath()) {
             globalRouteActive = true;
             ppicsActive = true;
+
+            if (
+                await renderPendingGlobalSearch()
+            ) {
+                return;
+            }
 
             const state =
                 restoreGlobalSearchState();
@@ -10532,8 +10764,11 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
             return;
         }
 
+        const routeState =
+            await buildGlobalRouteState();
+
         window.history.pushState(
-            {},
+            routeState,
             "",
             GLOBAL_ROUTE_PATH
         );
@@ -10766,7 +11001,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
             "ppics-main-nav-link";
 
         link.href =
-            GLOBAL_SAFE_URL;
+            currentGlobalSafeUrl();
 
         link.setAttribute(
             "aria-label",
@@ -10805,11 +11040,14 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
 
         link.addEventListener(
             "click",
-            function (event) {
+            async function (event) {
                 event.preventDefault();
                 event.stopPropagation();
 
-                navigateToGlobalPornPics();
+                link.href =
+                    currentGlobalSafeUrl();
+
+                await navigateToGlobalPornPics();
             }
         );
 
@@ -10844,7 +11082,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
         ) {
             wrapper.setAttribute(
                 "data-rb-event-key",
-                GLOBAL_SAFE_URL
+                currentGlobalSafeUrl()
             );
         }
 
@@ -10898,6 +11136,21 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
             existing
             && existing.isConnected
         ) {
+            existing.href =
+                currentGlobalSafeUrl();
+
+            const existingWrapper =
+                existing.closest(
+                    "[data-rb-event-key]"
+                );
+
+            if (existingWrapper) {
+                existingWrapper.setAttribute(
+                    "data-rb-event-key",
+                    currentGlobalSafeUrl()
+                );
+            }
+
             return true;
         }
 
