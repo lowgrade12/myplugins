@@ -1,4 +1,5 @@
 import os
+import ssl
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -6,6 +7,7 @@ from urllib.request import Request, urlopen
 
 class Downloader:
     def __init__(self):
+        self.ssl_context = ssl.create_default_context()
         self.headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -42,6 +44,7 @@ class Downloader:
         try:
             with urlopen(
                 request,
+                context=self.ssl_context,
                 timeout=60
             ) as response:
                 with open(temp_path, "wb") as output:

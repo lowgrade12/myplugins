@@ -96,18 +96,38 @@ class Stash:
                 + scheme
             )
 
-        url_host = host
+        raw_host = str(host).strip()
+        url_host = raw_host
 
         if (
-            ":" in host
-            and not host.startswith("[")
-            and not host.endswith("]")
+            raw_host.startswith("[")
+            and raw_host.endswith("]")
         ):
+            raw_host = raw_host[1:-1]
+
+        if (
+            ":" in raw_host
+            and raw_host.count(":") == 1
+        ):
+            host_part, maybe_port = raw_host.rsplit(
+                ":",
+                1
+            )
+
+            if (
+                host_part
+                and maybe_port.isdigit()
+            ):
+                raw_host = host_part
+
+        if ":" in raw_host:
             url_host = (
                 "["
-                + host
+                + raw_host
                 + "]"
             )
+        else:
+            url_host = raw_host
 
         self.graphql_url = (
             scheme

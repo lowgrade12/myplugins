@@ -8,6 +8,7 @@ import math
 import os
 import random
 import re
+import ssl
 
 import time
 
@@ -508,6 +509,7 @@ class PPics:
                 "application/xml;q=0.9,*/*;q=0.8"
             ),
         }
+        self.ssl_context = ssl.create_default_context()
 
     def fetch_page(
         self,
@@ -530,6 +532,7 @@ class PPics:
 
         with urlopen(
             req,
+            context=self.ssl_context,
             timeout=30
         ) as response:
             html = response.read().decode(
