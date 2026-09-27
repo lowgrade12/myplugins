@@ -709,7 +709,6 @@ class BabepediaClient:
     def __init__(self):
         self.ssl_context = ssl.create_default_context()
         self._scraper = None
-        self._requests = None
 
     def _default_headers(self, referer=None, accept=None):
         headers = {
