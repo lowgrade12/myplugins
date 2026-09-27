@@ -37,6 +37,20 @@
     return String(Date.now()) + "_" + Math.random().toString(16).slice(2);
   }
 
+  async function parseJsonResponse(response, action) {
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(
+        String(action || "Request")
+        + " failed with HTTP "
+        + String(response.status)
+        + (body ? ": " + body.slice(0, 400) : ".")
+      );
+    }
+
+    return response.json();
+  }
+
   async function runTask(args) {
     const query = `
       mutation RunBabepedia(
@@ -68,7 +82,7 @@
       })
     });
 
-    const result = await response.json();
+    const result = await parseJsonResponse(response, "Babepedia task request");
 
     if (result.errors && result.errors.length) {
       throw new Error(result.errors.map(function (error) {
@@ -180,7 +194,7 @@
       })
     });
 
-    const result = await response.json();
+    const result = await parseJsonResponse(response, "Stash job lookup");
 
     if (result.errors && result.errors.length) {
       throw new Error(result.errors.map(function (error) {
@@ -258,7 +272,7 @@
       })
     });
 
-    const result = await response.json();
+    const result = await parseJsonResponse(response, "Current performer lookup");
 
     if (result.errors && result.errors.length) {
       throw new Error(result.errors.map(function (error) {
@@ -811,7 +825,6 @@
       const preflight = await requestData({
         mode: "preflight_import",
         performer_id: currentTargetPerformer.id,
-        performer_url: currentBabepediaPerformer.url,
         selection_json: JSON.stringify(selection)
       }, function (progress) {
         setStatus(formatProgress(progress), "info");

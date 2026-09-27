@@ -1248,7 +1248,7 @@ def load_performer(client, stash, url, performer_id=None, request_id=None):
     }
 
 
-def preflight_import(client, stash, performer_id, performer_url, selection, request_id=None):
+def preflight_import(stash, performer_id, selection, request_id=None):
     environment = get_environment(stash)
     require_output_path(environment)
     target = stash.find_performer_by_id(performer_id)
@@ -1559,13 +1559,10 @@ def main():
             payload = load_performer(client, stash, url, performer_id=performer_id or None, request_id=request_id)
         elif mode == "preflight_import":
             performer_id = str(args.get("performer_id") or "").strip()
-            performer_url = str(args.get("performer_url") or "").strip()
             selection = parse_json_arg(args, "selection_json", [])
             if not performer_id:
                 raise ValueError("No target performer was provided.")
-            if not performer_url:
-                raise ValueError("No Babepedia performer URL was provided.")
-            payload = preflight_import(client, stash, performer_id, performer_url, selection, request_id=request_id)
+            payload = preflight_import(stash, performer_id, selection, request_id=request_id)
         elif mode == "prepare_import":
             performer_id = str(args.get("performer_id") or "").strip()
             performer_url = str(args.get("performer_url") or "").strip()
