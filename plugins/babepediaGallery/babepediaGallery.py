@@ -261,6 +261,19 @@ def validate_babepedia_url(url):
     return url
 
 
+def normalize_babepedia_url(url):
+    parsed = urlparse(str(url or "").strip())
+    normalized_path = quote(parsed.path or "", safe="/:@!$&'()*+,;=-._~%")
+    normalized_query = quote(parsed.query or "", safe="=&:@!$'()*+,;/-._~%")
+    normalized_fragment = quote(parsed.fragment or "", safe=":@!$&'()*+,;=-._~%")
+    normalized_url = parsed._replace(
+        path=normalized_path,
+        query=normalized_query,
+        fragment=normalized_fragment,
+    ).geturl()
+    return validate_babepedia_url(normalized_url)
+
+
 def boolean_setting(settings, key, default=False):
     value = (settings or {}).get(key)
     if value is None:
@@ -1204,6 +1217,7 @@ def parse_babepedia_performer(html_text, page_url):
     seen_urls = set()
     for href in image_parser.links:
         absolute = urljoin(page_url, href)
+        absolute = normalize_babepedia_url(absolute)
         if absolute in seen_urls:
             continue
         seen_urls.add(absolute)
@@ -1328,6 +1342,8 @@ def normalize_selection(selection):
             source_url = str(item.get("url") or "").strip()
         else:
             source_url = str(item or "").strip()
+        if source_url:
+            source_url = normalize_babepedia_url(source_url)
         if not source_url or source_url in seen:
             continue
         seen.add(source_url)
