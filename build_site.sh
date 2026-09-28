@@ -36,16 +36,21 @@ buildPlugin()
     zipfile=$(realpath "$outdir/$plugin_id.zip")
     
     pushd "$dir" > /dev/null
-    file_list=$(mktemp) || exit 1
-    git ls-files -z -- . > "$file_list" || exit 1
-    tracked_files=()
-    while IFS= read -r -d '' file; do
-        tracked_files+=("$file")
-    done < "$file_list"
-    rm -f "$file_list"
-    if [ ${#tracked_files[@]} -gt 0 ]; then
-        zip -q "$zipfile" "${tracked_files[@]}" || exit 1
-    fi
+    python - "$zipfile" <<'PY' || exit 1
+import os
+import subprocess
+import sys
+
+zipfile = sys.argv[1]
+result = subprocess.run(
+    ["git", "ls-files", "-z", "--", "."],
+    capture_output=True,
+    check=True,
+)
+files = [os.fsdecode(path) for path in result.stdout.split(b"\0") if path]
+if files:
+    subprocess.run(["zip", "-q", zipfile, *files], check=True)
+PY
     popd > /dev/null
 
     name=$(grep "^name:" "$f" | head -n 1 | cut -d' ' -f2- | sed -e 's/\r//' -e 's/^"\(.*\)"$/\1/')
