@@ -3565,6 +3565,18 @@ def main():
 
         return
 
+    if mode == "ui_status" or not mode:
+        print(json.dumps({
+            "output": {
+                "message": (
+                    "Open a performer page and use the PornPics tab, "
+                    "or use the PornPics link in the main navigation."
+                )
+            }
+        }))
+
+        return
+
     request_id = str(
         args.get("request_id") or ""
     ).strip()

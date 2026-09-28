@@ -49,6 +49,8 @@ settings:
 tasks:
   - name: Open PornPics
     description: Browse or import PornPics images
+    defaultArgs:
+      mode: ui_status
 
   - name: Clear PornPics cache
     description: Clear cached PornPics task responses and progress files.
