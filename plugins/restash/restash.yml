@@ -18,11 +18,11 @@ settings:
   wildcardBandLow:      { displayName: Wildcard score band low, type: NUMBER, description: "Low score edge used when wildcard scenes are promoted. Leave blank for the default (85)." }
   wildcardBandHigh:     { displayName: Wildcard score band high, type: NUMBER, description: "High score edge used when wildcard scenes are promoted. Leave blank for the default (95)." }
   perfScenesShrinkageK: { displayName: Performer scene shrinkage K, type: NUMBER, description: "Smoothing strength toward population prior for performers with sparse scene history. Leave blank for the default (5)." }
-  perfWeightScenes:     { displayName: Performer weight: scenes, type: NUMBER, description: "Weight of top scored scenes in performer rank blend. Leave blank for the default (0.40)." }
-  perfWeightAffinity:   { displayName: Performer weight: affinity, type: NUMBER, description: "Weight of performer affinity term in performer rank blend. Leave blank for the default (0.20)." }
-  perfWeightFresh:      { displayName: Performer weight: freshness, type: NUMBER, description: "Weight of performer recency/rediscovery term in performer rank blend. Leave blank for the default (0.15)." }
-  perfWeightSupply:     { displayName: Performer weight: unwatched supply, type: NUMBER, description: "Weight of unwatched supply term in performer rank blend. Leave blank for the default (0.15)." }
-  perfWeightNovelty:    { displayName: Performer weight: novelty, type: NUMBER, description: "Weight of performer novelty term in performer rank blend. Leave blank for the default (0.10)." }
+  perfWeightScenes:     { displayName: "Performer weight: scenes", type: NUMBER, description: "Weight of top scored scenes in performer rank blend. Leave blank for the default (0.40)." }
+  perfWeightAffinity:   { displayName: "Performer weight: affinity", type: NUMBER, description: "Weight of performer affinity term in performer rank blend. Leave blank for the default (0.20)." }
+  perfWeightFresh:      { displayName: "Performer weight: freshness", type: NUMBER, description: "Weight of performer recency/rediscovery term in performer rank blend. Leave blank for the default (0.15)." }
+  perfWeightSupply:     { displayName: "Performer weight: unwatched supply", type: NUMBER, description: "Weight of unwatched supply term in performer rank blend. Leave blank for the default (0.15)." }
+  perfWeightNovelty:    { displayName: "Performer weight: novelty", type: NUMBER, description: "Weight of performer novelty term in performer rank blend. Leave blank for the default (0.10)." }
   respectManualRatings: { displayName: Blend manual ratings as a taste prior, type: BOOLEAN, description: "If on, a performer's manual rating100 nudges their affinity (read-only). Default off." }
   excludeTagName:       { displayName: Exclusion tag name, type: STRING, description: "Entities carrying this tag are dropped from scoring. Leave blank for the default ([Restash: Exclude])." }
   mirrorToRating100:    { displayName: "Also mirror score to rating100 (destructive)", type: BOOLEAN, description: "If on, each entity's Restash score is ALSO written to native rating100 (enables the in-app 'Rating, descending' sort). OVERWRITES manual ratings; a backup is auto-created first and can be reverted with 'Restore Ratings'. Default off." }
