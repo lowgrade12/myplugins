@@ -890,6 +890,9 @@
       if (finalized.performer_updated) {
         message.push("Performer metadata was updated.");
       }
+      if (finalized.gallery_id) {
+        message.push("Images were added to gallery \"" + String(finalized.gallery_title || finalized.gallery_id) + "\".");
+      }
 
       setStatus(message.join(" "), "success");
     } catch (error) {
