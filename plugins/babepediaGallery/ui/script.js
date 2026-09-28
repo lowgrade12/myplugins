@@ -827,6 +827,7 @@
       const preflight = await requestData({
         mode: "preflight_import",
         performer_id: currentTargetPerformer.id,
+        performer_url: currentBabepediaPerformer.url,
         selection_json: JSON.stringify(selection)
       }, function (progress) {
         setStatus(formatProgress(progress), "info");

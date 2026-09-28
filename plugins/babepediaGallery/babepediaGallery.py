@@ -11,7 +11,7 @@ from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urljoin, urlparse
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -263,8 +263,15 @@ def validate_babepedia_url(url):
 
 def normalize_babepedia_url(url):
     parsed = urlparse(str(url or "").strip())
+    scheme = str(parsed.scheme or "")
+    netloc = str(parsed.netloc or "")
+    if any((ord(ch) < 32 or ord(ch) == 127 or ch.isspace()) for ch in (scheme + netloc)):
+        raise RuntimeError("Babepedia URL is invalid: " + str(url))
     normalized_path = quote(parsed.path or "", safe="/:@!$&'()*+,;=-._~%")
-    normalized_query = quote(parsed.query or "", safe="=&:@!$'()*+,;/-._~%")
+    normalized_query = ""
+    if parsed.query:
+        query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+        normalized_query = urlencode(query_pairs, doseq=True, quote_via=quote)
     normalized_fragment = quote(parsed.fragment or "", safe=":@!$&'()*+,;=-._~%")
     normalized_url = parsed._replace(
         path=normalized_path,
@@ -1333,7 +1340,7 @@ def require_output_path(environment):
     return Path(output_path)
 
 
-def normalize_selection(selection):
+def normalize_selection(selection, base_url=None):
     normalized = []
     seen = set()
 
@@ -1343,6 +1350,9 @@ def normalize_selection(selection):
         else:
             source_url = str(item or "").strip()
         if source_url:
+            parsed = urlparse(source_url)
+            if (not parsed.scheme or not parsed.netloc) and base_url:
+                source_url = urljoin(base_url, source_url)
             source_url = normalize_babepedia_url(source_url)
         if not source_url or source_url in seen:
             continue
@@ -1394,14 +1404,14 @@ def load_performer(client, stash, url, performer_id=None, request_id=None):
     }
 
 
-def preflight_import(stash, performer_id, selection, request_id=None):
+def preflight_import(stash, performer_id, selection, performer_url=None, request_id=None):
     environment = get_environment(stash)
     require_output_path(environment)
     target = stash.find_performer_by_id(performer_id)
     if not target:
         raise RuntimeError("The active Stash performer could not be found.")
 
-    selected_urls = normalize_selection(selection)
+    selected_urls = normalize_selection(selection, base_url=performer_url)
     if not selected_urls:
         raise RuntimeError("No Babepedia images are selected.")
 
@@ -1445,7 +1455,7 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
         raise RuntimeError("The active Stash performer could not be found.")
 
     performer = client.load_performer(performer_url)
-    selected_urls = normalize_selection(selection)
+    selected_urls = normalize_selection(selection, base_url=performer.get("url"))
     if not selected_urls:
         raise RuntimeError("No Babepedia images are selected.")
 
@@ -1752,10 +1762,11 @@ def main():
             payload = load_performer(client, stash, url, performer_id=performer_id or None, request_id=request_id)
         elif mode == "preflight_import":
             performer_id = str(args.get("performer_id") or "").strip()
+            performer_url = str(args.get("performer_url") or "").strip()
             selection = parse_json_arg(args, "selection_json", [])
             if not performer_id:
                 raise ValueError("No target performer was provided.")
-            payload = preflight_import(stash, performer_id, selection, request_id=request_id)
+            payload = preflight_import(stash, performer_id, selection, performer_url=performer_url or None, request_id=request_id)
         elif mode == "prepare_import":
             performer_id = str(args.get("performer_id") or "").strip()
             performer_url = str(args.get("performer_url") or "").strip()
