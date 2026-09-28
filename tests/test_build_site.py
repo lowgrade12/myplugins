@@ -16,8 +16,19 @@ class BuildSiteTest(unittest.TestCase):
             workspace = Path(tmpdir) / "repo"
             plugin_dir = workspace / "plugins" / "stash-ppics"
             workspace.mkdir()
-            shutil.copy2(BUILD_SCRIPT, workspace / "build_site.sh")
-            shutil.copytree(REPO_ROOT / "plugins" / "stash-ppics", plugin_dir)
+            tracked_files = subprocess.run(
+                ["git", "ls-files", "build_site.sh", "plugins/stash-ppics"],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.splitlines()
+
+            for relative_path in tracked_files:
+                source = REPO_ROOT / relative_path
+                destination = workspace / relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
 
             subprocess.run(["git", "init"], cwd=workspace, check=True, capture_output=True)
             subprocess.run(
