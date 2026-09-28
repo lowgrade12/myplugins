@@ -2,6 +2,8 @@
 # AGPLv3.0
 # https://github.com/stashapp/CommunityScripts/blob/main/LICENSE
 
+set -o pipefail
+
 # builds a repository of plugins
 # outputs to _site with the following structure:
 # index.yml
@@ -34,10 +36,7 @@ buildPlugin()
     zipfile=$(realpath "$outdir/$plugin_id.zip")
     
     pushd "$dir" > /dev/null
-    file_list=$(mktemp)
-    git ls-files -z -- . > "$file_list" || exit 1
-    xargs -0 zip -q "$zipfile" < "$file_list" || exit 1
-    rm -f "$file_list"
+    git ls-files -z -- . | xargs -0 zip -q "$zipfile" || exit 1
     popd > /dev/null
 
     name=$(grep "^name:" "$f" | head -n 1 | cut -d' ' -f2- | sed -e 's/\r//' -e 's/^"\(.*\)"$/\1/')
