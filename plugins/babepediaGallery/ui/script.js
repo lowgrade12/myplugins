@@ -380,7 +380,11 @@
       mount.className = "babepedia-plugin-root";
       mount.style.display = "none";
       nativeContent.insertAdjacentElement("beforebegin", mount);
-    } else if (mount.nextElementSibling !== nativeContent) {
+    } else if (
+      mount.parentElement !== nativeContent.parentElement
+      || (typeof mount.compareDocumentPosition === "function"
+        && !(mount.compareDocumentPosition(nativeContent) & Node.DOCUMENT_POSITION_FOLLOWING))
+    ) {
       nativeContent.insertAdjacentElement("beforebegin", mount);
     }
 
