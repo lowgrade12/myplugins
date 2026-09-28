@@ -442,7 +442,8 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     corpus = {sid: c for sid, c in cached_scenes.items()
               if sid in light_by_id and not _scene_excluded(sid)
               and light_by_id[sid].get("has_file")}
-    added = [sid for sid in light_by_id if sid not in cached_scenes]
+    added = [sid for sid, s in light_by_id.items()
+             if sid not in cached_scenes and not _scene_excluded(sid) and s.get("has_file")]
     dropped = [sid for sid in cached_scenes if sid not in light_by_id]
     log.info(f"[Restash] refresh: light-read {len(light)} scenes; cache has "
              f"{len(cached_scenes)}; scoring {len(corpus)} "
