@@ -36,7 +36,7 @@ buildPlugin()
     zipfile=$(realpath "$outdir/$plugin_id.zip")
     
     pushd "$dir" > /dev/null
-    python - "$zipfile" <<'PY' || exit 1
+    python3 - "$zipfile" <<'PY' || exit 1
 import os
 import subprocess
 import sys
