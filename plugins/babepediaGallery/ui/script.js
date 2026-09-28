@@ -837,21 +837,15 @@
         setStatus(formatProgress(progress), "info");
       }, 180000);
 
-      const proceed = window.confirm(
-        "Import "
+      setStatus(
+        "Starting import for "
         + String(preflight.selection_count || selection.length)
-        + " Babepedia image(s) for "
-        + String(currentTargetPerformer.name || "this performer")
-        + "?\n\n"
-        + "Existing in Stash: " + String(preflight.existing_count || 0)
-        + "\nReusable local files: " + String(preflight.reusable_file_count || 0)
-        + "\nNew downloads: " + String(preflight.new_count || 0)
+        + " image(s)… "
+        + "Existing: " + String(preflight.existing_count || 0)
+        + ", Reusable: " + String(preflight.reusable_file_count || 0)
+        + ", New: " + String(preflight.new_count || 0),
+        "info"
       );
-
-      if (!proceed) {
-        setStatus("Import cancelled.", "info");
-        return;
-      }
 
       setStatus("Preparing import…", "info");
       const prepared = await requestData({
