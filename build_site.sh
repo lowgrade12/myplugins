@@ -36,7 +36,7 @@ buildPlugin()
     zipfile=$(realpath "$outdir/$plugin_id.zip")
     
     pushd "$dir" > /dev/null
-    git ls-files -z -- . | xargs -0 zip -q "$zipfile" || exit 1
+    git ls-files -z -- . | xargs -0 -r zip -q "$zipfile" || exit 1
     popd > /dev/null
 
     name=$(grep "^name:" "$f" | head -n 1 | cut -d' ' -f2- | sed -e 's/\r//' -e 's/^"\(.*\)"$/\1/')
