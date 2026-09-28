@@ -62,6 +62,9 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
     let splashLeaveTimer = null;
     let splashRemoveTimer = null;
     let viewAnimationTimer = null;
+    let injectScheduled = false;
+    let injectObserverStarted = false;
+    let injectHistoryPatched = false;
 
     const viewHistory = [];
     let viewHistoryIndex = -1;
@@ -838,6 +841,17 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
             || currentContextValue()
             || ""
         );
+    }
+
+    function currentContextPerformerId() {
+        if (
+            currentBrowseContext &&
+            currentBrowseContext.type === "performer"
+        ) {
+            return currentPerformerIdFromUrl();
+        }
+
+        return null;
     }
 
     function currentPerformerIdFromUrl() {
@@ -8088,6 +8102,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                 {
                     mode: "preflight_import",
                     performer: currentContextPerformer(),
+                    performer_id: currentContextPerformerId(),
                     context_type: currentContextType(),
                     context_value: currentContextValue(),
                     selection_json: JSON.stringify(selectionPayload())
@@ -9025,6 +9040,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                 {
                     mode: "prepare_import",
                     performer: currentContextPerformer(),
+                    performer_id: currentContextPerformerId(),
                     context_type: currentContextType(),
                     context_value: currentContextValue(),
                     selection_json: JSON.stringify(payload),
@@ -11364,8 +11380,208 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
         }
     }
 
+    function scheduleInject() {
+        if (injectScheduled) {
+            return;
+        }
+
+        injectScheduled = true;
+        window.requestAnimationFrame(function () {
+            injectScheduled = false;
+            inject();
+        });
+    }
+
+    function startInjectObserver() {
+        if (injectObserverStarted) {
+            return;
+        }
+
+        injectObserverStarted = true;
+
+        if (window.history && !injectHistoryPatched) {
+            injectHistoryPatched = true;
+
+            [
+                "pushState",
+                "replaceState"
+            ].forEach(function (methodName) {
+                const original = window.history[methodName];
+
+                if (typeof original !== "function") {
+                    return;
+                }
+
+                window.history[methodName] = function () {
+                    const before =
+                        window.location.pathname
+                        + window.location.search
+                        + window.location.hash;
+                    const result = original.apply(this, arguments);
+                    const after =
+                        window.location.pathname
+                        + window.location.search
+                        + window.location.hash;
+
+                    if (before !== after) {
+                        window.dispatchEvent(
+                            new Event("ppics:routechange")
+                        );
+                    }
+
+                    return result;
+                };
+            });
+
+            [
+                "go",
+                "back",
+                "forward"
+            ].forEach(function (methodName) {
+                const original = window.history[methodName];
+
+                if (typeof original !== "function") {
+                    return;
+                }
+
+                window.history[methodName] = function () {
+                    const before =
+                        window.location.pathname
+                        + window.location.search
+                        + window.location.hash;
+                    const result = original.apply(this, arguments);
+
+                    window.setTimeout(
+                        function () {
+                            const after =
+                                window.location.pathname
+                                + window.location.search
+                                + window.location.hash;
+
+                            if (before !== after) {
+                                window.dispatchEvent(
+                                    new Event("ppics:routechange")
+                                );
+                            }
+                        },
+                        0
+                    );
+
+                    return result;
+                };
+            });
+        }
+
+        window.addEventListener(
+            "popstate",
+            scheduleInject
+        );
+
+        window.addEventListener(
+            "ppics:routechange",
+            scheduleInject
+        );
+
+        function nodeTouchesInjectTargets(node) {
+            if (
+                !node
+                || node.nodeType !== 1
+            ) {
+                return false;
+            }
+
+            const element = node;
+            const selector =
+                "nav, .navbar, .navbar-nav, a[href], "
+                + "#performer-tabs-tab-images, #performer-tabs-tab-ppics, "
+                + "[id^='performer-tabs-tabpane-'], .tab-content";
+
+            if (
+                typeof element.matches === "function"
+                && element.matches(selector)
+            ) {
+                return true;
+            }
+
+            if (
+                typeof element.querySelector === "function"
+                && element.querySelector(selector)
+            ) {
+                return true;
+            }
+
+            return false;
+        }
+
+        function mutationsNeedInject(
+            mutations
+        ) {
+            for (
+                let index = 0;
+                index < mutations.length;
+                index += 1
+            ) {
+                const mutation =
+                    mutations[index];
+
+                for (
+                    let addIndex = 0;
+                    addIndex < mutation.addedNodes.length;
+                    addIndex += 1
+                ) {
+                    if (
+                        nodeTouchesInjectTargets(
+                            mutation.addedNodes[addIndex]
+                        )
+                    ) {
+                        return true;
+                    }
+                }
+
+                for (
+                    let removeIndex = 0;
+                    removeIndex < mutation.removedNodes.length;
+                    removeIndex += 1
+                ) {
+                    if (
+                        nodeTouchesInjectTargets(
+                            mutation.removedNodes[removeIndex]
+                        )
+                    ) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        if (document.body) {
+            const observer = new MutationObserver(
+                function (mutations) {
+                    if (
+                        mutationsNeedInject(
+                            mutations
+                        )
+                    ) {
+                        scheduleInject();
+                    }
+                }
+            );
+
+            observer.observe(
+                document.body,
+                {
+                    childList: true,
+                    subtree: true
+                }
+            );
+        }
+    }
+
     registerGlobalPornPicsRoute();
     startGlobalNavObserver();
     injectGlobalNavLink();
-    setInterval(inject, 500);
+    startInjectObserver();
+    scheduleInject();
 })();
