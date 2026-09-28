@@ -201,7 +201,7 @@ def map_scene_light(raw: dict) -> dict:
     studio = raw.get("studio") or {}
     return {
         "id": str(raw["id"]),
-        "created_at": _parse_dt(raw.get("created_at")) or utcnow(),
+        "created_at": _parse_dt(raw.get("created_at")),
         "organized": bool(raw.get("organized")),
         "resume_time": raw.get("resume_time"),
         "play_duration": float(raw.get("play_duration") or 0.0),

@@ -417,6 +417,21 @@ def _light_scene_to_data(light: dict) -> models.SceneData:
     )
 
 
+def _re_rank_scene_scores(scores: dict[str, models.SceneScore],
+                          settings: config.Settings, date_seed: str) -> dict[str, models.SceneScore]:
+    ids = list(scores.keys())
+    raws = [scores[sid].raw for sid in ids]
+    pcts = algorithm.percentiles(raws)
+    for idx, sid in enumerate(ids):
+        sc = scores[sid]
+        sc.percentile = pcts[idx]
+        sc.restash_score = algorithm.to_restash_score(pcts[idx])
+        sc.wildcard = False
+        sc.components.pop("wildcard", None)
+    algorithm._apply_wildcards(scores, settings, date_seed)
+    return scores
+
+
 def _run_refresh(stash, settings: config.Settings) -> int:
     now = stash_io.utcnow()
     now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -456,28 +471,51 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     log.progress(0.45)
 
     aff = st["affinities"]
+    scene_scores = algorithm.refresh_scene_scores(corpus, light_by_id, settings,
+                                                  now, date_seed)
     if added:
-        kept_ids = [sid for sid, s in light_by_id.items()
-                    if not _scene_excluded(sid) and s.get("has_file")]
-        scoring_scenes = [_light_scene_to_data(light_by_id[sid]) for sid in kept_ids]
+        added_scenes = [_light_scene_to_data(light_by_id[sid]) for sid in added]
         scene_ratings, _ = _manual_ratings(
             settings,
             live_scene={sid: light_by_id[sid].get("rating100")
-                        for sid in kept_ids if light_by_id[sid].get("rating100") is not None},
+                        for sid in added if light_by_id[sid].get("rating100") is not None},
             live_perf={})
-        scene_scores = algorithm.score_scenes(scoring_scenes, settings, now, date_seed,
+        added_scores = algorithm.score_scenes(added_scenes, settings, now, date_seed,
                                               aff=aff, scene_ratings=scene_ratings)
-        scenes_cache = _build_scene_cache(scoring_scenes, scene_scores)
-        state.save_state(state.default_state_path(), settings=settings, affinities=aff,
-                         scenes=scenes_cache, written_at=now_iso)
-        corpus = _parse_cached_scenes(scenes_cache)
-        stand_ins = scoring_scenes
-        log.info(f"[Restash] refresh: updated cache with {len(scenes_cache)} scene(s) "
-                 "including newly added scenes.")
-    else:
-        scene_scores = algorithm.refresh_scene_scores(corpus, light_by_id, settings,
-                                                      now, date_seed)
-        stand_ins = _scene_standins(corpus, light_by_id)
+        scene_scores.update(added_scores)
+        scene_scores = _re_rank_scene_scores(scene_scores, settings, date_seed)
+
+        merged_cache = {sid: c for sid, c in cached_scenes.items()
+                        if sid in light_by_id and not _scene_excluded(sid)
+                        and light_by_id[sid].get("has_file")}
+        for s in added_scenes:
+            sc = scene_scores.get(s.id)
+            if sc is None:
+                continue
+            merged_cache[s.id] = {
+                "base": sc.components.get("base"),
+                "n_events": sc.n_events,
+                "created_at": s.created_at,
+                "last_engagement": algorithm._last_engagement(s),
+                "perf_ids": s.performer_ids,
+            }
+        state.save_state(
+            state.default_state_path(),
+            settings=settings,
+            affinities=aff,
+            scenes={sid: {
+                "base": c["base"],
+                "n_events": c["n_events"],
+                "created_at": _iso(c["created_at"]),
+                "last_engagement": _iso(c["last_engagement"]),
+                "perf_ids": c["perf_ids"],
+            } for sid, c in merged_cache.items()},
+            written_at=now_iso,
+        )
+        corpus = merged_cache
+        log.info(f"[Restash] refresh: merged {len(added)} new scene(s) into cache "
+                 f"(cache now {len(merged_cache)} scenes).")
+    stand_ins = _scene_standins(corpus, light_by_id)
     log.progress(0.65)
 
     all_performers = stash_io.fetch_performers(stash)
