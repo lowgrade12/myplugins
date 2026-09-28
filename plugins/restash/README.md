@@ -35,10 +35,13 @@ Add this repository as a Stash plugin source:
 
 | Setting | Default | Description |
 |---|---|---|
-| Taste half-life (days) | 90 | How fast older watch events fade |
-| Cooldown period (days) | 21 | Post-watch suppression before rediscovery |
-| Freshness strength | 1.0 | Multiplier on cooldown/rediscovery effect |
-| Wildcard % | 2.0 | Library share promoted as wildcards daily |
+| Taste half-life (days) | 120 | How fast older watch events fade |
+| Cooldown period (days) | 14 | Post-watch suppression before rediscovery |
+| Freshness strength | 0.8 | Multiplier on cooldown/rediscovery effect |
+| Rediscovery max days | 180 | Days after cooldown where rediscovery reaches cap |
+| Direct-evidence half-life (days) | 540 | Fade speed for per-scene direct watch evidence |
+| Wildcard % | 1.0 | Library share promoted as wildcards daily |
+| Performer scene shrinkage K | 5.0 | Smoothing strength for sparse performer histories |
 | Blend manual ratings | off | Nudge taste model from manual ratings |
 | Exclusion tag name | [Restash: Exclude] | Tag to exclude entities from scoring |
 | Mirror to rating100 | off | Also write score to native rating (destructive) |
@@ -48,13 +51,27 @@ Add this repository as a Stash plugin source:
 
 | Task | Description |
 |---|---|
-| **Dry Run Report** | Scores everything, writes nothing, logs top-30 breakdown |
+| **Dry Run Report** | Scores everything, writes nothing, logs top-30 breakdown + tuning checks |
 | **Recompute All** | Full rebuild + write scores to custom_fields |
-| **Quick Refresh** | Fast daily re-score from cached taste model |
+| **Quick Refresh** | Fast daily re-score from cached taste model; also scores newly added scenes immediately |
 | **Clear Restash Data** | Remove all restash_* custom fields |
 | **Backup Ratings** | Snapshot native rating100 values |
 | **Restore Ratings** | Revert rating100 from backup |
 | **Disable Other Plugins** | Manually disable all other plugins |
+
+## Tuning workflow
+
+1. Run **Dry Run Report** and compare:
+   - recently watched scenes appearing in top-30
+   - dormant favorite scenes resurfacing in top-30
+   - total misses in top-30
+2. Tune in passes:
+   - freshness curve: cooldown/freshness/rediscovery window
+   - taste memory: taste half-life + direct-evidence half-life
+   - exploration: wildcard share and pool/band ranges
+   - performer blend: performer term weights + shrinkage
+3. Keep only changes that improve top-30 relevance while preserving rediscovery.
+4. Run **Recompute All** to lock in a new baseline, then use **Quick Refresh** daily.
 
 ## Hooks (automatic triggers)
 
