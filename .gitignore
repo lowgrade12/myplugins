@@ -105,3 +105,7 @@ venv.bak/
 # Restash runtime lock file
 .restash_running.lock
 .restash_disabled_plugins.json
+
+# PornPics generated state
+plugins/stash-ppics/state/*.json
+plugins/stash-ppics/state/imports/*.json
