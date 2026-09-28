@@ -25,6 +25,7 @@ def _resolve_plugin_id() -> str:
 
 
 PLUGIN_ID = _resolve_plugin_id()
+DORMANT_FAVORITE_DAYS = 90.0
 
 
 # --- Plugin management (disable/re-enable other plugins) ---
@@ -417,21 +418,6 @@ def _light_scene_to_data(light: dict) -> models.SceneData:
     )
 
 
-def _re_rank_scene_scores(scores: dict[str, models.SceneScore],
-                          settings: config.Settings, date_seed: str) -> dict[str, models.SceneScore]:
-    ids = list(scores.keys())
-    raws = [scores[sid].raw for sid in ids]
-    pcts = algorithm.percentiles(raws)
-    for idx, sid in enumerate(ids):
-        sc = scores[sid]
-        sc.percentile = pcts[idx]
-        sc.restash_score = algorithm.to_restash_score(pcts[idx])
-        sc.wildcard = False
-        sc.components.pop("wildcard", None)
-    algorithm._apply_wildcards(scores, settings, date_seed)
-    return scores
-
-
 def _run_refresh(stash, settings: config.Settings) -> int:
     now = stash_io.utcnow()
     now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -483,7 +469,7 @@ def _run_refresh(stash, settings: config.Settings) -> int:
         added_scores = algorithm.score_scenes(added_scenes, settings, now, date_seed,
                                               aff=aff, scene_ratings=scene_ratings)
         scene_scores.update(added_scores)
-        scene_scores = _re_rank_scene_scores(scene_scores, settings, date_seed)
+        scene_scores = algorithm.rerank_scene_scores(scene_scores, settings, date_seed)
 
         merged_cache = {sid: c for sid, c in cached_scenes.items()
                         if sid in light_by_id and not _scene_excluded(sid)
@@ -675,7 +661,8 @@ def _top30_tuning_checks(scenes, performers, scene_scores, settings) -> dict:
 
         if watched and isinstance(fresh_d, float) and fresh_d < settings.cooldown_days:
             recently_watched += 1
-        if watched and has_favorite_perf and isinstance(fresh_d, float) and fresh_d >= 90.0:
+        if (watched and has_favorite_perf and isinstance(fresh_d, float)
+                and fresh_d >= DORMANT_FAVORITE_DAYS):
             dormant_favorites += 1
         if not watched and not has_favorite_perf:
             total_misses += 1

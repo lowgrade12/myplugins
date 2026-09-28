@@ -489,6 +489,23 @@ def _apply_wildcards(scores: dict[str, models.SceneScore], cfg: Settings,
         s.components["wildcard"] = 1.0
 
 
+def rerank_scene_scores(scores: dict[str, models.SceneScore], cfg: Settings,
+                        date_seed: str) -> dict[str, models.SceneScore]:
+    """Recompute percentile/rating from raw across the provided score set, then
+    re-apply the date-seeded wildcard promotion."""
+    ids = list(scores.keys())
+    raws = [scores[sid].raw for sid in ids]
+    pcts = percentiles(raws)
+    for idx, sid in enumerate(ids):
+        sc = scores[sid]
+        sc.percentile = pcts[idx]
+        sc.restash_score = to_restash_score(pcts[idx])
+        sc.wildcard = False
+        sc.components.pop("wildcard", None)
+    _apply_wildcards(scores, cfg, date_seed)
+    return scores
+
+
 def score_performers(performers: list[models.PerformerData],
                      scenes: list[models.SceneData],
                      scene_scores: dict[str, models.SceneScore],
