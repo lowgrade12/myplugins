@@ -503,7 +503,7 @@ class Stash:
                 }
                 if wanted_performer not in performer_ids:
                     continue
-                return gallery
+            return gallery
 
         return None
 
