@@ -466,6 +466,11 @@ def _last_engagement(scene: models.SceneData) -> datetime | None:
     return max(candidates) if candidates else None
 
 
+def scene_last_engagement(scene: models.SceneData) -> datetime | None:
+    """Public accessor for a scene's latest engagement timestamp."""
+    return _last_engagement(scene)
+
+
 def _apply_wildcards(scores: dict[str, models.SceneScore], cfg: Settings,
                      date_seed: str) -> None:
     """D4: date-seeded override of a few low-confidence mid-pack scenes into 85–95.
@@ -487,6 +492,23 @@ def _apply_wildcards(scores: dict[str, models.SceneScore], cfg: Settings,
         s.restash_score = int(round(lo_b + spread * (hi_b - lo_b)))
         s.wildcard = True
         s.components["wildcard"] = 1.0
+
+
+def rerank_scene_scores(scores: dict[str, models.SceneScore], cfg: Settings,
+                        date_seed: str) -> dict[str, models.SceneScore]:
+    """Recompute percentile/rating from raw across the provided score set, then
+    re-apply the date-seeded wildcard promotion."""
+    ids = list(scores.keys())
+    raws = [scores[sid].raw for sid in ids]
+    pcts = percentiles(raws)
+    for idx, sid in enumerate(ids):
+        sc = scores[sid]
+        sc.percentile = pcts[idx]
+        sc.restash_score = to_restash_score(pcts[idx])
+        sc.wildcard = False
+        sc.components.pop("wildcard", None)
+    _apply_wildcards(scores, cfg, date_seed)
+    return scores
 
 
 def score_performers(performers: list[models.PerformerData],

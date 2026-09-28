@@ -25,6 +25,7 @@ def _resolve_plugin_id() -> str:
 
 
 PLUGIN_ID = _resolve_plugin_id()
+DORMANT_FAVORITE_DAYS = 90.0
 
 
 # --- Plugin management (disable/re-enable other plugins) ---
@@ -226,6 +227,7 @@ def _run_dry(stash, settings: config.Settings) -> int:
     titles = {s.id: s.title for s in scenes}
     names = {p.id: p.name for p in performers}
     diag_rows, diag_summary = _watched_diagnostic(scenes, scene_scores, settings)
+    tuning_checks = _top30_tuning_checks(scenes, performers, scene_scores, settings)
     summary = report.format_summary(len(scene_scores), len(performer_scores),
                                     would_write=len(scene_scores) + len(performer_scores),
                                     skipped=0)
@@ -235,6 +237,7 @@ def _run_dry(stash, settings: config.Settings) -> int:
         "\n\n".join([
             report.format_scene_report(scene_scores, titles, top_n=30),
             report.format_performer_report(performer_scores, names, top_n=30),
+            report.format_top30_tuning_checks(tuning_checks, DORMANT_FAVORITE_DAYS),
             report.format_watched_diagnostic(diag_rows, diag_summary, top_n=20),
             summary,
         ]),
@@ -389,6 +392,47 @@ def _scene_standins(corpus: dict, light_by_id: dict) -> list:
     return out
 
 
+def _stable_created_at(light: dict):
+    created_at = light.get("created_at")
+    if created_at is not None:
+        return created_at
+    candidates = []
+    if light.get("last_played_at") is not None:
+        candidates.append(light["last_played_at"])
+    candidates.extend(light.get("play_history") or [])
+    candidates.extend(light.get("o_history") or [])
+    return min(candidates) if candidates else None
+
+
+def _light_scene_to_data(light: dict) -> models.SceneData | None:
+    created_at = _stable_created_at(light)
+    if created_at is None:
+        return None
+    return models.SceneData(
+        id=light["id"],
+        title="",
+        play_history=light.get("play_history") or [],
+        o_history=light.get("o_history") or [],
+        play_count=light.get("play_count", 0),
+        o_counter=light.get("o_counter", 0),
+        play_duration=float(light.get("play_duration") or 0.0),
+        resume_time=light.get("resume_time"),
+        last_played_at=light.get("last_played_at"),
+        file_duration=light.get("file_duration"),
+        height=light.get("height"),
+        marker_count=light.get("marker_count", 0),
+        organized=bool(light.get("organized")),
+        date=None,
+        created_at=created_at,
+        rating100=light.get("rating100"),
+        tag_ids=light.get("tag_ids") or [],
+        performer_ids=light.get("performer_ids") or [],
+        studio_id=light.get("studio_id"),
+        custom_fields=light.get("custom_fields") or {},
+        has_file=bool(light.get("has_file")),
+    )
+
+
 def _run_refresh(stash, settings: config.Settings) -> int:
     now = stash_io.utcnow()
     now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -412,21 +456,75 @@ def _run_refresh(stash, settings: config.Settings) -> int:
                 and exclude_id in light_by_id.get(sid, {}).get("tag_ids", []))
 
     corpus = {sid: c for sid, c in cached_scenes.items()
-              if sid in light_by_id and not _scene_excluded(sid)}
-    added = [sid for sid in light_by_id if sid not in cached_scenes]
+              if sid in light_by_id and not _scene_excluded(sid)
+              and light_by_id[sid].get("has_file")}
+    added = [sid for sid, s in light_by_id.items()
+             if sid not in cached_scenes
+             and not _scene_excluded(sid)
+             and s.get("has_file")
+             and _stable_created_at(s) is not None]
     dropped = [sid for sid in cached_scenes if sid not in light_by_id]
     log.info(f"[Restash] refresh: light-read {len(light)} scenes; cache has "
              f"{len(cached_scenes)}; scoring {len(corpus)} "
              f"(exclude tag id={exclude_id}).")
     if added:
-        log.info(f"[Restash] refresh: {len(added)} new scene(s) not in cache — they "
-                 f"will be scored on the next full recompute.")
+        log.info(f"[Restash] refresh: {len(added)} new scene(s) detected — "
+                 "including them in this refresh run.")
     if dropped:
         log.info(f"[Restash] refresh: {len(dropped)} cached scene(s) no longer in library.")
     log.progress(0.45)
 
+    aff = st["affinities"]
     scene_scores = algorithm.refresh_scene_scores(corpus, light_by_id, settings,
                                                   now, date_seed)
+    if added:
+        added_scenes = []
+        for sid in added:
+            scene = _light_scene_to_data(light_by_id[sid])
+            if scene is not None:
+                added_scenes.append(scene)
+        scene_ratings, _ = _manual_ratings(
+            settings,
+            live_scene={sid: light_by_id[sid].get("rating100")
+                        for sid in added if light_by_id[sid].get("rating100") is not None},
+            live_perf={})
+        if added_scenes:
+            added_scores = algorithm.score_scenes(added_scenes, settings, now, date_seed,
+                                                  aff=aff, scene_ratings=scene_ratings)
+            scene_scores.update(added_scores)
+            scene_scores = algorithm.rerank_scene_scores(scene_scores, settings, date_seed)
+
+        merged_cache = {sid: c for sid, c in cached_scenes.items()
+                        if sid in light_by_id and not _scene_excluded(sid)
+                        and light_by_id[sid].get("has_file")}
+        for s in added_scenes:
+            sc = scene_scores.get(s.id)
+            if sc is None:
+                continue
+            merged_cache[s.id] = {
+                "base": sc.components.get("base"),
+                "n_events": sc.n_events,
+                "created_at": s.created_at,
+                "last_engagement": algorithm.scene_last_engagement(s),
+                "perf_ids": s.performer_ids,
+            }
+        state.save_state(
+            state.default_state_path(),
+            settings=settings,
+            affinities=aff,
+            scenes={sid: {
+                "base": c["base"],
+                "n_events": c["n_events"],
+                "created_at": _iso(c["created_at"]),
+                "last_engagement": _iso(c["last_engagement"]),
+                "perf_ids": c["perf_ids"],
+            } for sid, c in merged_cache.items()},
+            written_at=now_iso,
+        )
+        corpus = merged_cache
+        log.info(f"[Restash] refresh: merged {len(added_scenes)} new scene(s) into cache "
+                 f"(cache now {len(merged_cache)} scenes).")
+    stand_ins = _scene_standins(corpus, light_by_id)
     log.progress(0.65)
 
     all_performers = stash_io.fetch_performers(stash)
@@ -434,10 +532,9 @@ def _run_refresh(stash, settings: config.Settings) -> int:
         performers = [p for p in all_performers if exclude_id not in p.tag_ids]
     else:
         performers = all_performers
-    aff = {"performers": st["affinities"].get("performers", {})}
-    stand_ins = _scene_standins(corpus, light_by_id)
+    perf_aff = {"performers": aff.get("performers", {})}
     performer_scores = algorithm.score_performers(performers, stand_ins, scene_scores,
-                                                  aff, settings, now)
+                                                  perf_aff, settings, now)
     log.progress(0.80)
 
     existing_scene_cf = {sid: light_by_id[sid]["custom_fields"] for sid in scene_scores}
@@ -460,7 +557,7 @@ def _run_refresh(stash, settings: config.Settings) -> int:
 
     # Clear restash data from entities that now carry the exclude tag but still
     # have restash custom fields (mirrors the drop logic in _run_full).
-    kept_scene_ids = set(corpus)
+    kept_scene_ids = set(scene_scores)
     kept_perf_ids = {p.id for p in performers}
     drop_scene_ids = [sid for sid, s in light_by_id.items()
                       if sid not in kept_scene_ids
@@ -529,7 +626,7 @@ def _build_scene_cache(kept_scenes, scene_scores) -> dict:
             "base": sc.components.get("base"),
             "n_events": sc.n_events,
             "created_at": _iso(s.created_at),
-            "last_engagement": _iso(algorithm._last_engagement(s)),
+            "last_engagement": _iso(algorithm.scene_last_engagement(s)),
             "perf_ids": s.performer_ids,
         }
     return out
@@ -569,6 +666,35 @@ def _watched_diagnostic(scenes, scene_scores, settings, top_n: int = 20):
                "penalty_high_completion": penalty_high_comp,
                "resume_zero": resume_zero, "resume_zero_penalty": resume_zero_penalty}
     return rows[:top_n], summary
+
+
+def _top30_tuning_checks(scenes, performers, scene_scores, settings) -> dict:
+    scene_by_id = {s.id: s for s in scenes}
+    favorite_perf_ids = {p.id for p in performers if p.favorite}
+    ranked = sorted(scene_scores.values(), key=lambda s: s.restash_score, reverse=True)[:30]
+
+    recently_watched = 0
+    dormant_favorites = 0
+    total_misses = 0
+    for sc in ranked:
+        scene = scene_by_id.get(sc.id)
+        fresh_d = sc.components.get("fresh_d")
+        watched = sc.n_events > 0
+        has_favorite_perf = bool(scene and set(scene.performer_ids) & favorite_perf_ids)
+
+        if watched and isinstance(fresh_d, float) and fresh_d < settings.cooldown_days:
+            recently_watched += 1
+        if (watched and has_favorite_perf and isinstance(fresh_d, float)
+                and fresh_d >= DORMANT_FAVORITE_DAYS):
+            dormant_favorites += 1
+        if not watched and not has_favorite_perf:
+            total_misses += 1
+
+    return {
+        "recently_watched_top30": recently_watched,
+        "dormant_favorites_top30": dormant_favorites,
+        "total_misses_top30": total_misses,
+    }
 
 
 def main() -> int:

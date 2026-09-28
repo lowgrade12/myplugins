@@ -6,21 +6,33 @@ _PLUGIN_KEY_MAP = {
     "tasteHalfLifeDays": "taste_half_life_days",
     "cooldownDays": "cooldown_days",
     "freshWeight": "fresh_weight",
+    "rediscoveryMaxDays": "rediscovery_max_days",
     "wildcardPercent": "wildcard_percent",
+    "wildcardPoolLow": "wildcard_pool_low",
+    "wildcardPoolHigh": "wildcard_pool_high",
+    "wildcardBandLow": "wildcard_band_low",
+    "wildcardBandHigh": "wildcard_band_high",
     "respectManualRatings": "respect_manual_ratings",
     "mirrorToRating100": "mirror_to_rating100",
     "excludeTagName": "exclude_tag_name",
     "dryRun": "dry_run",
     "disablePluginsBeforeRun": "disable_plugins_before_run",
+    "directHalfLifeDays": "direct_half_life_days",
+    "perfScenesShrinkageK": "perf_scenes_shrinkage_k",
+    "perfWeightScenes": "perf_w_scenes",
+    "perfWeightAffinity": "perf_w_affinity",
+    "perfWeightFresh": "perf_w_fresh",
+    "perfWeightSupply": "perf_w_supply",
+    "perfWeightNovelty": "perf_w_novelty",
 }
 
 
 @dataclass
 class Settings:
-    taste_half_life_days: float = 90.0
-    cooldown_days: float = 21.0
-    fresh_weight: float = 1.0
-    wildcard_percent: float = 2.0
+    taste_half_life_days: float = 120.0
+    cooldown_days: float = 14.0
+    fresh_weight: float = 0.8
+    wildcard_percent: float = 1.0
     respect_manual_ratings: bool = False
     mirror_to_rating100: bool = False
     exclude_tag_name: str = "[Restash: Exclude]"
@@ -59,8 +71,8 @@ class Settings:
     perf_w_novelty: float = 0.10
     scene_rating_weight: float = 0.5
     abandonment_completion_max: float = 0.5
-    perf_scenes_shrinkage_k: float = 3.0
-    direct_half_life_days: float = 365.0
+    perf_scenes_shrinkage_k: float = 5.0
+    direct_half_life_days: float = 540.0
     rediscovery_bonus: float = 0.40
     # --- write-layer / operational settings (Phase 5) ---
     write_chunk_size: int = 100

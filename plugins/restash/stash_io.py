@@ -177,7 +177,13 @@ def _paginate(stash, query: str, root: str, sub: str, per_page: int, mapper,
 
 
 SCENE_LIGHT_FRAGMENT = """
-id last_played_at play_count o_counter rating100 custom_fields
+id created_at organized resume_time play_duration
+last_played_at play_count o_counter play_history o_history
+rating100 custom_fields
+files { duration height }
+performers { id }
+studio { id }
+scene_markers { id }
 tags { id }
 """
 
@@ -189,15 +195,31 @@ query($filter: FindFilterType) {
 
 
 def map_scene_light(raw: dict) -> dict:
-    """Refresh-only minimal projection: no histories, performers, or files."""
+    """Refresh-only projection with enough data to score newly added scenes."""
+    files = raw.get("files") or []
+    first = files[0] if files else {}
+    studio = raw.get("studio") or {}
     return {
         "id": str(raw["id"]),
+        "created_at": _parse_dt(raw.get("created_at")),
+        "organized": bool(raw.get("organized")),
+        "resume_time": raw.get("resume_time"),
+        "play_duration": float(raw.get("play_duration") or 0.0),
         "last_played_at": _parse_dt(raw.get("last_played_at")),
         "play_count": raw.get("play_count") or 0,
         "o_counter": raw.get("o_counter") or 0,
+        "play_history": _parse_dt_list(raw.get("play_history")),
+        "o_history": _parse_dt_list(raw.get("o_history")),
         "rating100": raw.get("rating100"),
         "custom_fields": raw.get("custom_fields") or {},
+        "file_duration": (float(first["duration"])
+                          if first.get("duration") is not None else None),
+        "height": first.get("height"),
+        "marker_count": len(raw.get("scene_markers") or []),
         "tag_ids": [str(t["id"]) for t in (raw.get("tags") or [])],
+        "performer_ids": [str(p["id"]) for p in (raw.get("performers") or [])],
+        "studio_id": str(studio["id"]) if studio.get("id") else None,
+        "has_file": bool(files),
     }
 
 
