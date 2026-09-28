@@ -459,7 +459,10 @@ def _run_refresh(stash, settings: config.Settings) -> int:
               if sid in light_by_id and not _scene_excluded(sid)
               and light_by_id[sid].get("has_file")}
     added = [sid for sid, s in light_by_id.items()
-             if sid not in cached_scenes and not _scene_excluded(sid) and s.get("has_file")]
+             if sid not in cached_scenes
+             and not _scene_excluded(sid)
+             and s.get("has_file")
+             and _stable_created_at(s) is not None]
     dropped = [sid for sid in cached_scenes if sid not in light_by_id]
     log.info(f"[Restash] refresh: light-read {len(light)} scenes; cache has "
              f"{len(cached_scenes)}; scoring {len(corpus)} "
@@ -476,17 +479,10 @@ def _run_refresh(stash, settings: config.Settings) -> int:
                                                   now, date_seed)
     if added:
         added_scenes = []
-        skipped_missing_created_at = 0
         for sid in added:
             scene = _light_scene_to_data(light_by_id[sid])
-            if scene is None:
-                skipped_missing_created_at += 1
-                continue
-            added_scenes.append(scene)
-        if skipped_missing_created_at:
-            log.warning(f"[Restash] refresh: skipped {skipped_missing_created_at} new "
-                        "scene(s) missing created/engagement timestamps; they will "
-                        "be scored after metadata becomes available.")
+            if scene is not None:
+                added_scenes.append(scene)
         scene_ratings, _ = _manual_ratings(
             settings,
             live_scene={sid: light_by_id[sid].get("rating100")

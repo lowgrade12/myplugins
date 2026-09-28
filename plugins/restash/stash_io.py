@@ -212,7 +212,8 @@ def map_scene_light(raw: dict) -> dict:
         "o_history": _parse_dt_list(raw.get("o_history")),
         "rating100": raw.get("rating100"),
         "custom_fields": raw.get("custom_fields") or {},
-        "file_duration": (float(first["duration"]) if first.get("duration") else None),
+        "file_duration": (float(first["duration"])
+                          if first.get("duration") is not None else None),
         "height": first.get("height"),
         "marker_count": len(raw.get("scene_markers") or []),
         "tag_ids": [str(t["id"]) for t in (raw.get("tags") or [])],
