@@ -1,6 +1,6 @@
 const pp_VERSION = "v2.1.1";
 
-console.log('PornPics Importer ' + pp_VERSION + ' running.');
+console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
 
 (function () {
     const PLUGIN_ID = "stash-ppics";
@@ -10270,13 +10270,44 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                 filterText
             );
 
-        const filteredResults =
-            results.filter(function (item) {
-                return globalResultMatchesFilter(
+        const groupCounts =
+            new Map();
+
+        const filteredGroups =
+            new Map();
+
+        results.forEach(function (item) {
+            const type = String(
+                item.type || ""
+            );
+
+            groupCounts.set(
+                type,
+                Number(
+                    groupCounts.get(type) || 0
+                ) + 1
+            );
+
+            if (
+                !globalResultMatchesFilter(
                     item,
                     normalizedFilter
+                )
+            ) {
+                return;
+            }
+
+            if (!filteredGroups.has(type)) {
+                filteredGroups.set(
+                    type,
+                    []
                 );
-            });
+            }
+
+            filteredGroups.get(type).push(
+                item
+            );
+        });
 
         if (state === "opening_url") {
             return `
@@ -10368,18 +10399,13 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
         let html = "";
 
         order.forEach(function (type) {
-            const totalGroup =
-                results.filter(
-                    function (item) {
-                        return item.type === type;
-                    }
-                );
-
             const group =
-                filteredResults.filter(
-                    function (item) {
-                        return item.type === type;
-                    }
+                filteredGroups.get(type)
+                || [];
+
+            const totalCount =
+                Number(
+                    groupCounts.get(type) || 0
                 );
 
             if (!group.length) {
@@ -10402,7 +10428,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                         </h3>
                         <span>
                             ${escapeHtml(group.length)}
-                            ${group.length !== totalGroup.length ? " / " + escapeHtml(totalGroup.length) : ""}
+                            ${group.length !== totalCount ? " / " + escapeHtml(totalCount) : ""}
                         </span>
                     </div>
 
@@ -10484,7 +10510,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                 globalResultFilter =
                     String(
                         filterInput.value || ""
-                    ).trim();
+                    );
 
                 if (
                     lastGlobalSearchState
@@ -10664,7 +10690,7 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
 
         globalResultFilter = String(
             filterQuery || ""
-        ).trim();
+        );
 
         lastGlobalSearchState = {
             query: query,
