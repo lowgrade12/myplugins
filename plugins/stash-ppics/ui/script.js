@@ -3717,7 +3717,9 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
         }
 
         const cards = Array.from(
-            document.querySelectorAll(".ppics-card")
+            document.querySelectorAll(
+                ".ppics-grid .ppics-card"
+            )
         );
 
         const visibleCount = document.querySelector(
@@ -3793,6 +3795,7 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
         const showStudioSceneFilter =
             data.context_type === "studio";
         let studioSceneFilterHtml = "";
+        let studioSceneFilterEmptyHtml = "";
 
         scenes.forEach(function (scene) {
             const record = sceneRepresentative(scene);
@@ -3963,6 +3966,13 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                     </div>
                 </div>
             `;
+
+            studioSceneFilterEmptyHtml = `
+                <div class="ppics-empty-state ppics-scene-filter-empty" style="display: none;">
+                    <div class="ppics-empty-icon">⌕</div>
+                    <h3>No matching scenes in this studio</h3>
+                </div>
+            `;
         }
 
         setContent(`
@@ -4010,10 +4020,7 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                 <div class="ppics-grid">
                     ${cards}
                 </div>
-                <div class="ppics-empty-state ppics-scene-filter-empty" style="display: none;">
-                    <div class="ppics-empty-icon">⌕</div>
-                    <h3>No matching scenes in this studio</h3>
-                </div>
+                ${studioSceneFilterEmptyHtml}
 
                 ${renderPagination(data)}
             </div>
