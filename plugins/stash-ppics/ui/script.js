@@ -39,6 +39,7 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
     let globalSearchSequence = 0;
     let globalResultFilter = "";
     let globalResultFilterSaveTimer = null;
+    let sceneResultFilter = "";
     let sceneImportFilter = "all";
     let lastImportOptions = null;
     let lastImportSelectionPayload = [];
@@ -3706,6 +3707,80 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
         return html;
     }
 
+    function bindStudioSceneFilter() {
+        const input = document.querySelector(
+            ".ppics-studio-scene-filter-input"
+        );
+
+        if (!input) {
+            return;
+        }
+
+        const cards = Array.from(
+            document.querySelectorAll(".ppics-card")
+        );
+
+        const visibleCount = document.querySelector(
+            "[data-ppics-visible-scene-count]"
+        );
+
+        const emptyState = document.querySelector(
+            ".ppics-scene-filter-empty"
+        );
+
+        const grid = document.querySelector(
+            ".ppics-grid"
+        );
+
+        const applyFilter = function () {
+            sceneResultFilter = String(
+                input.value || ""
+            );
+
+            const normalizedFilter = normalizeSearchText(
+                sceneResultFilter
+            );
+
+            let shown = 0;
+
+            cards.forEach(function (card) {
+                const searchText = normalizeSearchText(
+                    card.dataset.sceneSearchText
+                );
+
+                const match = (
+                    !normalizedFilter
+                    || searchText.indexOf(normalizedFilter) >= 0
+                );
+
+                card.style.display = match ? "" : "none";
+
+                if (match) {
+                    shown += 1;
+                }
+            });
+
+            if (visibleCount) {
+                visibleCount.textContent = String(shown);
+            }
+
+            if (emptyState) {
+                emptyState.style.display = shown ? "none" : "block";
+            }
+
+            if (grid) {
+                grid.style.display = shown ? "" : "none";
+            }
+        };
+
+        input.addEventListener(
+            "input",
+            applyFilter
+        );
+
+        applyFilter();
+    }
+
     function renderScenes(data, addHistory) {
         stopLoadingSequence();
         metadataHydrationToken += 1;
@@ -3715,6 +3790,9 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
 
         const scenes = data.scenes || [];
         let cards = "";
+        const showStudioSceneFilter =
+            data.context_type === "studio";
+        let studioSceneFilterHtml = "";
 
         scenes.forEach(function (scene) {
             const record = sceneRepresentative(scene);
@@ -3752,6 +3830,13 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                     class="ppics-card${selectedClass}"
                     data-scene-id="${escapeHtml(scene.id)}"
                     data-scene-url="${escapeHtml(scene.url)}"
+                    data-scene-search-text="${escapeHtml(
+                        normalizeSearchText(
+                            String(scene.title || "")
+                            + " "
+                            + String(scene.url || "")
+                        )
+                    )}"
                 >
                     <div
                         class="ppics-image-wrap ppics-open-scene-image"
@@ -3852,6 +3937,34 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                 " total";
         }
 
+        if (showStudioSceneFilter) {
+            studioSceneFilterHtml = `
+                <div class="ppics-global-results-tools ppics-studio-scene-tools">
+                    <div class="ppics-global-results-tools-inner">
+                        <div class="ppics-global-results-tools-copy">
+                            <strong class="ppics-global-results-summary">Filter scenes in this studio</strong>
+                            <span>Search this page of scene results after selecting a studio.</span>
+                        </div>
+
+                        <div class="ppics-global-result-filter-shell">
+                            <span class="ppics-global-result-filter-icon">
+                                ⌕
+                            </span>
+
+                            <input
+                                type="search"
+                                class="form-control ppics-studio-scene-filter-input"
+                                value="${escapeHtml(sceneResultFilter)}"
+                                placeholder="Search scenes in this studio"
+                                autocomplete="off"
+                                spellcheck="false"
+                            >
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         setContent(`
             <div class="ppics-browser p-3">
                 <div class="ppics-hero">
@@ -3891,10 +4004,15 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                 </div>
 
                 ${renderToolbar(renderSceneImportFilters())}
+                ${studioSceneFilterHtml}
                 ${renderPagination(data)}
 
                 <div class="ppics-grid">
                     ${cards}
+                </div>
+                <div class="ppics-empty-state ppics-scene-filter-empty" style="display: none;">
+                    <div class="ppics-empty-icon">⌕</div>
+                    <h3>No matching scenes in this studio</h3>
                 </div>
 
                 ${renderPagination(data)}
@@ -3905,6 +4023,7 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
         bindPaginationEvents(data);
         bindSceneImportFilters();
         bindReviewButton();
+        bindStudioSceneFilter();
         bindSceneImagePresentation();
         refreshSelectionCounter();
         loadPageImportStatus(data);
@@ -9746,6 +9865,7 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
             currentPreflight = null;
             knownTotalCount = null;
             sceneImportFilter = "all";
+            sceneResultFilter = "";
             paginationSeed =
                 makeRequestId();
 
@@ -10574,6 +10694,11 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
         }
 
         if (toolsContainer) {
+            if (searchType === "studio") {
+                toolsContainer.innerHTML = "";
+                return;
+            }
+
             toolsContainer.innerHTML =
                 globalResultsToolsHtml(
                     query,
