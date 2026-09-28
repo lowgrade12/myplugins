@@ -10912,7 +10912,6 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
             );
         }
 
-        bindGlobalResultCards();
         updateGlobalResultsArea(
             query,
             results,
