@@ -10484,7 +10484,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
     function bindGlobalResultsTools(
         query,
         results,
-        state
+        state,
+        searchType
     ) {
         const toolsContainer =
             document.querySelector(
@@ -10515,7 +10516,7 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                 if (
                     lastGlobalSearchState
                     && lastGlobalSearchState.query === query
-                    && lastGlobalSearchState.searchType
+                    && lastGlobalSearchState.searchType === searchType
                 ) {
                     lastGlobalSearchState.filterQuery =
                         globalResultFilter;
@@ -10529,7 +10530,7 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                         currentView
                         && currentView.type === "global_search"
                         && currentView.query === query
-                        && currentView.searchType === lastGlobalSearchState.searchType
+                        && currentView.searchType === searchType
                     ) {
                         currentView.filterQuery =
                             globalResultFilter;
@@ -10555,7 +10556,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
     function renderGlobalResultsTools(
         query,
         results,
-        state
+        state,
+        searchType
     ) {
         const toolsContainer =
             document.querySelector(
@@ -10582,7 +10584,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
             bindGlobalResultsTools(
                 query,
                 results,
-                state
+                state,
+                searchType
             );
         }
     }
@@ -10652,12 +10655,14 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
     function updateGlobalResultsArea(
         query,
         results,
-        state
+        state,
+        searchType
     ) {
         renderGlobalResultsTools(
             query,
             results,
-            state
+            state,
+            searchType
         );
         renderGlobalResultsList(
             query,
@@ -10841,7 +10846,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                         updateGlobalResultsArea(
                             "",
                             [],
-                            ""
+                            "",
+                            selectedType
                         );
 
                         return;
@@ -10854,7 +10860,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                         updateGlobalResultsArea(
                             value,
                             [],
-                            ""
+                            "",
+                            selectedType
                         );
 
                         return;
@@ -10881,7 +10888,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                     updateGlobalResultsArea(
                         value,
                         [],
-                        loadingState
+                        loadingState,
+                        selectedType
                     );
 
                     globalSearchTimer =
@@ -10917,7 +10925,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
                         updateGlobalResultsArea(
                             value,
                             [],
-                            ""
+                            "",
+                            selectedType
                         );
 
                         return;
@@ -10941,7 +10950,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
         updateGlobalResultsArea(
             query,
             results,
-            ""
+            "",
+            searchType
         );
 
         if (input && !query) {
@@ -11003,7 +11013,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
         updateGlobalResultsArea(
             query,
             [],
-            loadingState
+            loadingState,
+            searchType
         );
 
         try {
@@ -11062,7 +11073,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
             updateGlobalResultsArea(
                 query,
                 results,
-                ""
+                "",
+                searchType
             );
 
             if (!live) {
@@ -11107,7 +11119,8 @@ console.log("[PornPics] PornPics Importer " + pp_VERSION + " running.");
             updateGlobalResultsArea(
                 query,
                 [],
-                "error"
+                "error",
+                searchType
             );
         }
     }
