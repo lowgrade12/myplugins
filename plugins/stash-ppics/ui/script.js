@@ -1140,8 +1140,18 @@ console.log('PornPics Importer ' + pp_VERSION + ' running.');
                 mount
             );
         } else if (
-            mount.nextElementSibling !==
-            nativeContent
+            mount.parentElement !==
+            nativeContent.parentElement
+            || (
+                typeof mount.compareDocumentPosition ===
+                "function"
+                && !(
+                    mount.compareDocumentPosition(
+                        nativeContent
+                    ) &
+                    Node.DOCUMENT_POSITION_FOLLOWING
+                )
+            )
         ) {
             nativeContent.insertAdjacentElement(
                 "beforebegin",
