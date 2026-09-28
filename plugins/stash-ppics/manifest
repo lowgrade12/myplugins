@@ -13,5 +13,6 @@ files:
 - downloader.py
 - scraper.py
 - ppics.py
+- assets/cache/.gitkeep
 - manifest
 - stash-ppics.yml
