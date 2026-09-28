@@ -392,7 +392,22 @@ def _scene_standins(corpus: dict, light_by_id: dict) -> list:
     return out
 
 
-def _light_scene_to_data(light: dict) -> models.SceneData:
+def _stable_created_at(light: dict):
+    created_at = light.get("created_at")
+    if created_at is not None:
+        return created_at
+    candidates = []
+    if light.get("last_played_at") is not None:
+        candidates.append(light["last_played_at"])
+    candidates.extend(light.get("play_history") or [])
+    candidates.extend(light.get("o_history") or [])
+    return min(candidates) if candidates else None
+
+
+def _light_scene_to_data(light: dict) -> models.SceneData | None:
+    created_at = _stable_created_at(light)
+    if created_at is None:
+        return None
     return models.SceneData(
         id=light["id"],
         title="",
@@ -408,7 +423,7 @@ def _light_scene_to_data(light: dict) -> models.SceneData:
         marker_count=light.get("marker_count", 0),
         organized=bool(light.get("organized")),
         date=None,
-        created_at=light.get("created_at") or stash_io.utcnow(),
+        created_at=created_at,
         rating100=light.get("rating100"),
         tag_ids=light.get("tag_ids") or [],
         performer_ids=light.get("performer_ids") or [],
@@ -460,16 +475,28 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     scene_scores = algorithm.refresh_scene_scores(corpus, light_by_id, settings,
                                                   now, date_seed)
     if added:
-        added_scenes = [_light_scene_to_data(light_by_id[sid]) for sid in added]
+        added_scenes = []
+        skipped_missing_created_at = 0
+        for sid in added:
+            scene = _light_scene_to_data(light_by_id[sid])
+            if scene is None:
+                skipped_missing_created_at += 1
+                continue
+            added_scenes.append(scene)
+        if skipped_missing_created_at:
+            log.warning(f"[Restash] refresh: skipped {skipped_missing_created_at} new "
+                        "scene(s) missing created/engagement timestamps; they will "
+                        "be scored after metadata becomes available.")
         scene_ratings, _ = _manual_ratings(
             settings,
             live_scene={sid: light_by_id[sid].get("rating100")
                         for sid in added if light_by_id[sid].get("rating100") is not None},
             live_perf={})
-        added_scores = algorithm.score_scenes(added_scenes, settings, now, date_seed,
-                                              aff=aff, scene_ratings=scene_ratings)
-        scene_scores.update(added_scores)
-        scene_scores = algorithm.rerank_scene_scores(scene_scores, settings, date_seed)
+        if added_scenes:
+            added_scores = algorithm.score_scenes(added_scenes, settings, now, date_seed,
+                                                  aff=aff, scene_ratings=scene_ratings)
+            scene_scores.update(added_scores)
+            scene_scores = algorithm.rerank_scene_scores(scene_scores, settings, date_seed)
 
         merged_cache = {sid: c for sid, c in cached_scenes.items()
                         if sid in light_by_id and not _scene_excluded(sid)
@@ -482,7 +509,7 @@ def _run_refresh(stash, settings: config.Settings) -> int:
                 "base": sc.components.get("base"),
                 "n_events": sc.n_events,
                 "created_at": s.created_at,
-                "last_engagement": algorithm._last_engagement(s),
+                "last_engagement": algorithm.scene_last_engagement(s),
                 "perf_ids": s.performer_ids,
             }
         state.save_state(
@@ -603,7 +630,7 @@ def _build_scene_cache(kept_scenes, scene_scores) -> dict:
             "base": sc.components.get("base"),
             "n_events": sc.n_events,
             "created_at": _iso(s.created_at),
-            "last_engagement": _iso(algorithm._last_engagement(s)),
+            "last_engagement": _iso(algorithm.scene_last_engagement(s)),
             "perf_ids": s.performer_ids,
         }
     return out

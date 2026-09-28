@@ -466,6 +466,11 @@ def _last_engagement(scene: models.SceneData) -> datetime | None:
     return max(candidates) if candidates else None
 
 
+def scene_last_engagement(scene: models.SceneData) -> datetime | None:
+    """Public accessor for a scene's latest engagement timestamp."""
+    return _last_engagement(scene)
+
+
 def _apply_wildcards(scores: dict[str, models.SceneScore], cfg: Settings,
                      date_seed: str) -> None:
     """D4: date-seeded override of a few low-confidence mid-pack scenes into 85–95.
