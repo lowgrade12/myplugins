@@ -480,30 +480,42 @@ class Stash:
             }
         }
         """
-        data = self.query(query_text, {
-            "filter": {"per_page": 20},
-            "gallery_filter": {
-                "url": {
-                    "value": url,
-                    "modifier": "EQUALS",
-                }
-            },
-        })
-        galleries = data.get("findGalleries", {}).get("galleries", [])
-
         wanted_performer = str(performer_id or "").strip()
-        for gallery in galleries:
-            if url not in (gallery.get("urls") or []):
-                continue
-            if wanted_performer:
-                performer_ids = {
-                    str(item.get("id") or "").strip()
-                    for item in (gallery.get("performers") or [])
-                    if str(item.get("id") or "").strip()
-                }
-                if wanted_performer not in performer_ids:
+        page = 1
+        per_page = 100
+        while True:
+            data = self.query(query_text, {
+                "filter": {
+                    "per_page": per_page,
+                    "page": page,
+                },
+                "gallery_filter": {
+                    "url": {
+                        "value": url,
+                        "modifier": "EQUALS",
+                    }
+                },
+            })
+            galleries = data.get("findGalleries", {}).get("galleries", [])
+            if not galleries:
+                break
+
+            for gallery in galleries:
+                if url not in (gallery.get("urls") or []):
                     continue
-            return gallery
+                if wanted_performer:
+                    performer_ids = {
+                        str(item.get("id") or "").strip()
+                        for item in (gallery.get("performers") or [])
+                        if str(item.get("id") or "").strip()
+                    }
+                    if wanted_performer not in performer_ids:
+                        continue
+                return gallery
+
+            if len(galleries) < per_page:
+                break
+            page += 1
 
         return None
 
