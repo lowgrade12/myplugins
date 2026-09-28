@@ -72,11 +72,18 @@ class BuildSiteTest(unittest.TestCase):
             with zipfile.ZipFile(output_dir / "stash-ppics.zip") as archive:
                 names = archive.namelist()
 
-            self.assertIn("stash-ppics.yml", names)
-            self.assertNotIn("manifest", names)
-            self.assertNotIn("__pycache__/junk.pyc", names)
-            self.assertNotIn("assets/cache/junk.txt", names)
-            self.assertNotIn("state/runtime.json", names)
+            self.assertEqual(
+                set(names),
+                {
+                    "downloader.py",
+                    "ppics.py",
+                    "scraper.py",
+                    "stash-ppics.yml",
+                    "stash.py",
+                    "ui/script.js",
+                    "ui/style.css",
+                },
+            )
 
 
 if __name__ == "__main__":

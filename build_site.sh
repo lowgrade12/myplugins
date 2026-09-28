@@ -36,7 +36,16 @@ buildPlugin()
     zipfile=$(realpath "$outdir/$plugin_id.zip")
     
     pushd "$dir" > /dev/null
-    git ls-files -z -- . | xargs -0 -r zip -q "$zipfile" || exit 1
+    file_list=$(mktemp) || exit 1
+    git ls-files -z -- . > "$file_list" || exit 1
+    tracked_files=()
+    while IFS= read -r -d '' file; do
+        tracked_files+=("$file")
+    done < "$file_list"
+    rm -f "$file_list"
+    if [ ${#tracked_files[@]} -gt 0 ]; then
+        zip -q "$zipfile" "${tracked_files[@]}" || exit 1
+    fi
     popd > /dev/null
 
     name=$(grep "^name:" "$f" | head -n 1 | cut -d' ' -f2- | sed -e 's/\r//' -e 's/^"\(.*\)"$/\1/')
