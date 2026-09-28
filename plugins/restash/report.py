@@ -74,11 +74,11 @@ def format_watched_diagnostic(rows: list[dict], summary: dict,
     return "\n".join(lines)
 
 
-def format_top30_tuning_checks(checks: dict) -> str:
+def format_top30_tuning_checks(checks: dict, dormant_days: float = 90.0) -> str:
     lines = ["=== TOP-30 TUNING CHECKS ==="]
     lines.append(f"recently watched in top-30 (fresh_d < cooldown): "
                  f"{checks['recently_watched_top30']}/30")
-    lines.append(f"dormant favorite scenes in top-30 (fresh_d >= 90d and favorite performer): "
+    lines.append(f"dormant favorite scenes in top-30 (fresh_d >= {dormant_days:.0f}d and favorite performer): "
                  f"{checks['dormant_favorites_top30']}/30")
     lines.append(f"total misses in top-30 (unwatched and no favorite performer): "
                  f"{checks['total_misses_top30']}/30")

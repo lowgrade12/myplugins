@@ -237,7 +237,7 @@ def _run_dry(stash, settings: config.Settings) -> int:
         "\n\n".join([
             report.format_scene_report(scene_scores, titles, top_n=30),
             report.format_performer_report(performer_scores, names, top_n=30),
-            report.format_top30_tuning_checks(tuning_checks),
+            report.format_top30_tuning_checks(tuning_checks, DORMANT_FAVORITE_DAYS),
             report.format_watched_diagnostic(diag_rows, diag_summary, top_n=20),
             summary,
         ]),
@@ -526,7 +526,7 @@ def _run_refresh(stash, settings: config.Settings) -> int:
             written_at=now_iso,
         )
         corpus = merged_cache
-        log.info(f"[Restash] refresh: merged {len(added)} new scene(s) into cache "
+        log.info(f"[Restash] refresh: merged {len(added_scenes)} new scene(s) into cache "
                  f"(cache now {len(merged_cache)} scenes).")
     stand_ins = _scene_standins(corpus, light_by_id)
     log.progress(0.65)
