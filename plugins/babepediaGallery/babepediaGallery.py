@@ -1572,24 +1572,29 @@ def finalize_import(stash, import_id, request_id=None):
     if performer_url:
         write_progress(request_id, "gallery", "Preparing Stash gallery", detail=performer_url)
         gallery_title = str(target.get("name") or "Babepedia").strip() + " · Babepedia"
-        existing_gallery = stash.find_gallery_by_url(performer_url, performer_id=target.get("id"))
-        if existing_gallery:
-            updated_gallery = stash.update_gallery_metadata(
-                gallery=existing_gallery,
-                title=gallery_title,
-                url=performer_url,
-                performer_ids=[target.get("id")],
-                organized=manifest.get("organized"),
-            )
-        else:
-            updated_gallery = stash.create_gallery(
-                title=gallery_title,
-                url=performer_url,
-                performer_ids=[target.get("id")],
-                organized=manifest.get("organized"),
-            )
-        gallery_id = updated_gallery.get("id")
-        gallery_title = updated_gallery.get("title") or gallery_title
+        try:
+            existing_gallery = stash.find_gallery_by_url(performer_url, performer_id=target.get("id"))
+            if existing_gallery:
+                updated_gallery = stash.update_gallery_metadata(
+                    gallery=existing_gallery,
+                    title=gallery_title,
+                    url=performer_url,
+                    performer_ids=[target.get("id")],
+                    organized=manifest.get("organized"),
+                )
+            else:
+                updated_gallery = stash.create_gallery(
+                    title=gallery_title,
+                    url=performer_url,
+                    performer_ids=[target.get("id")],
+                    organized=manifest.get("organized"),
+                )
+            gallery_id = updated_gallery.get("id")
+            gallery_title = updated_gallery.get("title") or gallery_title
+        except Exception as error:
+            gallery_id = None
+            gallery_title = None
+            log("Gallery metadata sync failed and was skipped: " + str(error))
 
     entries = manifest.get("entries") or []
     for index, entry in enumerate(entries, start=1):
