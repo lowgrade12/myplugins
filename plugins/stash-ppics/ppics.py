@@ -1836,7 +1836,8 @@ def preflight_import(
     selection,
     request_id=None,
     context_type="performer",
-    context_value=None
+    context_value=None,
+    performer_id=None
 ):
     environment = get_environment(stash)
     require_output_path(environment)
@@ -1854,13 +1855,30 @@ def preflight_import(
     current_performer = None
 
     if context_type == "performer":
+        performer_id = str(
+            performer_id or ""
+        ).strip()
+
+        if performer_id:
+            current_performer = stash.find_performer_by_id(
+                performer_id
+            )
+
         performer_name = str(
             performer_name
+            or (
+                current_performer.get("name")
+                if current_performer
+                else ""
+            )
             or context_value
             or ""
         ).strip()
 
-        if performer_name:
+        if (
+            not current_performer
+            and performer_name
+        ):
             current_performer = stash.find_performer(
                 performer_name
             )
@@ -2499,7 +2517,8 @@ def prepare_import(
     approvals,
     request_id=None,
     context_type="performer",
-    context_value=None
+    context_value=None,
+    performer_id=None
 ):
     environment = get_environment(stash)
     output_root = require_output_path(environment)
@@ -2517,13 +2536,30 @@ def prepare_import(
     current_performer = None
 
     if context_type == "performer":
+        performer_id = str(
+            performer_id or ""
+        ).strip()
+
+        if performer_id:
+            current_performer = stash.find_performer_by_id(
+                performer_id
+            )
+
         performer_name = str(
             performer_name
+            or (
+                current_performer.get("name")
+                if current_performer
+                else ""
+            )
             or context_value
             or ""
         ).strip()
 
-        if performer_name:
+        if (
+            not current_performer
+            and performer_name
+        ):
             current_performer = stash.find_performer(
                 performer_name
             )
@@ -3701,6 +3737,9 @@ def main():
             performer = str(
                 args.get("performer") or ""
             ).strip()
+            performer_id = str(
+                args.get("performer_id") or ""
+            ).strip()
 
             selection = parse_json_arg(
                 args,
@@ -3730,12 +3769,16 @@ def main():
                 selection,
                 request_id=request_id,
                 context_type=context_type,
-                context_value=context_value
+                context_value=context_value,
+                performer_id=performer_id
             )
 
         elif mode == "prepare_import":
             performer = str(
                 args.get("performer") or ""
+            ).strip()
+            performer_id = str(
+                args.get("performer_id") or ""
             ).strip()
 
             selection = parse_json_arg(
@@ -3773,7 +3816,8 @@ def main():
                 approvals,
                 request_id=request_id,
                 context_type=context_type,
-                context_value=context_value
+                context_value=context_value,
+                performer_id=performer_id
             )
 
         elif mode == "finalize_import":

@@ -1497,6 +1497,15 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
             })
             log("Image download failed and was skipped: " + source_url + " · " + str(error))
 
+    if not entries:
+        detail = ""
+        if failed:
+            detail = " First failure: " + str((failed[0] or {}).get("error") or "Unknown error") + "."
+        raise RuntimeError(
+            "No Babepedia images could be prepared for import."
+            + detail
+        )
+
     import_id = uuid.uuid4().hex
     manifest = {
         "import_id": import_id,
