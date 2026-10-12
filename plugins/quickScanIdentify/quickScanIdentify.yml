@@ -1,6 +1,6 @@
 name: Quick Scan & Identify
 description: Run a selective scan followed by identify for either of two configured directories.
-version: 1.0.0
+version: 1.0.1
 url: https://github.com/lowgrade12/myplugins
 settings:
   directoryA:
@@ -17,10 +17,10 @@ exec:
 interface: raw
 tasks:
   - name: Scan and Identify Directory A
-    description: Selectively scan Directory A, wait for completion, then identify it.
+    description: Queue a selective scan of Directory A and identify it after a successful scan.
     defaultArgs:
       mode: directory_a
   - name: Scan and Identify Directory B
-    description: Selectively scan Directory B, wait for completion, then identify it.
+    description: Queue a selective scan of Directory B and identify it after a successful scan.
     defaultArgs:
       mode: directory_b
