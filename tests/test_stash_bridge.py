@@ -7,7 +7,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, mock_open, patch
 
 from services.stash_bridge import app
 
@@ -334,13 +334,20 @@ class QueryAndScanTests(Assets):
 class MediaTests(Assets):
     def test_file_backed_secrets_and_ambiguous_configuration(self):
         token_path, key_path = self.root / "token", self.root / "api-key"
-        token_path.write_text(TOKEN + "\n")
-        key_path.write_text(API_KEY + "\n")
         env = {
             "BRIDGE_TOKEN_FILE": str(token_path), "STASH_API_KEY_FILE": str(key_path),
             "STASH_URL": "http://127.0.0.1:9999",
         }
-        config = app.Config.from_env(env)
+        token_file = mock_open(read_data=TOKEN + "\n").return_value
+        key_file = mock_open(read_data=API_KEY + "\n").return_value
+        with patch("builtins.open", side_effect=[token_file, key_file]) as open_file:
+            config = app.Config.from_env(env)
+        self.assertEqual(open_file.call_args_list, [
+            call(str(token_path), encoding="utf-8"),
+            call(str(key_path), encoding="utf-8"),
+        ])
+        token_file.read.assert_called_once_with(4097)
+        key_file.read.assert_called_once_with(4097)
         self.assertEqual(config.token, TOKEN)
         self.assertEqual(config.stash_key, API_KEY)
         with self.assertRaises(ValueError):
