@@ -6,13 +6,11 @@
     {
       id: "qsi-nav-directory-a",
       label: "Scan & Identify A",
-      taskName: "Scan and Identify Directory A",
       mode: "directory_a"
     },
     {
       id: "qsi-nav-directory-b",
       label: "Scan & Identify B",
-      taskName: "Scan and Identify Directory B",
       mode: "directory_b"
     }
   ];
@@ -21,13 +19,11 @@
     const query = `
       mutation RunQuickScanIdentify(
         $plugin_id: ID!,
-        $task_name: String!,
-        $args_map: Map
+        $args: Map!
       ) {
-        runPluginTask(
+        runPluginOperation(
           plugin_id: $plugin_id,
-          task_name: $task_name,
-          args_map: $args_map
+          args: $args
         )
       }
     `;
@@ -39,8 +35,7 @@
         query: query,
         variables: {
           plugin_id: PLUGIN_ID,
-          task_name: task.taskName,
-          args_map: { mode: task.mode }
+          args: { mode: task.mode }
         }
       })
     });
@@ -55,7 +50,7 @@
         return error.message;
       }).join(", "));
     }
-    if (!result.data || !result.data.runPluginTask) {
+    if (!result.data || !result.data.runPluginOperation) {
       throw new Error("Stash did not queue the task.");
     }
   }
@@ -83,6 +78,10 @@
       `;
 
       const link = container.querySelector("a");
+      const status = document.createElement("small");
+      status.setAttribute("role", "status");
+      status.className = "d-block";
+      container.appendChild(status);
       link.addEventListener("click", async function (event) {
         event.preventDefault();
         if (link.dataset.running === "true") {
@@ -91,12 +90,13 @@
         link.dataset.running = "true";
         link.setAttribute("aria-disabled", "true");
         link.style.opacity = "0.6";
+        status.textContent = "Starting…";
         try {
           await runTask(task);
-          window.alert(task.label + " task queued.");
+          status.textContent = "Scan & Identify queued.";
         } catch (error) {
           console.error("[QuickScanIdentify] Failed to queue task:", error);
-          window.alert("Could not queue " + task.label + ": " + error.message);
+          status.textContent = "Could not start: " + error.message;
         } finally {
           delete link.dataset.running;
           link.removeAttribute("aria-disabled");

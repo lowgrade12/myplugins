@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -103,6 +104,135 @@ class QuickScanIdentifyTest(unittest.TestCase):
         with patch.object(quick_scan_identify, "_graphql", return_value=response):
             identify_input = quick_scan_identify._identify_input({}, "/stash/one")
         self.assertEqual(identify_input, {"paths": ["/stash/one"], **defaults})
+
+    def test_older_stash_retries_with_legacy_identify_options(self):
+        defaults = {
+            "sources": [{"source": {"scraper_id": "custom"}}],
+            "options": {"includeMalePerformers": False},
+        }
+        with patch.object(quick_scan_identify, "_graphql", side_effect=[
+            RuntimeError('Stash GraphQL error: Cannot query field "performerGenders" '
+                         'on type "IdentifyMetadataOptions".'),
+            {"configuration": {"defaults": {"identify": defaults}}},
+        ]) as graphql:
+            self.assertEqual(
+                quick_scan_identify._identify_input({}, "/stash/one"),
+                {"paths": ["/stash/one"], **defaults},
+            )
+        self.assertEqual(graphql.call_args_list[1].args[1],
+                         quick_scan_identify.LEGACY_IDENTIFY_DEFAULTS_QUERY)
+        self.assertNotIn("performerGenders", quick_scan_identify.LEGACY_IDENTIFY_DEFAULTS_QUERY)
+        self.assertIn("includeMalePerformers", quick_scan_identify.LEGACY_IDENTIFY_DEFAULTS_QUERY)
+
+    def test_unrelated_identify_errors_are_not_retried(self):
+        with patch.object(quick_scan_identify, "_graphql",
+                          side_effect=RuntimeError("Could not reach Stash GraphQL")) as graphql:
+            with self.assertRaisesRegex(RuntimeError, "Could not reach"):
+                quick_scan_identify._identify_input({}, "/stash/one")
+        graphql.assert_called_once()
+
+    def test_operations_return_json_success_or_error(self):
+        for mode in ("directory_a", "directory_b"):
+            for error in (None, ValueError("Configure Identify sources")):
+                with self.subTest(mode=mode, error=error):
+                    stdout = io.StringIO()
+                    payload = {"args": {"mode": mode}}
+                    with patch.object(quick_scan_identify.sys, "stdin",
+                                      io.StringIO(json.dumps(payload))), \
+                         patch.object(quick_scan_identify.sys, "stdout", stdout), \
+                         patch.object(quick_scan_identify.sys, "stderr", io.StringIO()), \
+                         patch.object(quick_scan_identify, "_configured_path",
+                                      return_value="/stash/one"), \
+                         patch.object(quick_scan_identify, "run_scan_and_identify",
+                                      side_effect=error) as run:
+                        self.assertEqual(quick_scan_identify.main(), 1 if error else 0)
+                    run.assert_called_once_with({}, "/stash/one")
+                    result = json.loads(stdout.getvalue())
+                    if error:
+                        self.assertEqual(result, {"error": str(error)})
+                    else:
+                        self.assertEqual(result, {"output": "Scan and identify continuation queued."})
+
+    def test_navbar_buttons_launch_without_popups_and_show_errors(self):
+        result = subprocess.run(
+            ["node", "-e", r"""
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+class Element {
+  constructor() { this.children = []; this.dataset = {}; this.style = {}; this.attrs = {}; }
+  set innerHTML(value) {
+    this.link = new Element();
+    this.link.id = value.match(/id="([^"]+)"/)[1];
+  }
+  querySelector() { return this.link; }
+  appendChild(child) { this.children.push(child); }
+  setAttribute(key, value) { this.attrs[key] = value; }
+  removeAttribute(key) { delete this.attrs[key]; }
+  addEventListener(name, callback) { this[name] = callback; }
+}
+const nav = new Element();
+const document = {
+  readyState: "complete", body: {},
+  querySelector: () => nav,
+  getElementById: id => nav.children.find(child => child.link.id === id),
+  createElement: () => new Element()
+};
+const calls = [];
+let response = { data: { runPluginOperation: "Queued." } };
+let httpOk = true;
+vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
+  document,
+  MutationObserver: class { observe() {} },
+  console: { error() {} },
+  window: { alert() { assert.fail("No popup should be shown"); } },
+  fetch: async (url, options) => {
+    assert.equal(url, "/graphql");
+    calls.push(JSON.parse(options.body));
+    return { ok: httpOk, status: 503, json: async () => response };
+  }
+});
+(async () => {
+  assert.equal(nav.children.length, 2);
+  for (const [index, mode] of ["directory_a", "directory_b"].entries()) {
+    const container = nav.children[index];
+    await container.link.click({ preventDefault() {} });
+    const request = calls.at(-1);
+    assert.match(request.query, /runPluginOperation/);
+    assert.deepEqual(request.variables, { plugin_id: "quickScanIdentify", args: { mode } });
+    assert.equal(container.children[0].textContent, "Scan & Identify queued.");
+    assert.equal(container.link.dataset.running, undefined);
+  }
+  const container = nav.children[0];
+  for (const [body, message] of [
+    [{ errors: [{ message: "Plugin disabled" }] }, "Plugin disabled"],
+    [{ data: { runPluginOperation: null }, errors: [{ message: "Configure Directory A" }] }, "Configure Directory A"],
+    [{ data: { runPluginOperation: null } }, "Stash did not queue the task."]
+  ]) {
+    response = body;
+    await container.link.click({ preventDefault() {} });
+    assert.equal(container.children[0].textContent, "Could not start: " + message);
+    assert.equal(container.link.attrs["aria-disabled"], undefined);
+    assert.equal(container.link.style.opacity, "");
+  }
+  httpOk = false;
+  await container.link.click({ preventDefault() {} });
+  assert.match(container.children[0].textContent, /HTTP 503/);
+  httpOk = true;
+  response = { data: { runPluginOperation: "Queued." } };
+  const count = calls.length;
+  const pending = container.link.click({ preventDefault() {} });
+  await container.link.click({ preventDefault() {} });
+  await pending;
+  assert.equal(calls.length, count + 1);
+  assert.equal(container.children[0].textContent, "Scan & Identify queued.");
+})().catch(error => { console.error(error); process.exitCode = 1; });
+""", str(PLUGIN_PATH.with_suffix(".js"))],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_sources_fail_before_queuing_scan(self):
         for defaults in (None, {"sources": []}):
