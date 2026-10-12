@@ -6,12 +6,12 @@
     {
       id: "qsi-nav-directory-a",
       label: "Scan & Identify A",
-      mode: "directory_a"
+      taskName: "Scan and Identify Directory A"
     },
     {
       id: "qsi-nav-directory-b",
       label: "Scan & Identify B",
-      mode: "directory_b"
+      taskName: "Scan and Identify Directory B"
     }
   ];
 
@@ -19,11 +19,11 @@
     const query = `
       mutation RunQuickScanIdentify(
         $plugin_id: ID!,
-        $args: Map!
+        $task_name: String!
       ) {
-        runPluginOperation(
+        runPluginTask(
           plugin_id: $plugin_id,
-          args: $args
+          task_name: $task_name
         )
       }
     `;
@@ -35,7 +35,7 @@
         query: query,
         variables: {
           plugin_id: PLUGIN_ID,
-          args: { mode: task.mode }
+          task_name: task.taskName
         }
       })
     });
@@ -50,7 +50,7 @@
         return error.message;
       }).join(", "));
     }
-    if (!result.data || !result.data.runPluginOperation) {
+    if (!result.data || !result.data.runPluginTask) {
       throw new Error("Stash did not queue the task.");
     }
   }
