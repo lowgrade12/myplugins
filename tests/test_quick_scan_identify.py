@@ -131,6 +131,42 @@ class QuickScanIdentifyTest(unittest.TestCase):
                 quick_scan_identify._identify_input({}, "/stash/one")
         graphql.assert_called_once()
 
+    def test_http_schema_error_retries_legacy_identify_query(self):
+        defaults = {
+            "sources": [{"source": {"scraper_id": "custom"}}],
+            "options": {"includeMalePerformers": False},
+        }
+        error_body = json.dumps({"errors": [{
+            "message": 'Cannot query field "performerGenders" on type "IdentifyMetadataOptions".',
+        }]}).encode("utf-8")
+        error = quick_scan_identify.urllib.error.HTTPError(
+            "http://localhost:9999/graphql", 422, "Unprocessable Entity", {},
+            io.BytesIO(error_body),
+        )
+        response = io.BytesIO(json.dumps({
+            "data": {"configuration": {"defaults": {"identify": defaults}}},
+        }).encode("utf-8"))
+        with patch.object(quick_scan_identify.urllib.request, "urlopen",
+                          side_effect=[error, response]) as urlopen:
+            self.assertEqual(
+                quick_scan_identify._identify_input({}, "/stash/one"),
+                {"paths": ["/stash/one"], **defaults},
+            )
+        request = urlopen.call_args_list[1].args[0]
+        self.assertEqual(json.loads(request.data)["query"],
+                         quick_scan_identify.LEGACY_IDENTIFY_DEFAULTS_QUERY)
+
+    def test_non_graphql_http_errors_keep_status(self):
+        for body in (b"Bad gateway", b"{}", b"[]"):
+            with self.subTest(body=body):
+                error = quick_scan_identify.urllib.error.HTTPError(
+                    "http://localhost:9999/graphql", 502, "Bad Gateway", {}, io.BytesIO(body),
+                )
+                with patch.object(quick_scan_identify.urllib.request, "urlopen",
+                                  side_effect=error):
+                    with self.assertRaisesRegex(RuntimeError, "HTTP 502"):
+                        quick_scan_identify._graphql({}, "query Test { configuration { ui } }")
+
     def test_operations_return_json_success_or_error(self):
         for mode in ("directory_a", "directory_b"):
             for error in (None, ValueError("Configure Identify sources")):

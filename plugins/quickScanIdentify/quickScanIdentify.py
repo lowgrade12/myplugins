@@ -133,6 +133,12 @@ def _graphql(server_connection: dict, query: str, variables: dict | None = None)
         with urllib.request.urlopen(request, timeout=30) as response:
             result = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
+        try:
+            error_response = json.loads(exc.read().decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            error_response = {}
+        if isinstance(error_response, dict) and error_response.get("errors"):
+            raise RuntimeError(f"Stash GraphQL error: {error_response['errors']}") from exc
         raise RuntimeError(f"Stash GraphQL returned HTTP {exc.code}: {exc.reason}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Could not reach Stash GraphQL: {exc.reason}") from exc
