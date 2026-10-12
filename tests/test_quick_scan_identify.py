@@ -189,7 +189,7 @@ class QuickScanIdentifyTest(unittest.TestCase):
                     else:
                         self.assertEqual(result, {"output": "Scan and identify continuation queued."})
 
-    def test_navbar_buttons_launch_without_popups_and_show_errors(self):
+    def test_navbar_buttons_launch_named_plugin_tasks_without_popups_and_show_errors(self):
         result = subprocess.run(
             ["node", "-e", r"""
 const assert = require("node:assert/strict");
@@ -215,7 +215,7 @@ const document = {
   createElement: () => new Element()
 };
 const calls = [];
-let response = { data: { runPluginOperation: "Queued." } };
+let response = { data: { runPluginTask: "task-job-id" } };
 let httpOk = true;
 vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
   document,
@@ -230,20 +230,28 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
 });
 (async () => {
   assert.equal(nav.children.length, 2);
-  for (const [index, mode] of ["directory_a", "directory_b"].entries()) {
+  const taskNames = fs.readFileSync(process.argv[2], "utf8")
+    .split("\n").filter(line => line.startsWith("  - name: "))
+    .map(line => line.slice("  - name: ".length).trim());
+  assert.equal(taskNames.length, 2);
+  for (const [index, taskName] of taskNames.entries()) {
     const container = nav.children[index];
     await container.link.click({ preventDefault() {} });
     const request = calls.at(-1);
-    assert.match(request.query, /runPluginOperation/);
-    assert.deepEqual(request.variables, { plugin_id: "quickScanIdentify", args: { mode } });
+    assert.match(request.query, /runPluginTask\(/);
+    assert.match(request.query, /task_name: \$task_name/);
+    assert.doesNotMatch(request.query, /runPluginOperation|metadataScan|metadataIdentify/);
+    assert.deepEqual(request.variables, {
+      plugin_id: "quickScanIdentify", task_name: taskName
+    });
     assert.equal(container.children[0].textContent, "Scan & Identify queued.");
     assert.equal(container.link.dataset.running, undefined);
   }
   const container = nav.children[0];
   for (const [body, message] of [
     [{ errors: [{ message: "Plugin disabled" }] }, "Plugin disabled"],
-    [{ data: { runPluginOperation: null }, errors: [{ message: "Configure Directory A" }] }, "Configure Directory A"],
-    [{ data: { runPluginOperation: null } }, "Stash did not queue the task."]
+    [{ data: { runPluginTask: null }, errors: [{ message: "Task not found" }] }, "Task not found"],
+    [{ data: { runPluginTask: null } }, "Stash did not queue the task."]
   ]) {
     response = body;
     await container.link.click({ preventDefault() {} });
@@ -255,7 +263,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
   await container.link.click({ preventDefault() {} });
   assert.match(container.children[0].textContent, /HTTP 503/);
   httpOk = true;
-  response = { data: { runPluginOperation: "Queued." } };
+  response = { data: { runPluginTask: "task-job-id" } };
   const count = calls.length;
   const pending = container.link.click({ preventDefault() {} });
   await container.link.click({ preventDefault() {} });
@@ -263,7 +271,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
   assert.equal(calls.length, count + 1);
   assert.equal(container.children[0].textContent, "Scan & Identify queued.");
 })().catch(error => { console.error(error); process.exitCode = 1; });
-""", str(PLUGIN_PATH.with_suffix(".js"))],
+""", str(PLUGIN_PATH.with_suffix(".js")), str(PLUGIN_PATH.with_suffix(".yml"))],
             capture_output=True,
             text=True,
             check=False,
