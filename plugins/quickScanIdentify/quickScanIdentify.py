@@ -35,24 +35,6 @@ mutation IdentifyDirectory($input: IdentifyMetadataInput!) {
 }
 """
 
-JOB_STATUS_QUERY = """
-query JobStatus($jobId: ID!) {
-  findJob(input: { id: $jobId }) {
-    status
-  }
-}
-"""
-
-CONTINUATION_MUTATION = """
-mutation ContinueAfterScan($args: Map!) {
-  runPluginTask(
-    plugin_id: "quickScanIdentify"
-    args_map: $args
-    description: "Quick Scan & Identify: identify after scan"
-  )
-}
-"""
-
 IDENTIFY_DEFAULTS_QUERY = """
 fragment IdentifyOptions on IdentifyMetadataOptions {
   fieldOptions { field strategy createMissing }
@@ -219,58 +201,18 @@ def _identify_input(server_connection: dict, path: str) -> dict:
     return {"paths": [path], "sources": sources, "options": options}
 
 
-def _identify_after_scan(server_connection: dict, args: dict) -> None:
-    scan_job_id = args.get("scanJobId")
-    identify_input = args.get("identifyInput")
-    if not scan_job_id or not isinstance(identify_input, dict):
-        raise ValueError("Missing scan job ID or identify input for continuation.")
-    data = _graphql(server_connection, JOB_STATUS_QUERY, {"jobId": str(scan_job_id)})
-    job = data.get("findJob")
-    if not isinstance(job, dict) or not job.get("status"):
-        raise RuntimeError(f"Could not read status for Scan job {scan_job_id}; identify skipped.")
-    if job["status"] != "FINISHED":
-        raise RuntimeError(
-            f"Scan job {scan_job_id} ended with status {job['status']}; identify skipped."
-        )
-    identify_data = _graphql(server_connection, IDENTIFY_MUTATION, {"input": identify_input})
-    identify_job_id = identify_data.get("metadataIdentify")
-    if not identify_job_id:
-        raise RuntimeError("Stash did not return a job ID for identify.")
-    print(f"[QuickScanIdentify] Queued Identify job {identify_job_id}.", file=sys.stderr, flush=True)
-
-
 def run_scan_and_identify(server_connection: dict, path: str) -> None:
     if not isinstance(path, str) or not path.strip():
         raise ValueError("The directory path must not be empty.")
     path = path.strip()
     identify_input = _identify_input(server_connection, path)
 
-    print(f"[QuickScanIdentify] Starting selective scan for {path}.", file=sys.stderr, flush=True)
-    scan_data = _graphql(
+    _graphql(
         server_connection,
         SCAN_MUTATION,
         {"input": _scan_input(server_connection, path)},
     )
-    scan_job_id = scan_data.get("metadataScan")
-    if not scan_job_id:
-        raise RuntimeError("Stash did not return a job ID for the scan.")
-    # Stash runs jobs serially: waiting here would block the scan behind this task.
-    continuation_data = _graphql(
-        server_connection,
-        CONTINUATION_MUTATION,
-        {"args": {
-            "mode": "after_scan",
-            "scanJobId": str(scan_job_id),
-            "identifyInput": identify_input,
-        }},
-    )
-    if not continuation_data.get("runPluginTask"):
-        raise RuntimeError(f"Scan job {scan_job_id} queued, but identify continuation was not queued.")
-    print(
-        f"[QuickScanIdentify] Queued Scan job {scan_job_id} and identify continuation for {path}.",
-        file=sys.stderr,
-        flush=True,
-    )
+    _graphql(server_connection, IDENTIFY_MUTATION, {"input": identify_input})
 
 
 def main() -> int:
@@ -280,10 +222,6 @@ def main() -> int:
         server_connection = payload.get("server_connection", {})
         args = payload.get("args", {})
         mode = args.get("mode")
-        if mode == "after_scan":
-            _identify_after_scan(server_connection, args)
-            print(json.dumps({"output": "Identify queued."}), flush=True)
-            return 0
         path_setting = {
             "directory_a": "directoryA",
             "directory_b": "directoryB",
@@ -292,7 +230,7 @@ def main() -> int:
             raise ValueError(f"Unknown task mode: {mode!r}.")
         path = _configured_path(server_connection, path_setting)
         run_scan_and_identify(server_connection, path)
-        print(json.dumps({"output": "Scan and identify continuation queued."}), flush=True)
+        print(json.dumps({"output": ""}), flush=True)
         return 0
     except Exception as exc:
         print(f"[QuickScanIdentify] ERROR: {exc}", file=sys.stderr, flush=True)
