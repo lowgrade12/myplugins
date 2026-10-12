@@ -2,6 +2,9 @@ name: Quick Scan & Identify
 description: Run a selective scan followed by identify for either of two configured directories.
 version: 1.0.1
 url: https://github.com/lowgrade12/myplugins
+ui:
+  javascript:
+    - quickScanIdentify.js
 settings:
   directoryA:
     displayName: Directory A
