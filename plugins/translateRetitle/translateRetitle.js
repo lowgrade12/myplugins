@@ -443,11 +443,6 @@
       return;
     }
 
-    const confirmed = window.confirm(`Translate + retitle ${sceneIds.length} selected scene${sceneIds.length === 1 ? "" : "s"}?`);
-    if (!confirmed) {
-      return;
-    }
-
     processing = true;
     button.disabled = true;
     const originalText = button.textContent;
