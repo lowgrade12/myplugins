@@ -19,11 +19,10 @@ SPEC.loader.exec_module(quick_scan_identify)
 
 
 class QuickScanIdentifyTest(unittest.TestCase):
-    def test_serial_queue_runs_scan_then_continuation_then_identify(self):
+    def test_queues_scan_then_identify_without_status_checks_or_logging(self):
         path = "/stash/one"
         calls = []
         queue = []
-        status = "READY"
 
         def graphql(_connection, query, variables=None):
             calls.append((query, variables))
@@ -37,30 +36,20 @@ class QuickScanIdentifyTest(unittest.TestCase):
             if query == quick_scan_identify.SCAN_MUTATION:
                 queue.append(("scan", variables))
                 return {"metadataScan": "scan-id"}
-            if query == quick_scan_identify.CONTINUATION_MUTATION:
-                queue.append(("continuation", variables["args"]))
-                return {"runPluginTask": "continuation-id"}
             if query == quick_scan_identify.IDENTIFY_MUTATION:
-                self.assertEqual(status, "FINISHED")
                 queue.append(("identify", variables))
                 return {"metadataIdentify": "identify-id"}
-            self.assertEqual(query, quick_scan_identify.JOB_STATUS_QUERY)
-            self.assertEqual(variables, {"jobId": "scan-id"})
-            return {"findJob": {"status": status}}
+            self.fail(f"Unexpected GraphQL request: {query}")
 
-        with patch.object(quick_scan_identify, "_graphql", side_effect=graphql):
+        stderr = io.StringIO()
+        stdout = io.StringIO()
+        with patch.object(quick_scan_identify, "_graphql", side_effect=graphql), \
+             patch.object(quick_scan_identify.sys, "stderr", stderr), \
+             patch.object(quick_scan_identify.sys, "stdout", stdout):
             quick_scan_identify.run_scan_and_identify({}, path)
-            self.assertEqual([job[0] for job in queue], ["scan", "continuation"])
-            self.assertNotIn(quick_scan_identify.JOB_STATUS_QUERY, [q for q, _ in calls])
-            queue.pop(0)
-            status = "FINISHED"
-            continuation = queue.pop(0)[1]
-            with patch.object(quick_scan_identify.sys, "stdin", io.StringIO(json.dumps({
-                "server_connection": {},
-                "args": continuation,
-            }))):
-                self.assertEqual(quick_scan_identify.main(), 0)
-            self.assertEqual([job[0] for job in queue], ["identify"])
+            self.assertEqual([job[0] for job in queue], ["scan", "identify"])
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(stdout.getvalue(), "")
 
         mutation_calls = [call for call in calls if call[0] in (
             quick_scan_identify.SCAN_MUTATION,
@@ -76,21 +65,6 @@ class QuickScanIdentifyTest(unittest.TestCase):
             mutation_calls[1][1]["input"]["sources"],
             [{"source": {"stash_box_endpoint": "https://stash.example/graphql"}}],
         )
-        self.assertEqual(sum(q == quick_scan_identify.JOB_STATUS_QUERY for q, _ in calls), 1)
-
-    def test_unsuccessful_or_missing_scan_does_not_start_identify(self):
-        for status in ("FAILED", "CANCELLED", "READY", "RUNNING", None):
-            with self.subTest(status=status):
-                response = {"findJob": {"status": status}} if status else {"findJob": None}
-                with patch.object(quick_scan_identify, "_graphql", return_value=response) as graphql:
-                    with self.assertRaisesRegex(RuntimeError, "identify skipped"):
-                        quick_scan_identify._identify_after_scan({}, {
-                            "scanJobId": "scan-id",
-                            "identifyInput": {"paths": ["/stash/one"], "sources": []},
-                        })
-                graphql.assert_called_once_with(
-                    {}, quick_scan_identify.JOB_STATUS_QUERY, {"jobId": "scan-id"}
-                )
 
     def test_identify_input_preserves_saved_sources_and_options(self):
         defaults = {
@@ -172,11 +146,12 @@ class QuickScanIdentifyTest(unittest.TestCase):
             for error in (None, ValueError("Configure Identify sources")):
                 with self.subTest(mode=mode, error=error):
                     stdout = io.StringIO()
+                    stderr = io.StringIO()
                     payload = {"args": {"mode": mode}}
                     with patch.object(quick_scan_identify.sys, "stdin",
                                       io.StringIO(json.dumps(payload))), \
                          patch.object(quick_scan_identify.sys, "stdout", stdout), \
-                         patch.object(quick_scan_identify.sys, "stderr", io.StringIO()), \
+                         patch.object(quick_scan_identify.sys, "stderr", stderr), \
                          patch.object(quick_scan_identify, "_configured_path",
                                       return_value="/stash/one"), \
                          patch.object(quick_scan_identify, "run_scan_and_identify",
@@ -187,7 +162,8 @@ class QuickScanIdentifyTest(unittest.TestCase):
                     if error:
                         self.assertEqual(result, {"error": str(error)})
                     else:
-                        self.assertEqual(result, {"output": "Scan and identify continuation queued."})
+                        self.assertEqual(result, {"output": ""})
+                        self.assertEqual(stderr.getvalue(), "")
 
     def test_navbar_buttons_launch_named_plugin_tasks_without_page_messages_or_popups(self):
         result = subprocess.run(
@@ -298,28 +274,30 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
                         quick_scan_identify.run_scan_and_identify({}, "/stash/one")
                 graphql.assert_called_once_with({}, quick_scan_identify.IDENTIFY_DEFAULTS_QUERY)
 
-    def test_missing_job_ids_report_errors_without_polling(self):
-        for responses, message in (
-            ([{}], "job ID for the scan"),
-            ([{"metadataScan": "scan-id"}, {}], "continuation was not queued"),
-        ):
-            with self.subTest(message=message):
+    def test_job_ids_are_not_verified(self):
+        for responses in ([{}, {}], [{"metadataScan": None}, {"metadataIdentify": None}]):
+            with self.subTest(responses=responses):
                 with patch.object(quick_scan_identify, "_identify_input", return_value={}), \
                      patch.object(quick_scan_identify, "_scan_input", return_value={}), \
-                     patch.object(quick_scan_identify, "_graphql", side_effect=responses):
-                    with self.assertRaisesRegex(RuntimeError, message):
-                        quick_scan_identify.run_scan_and_identify({}, "/stash/one")
+                     patch.object(quick_scan_identify, "_graphql", side_effect=responses) as graphql:
+                    quick_scan_identify.run_scan_and_identify({}, "/stash/one")
+                self.assertEqual(
+                    [call.args[1] for call in graphql.call_args_list],
+                    [quick_scan_identify.SCAN_MUTATION, quick_scan_identify.IDENTIFY_MUTATION],
+                )
 
-    def test_continuation_requires_arguments_and_identify_job_id(self):
-        with self.assertRaisesRegex(ValueError, "Missing scan job ID"):
-            quick_scan_identify._identify_after_scan({}, {})
-        with patch.object(quick_scan_identify, "_graphql", side_effect=[
-            {"findJob": {"status": "FINISHED"}}, {},
-        ]):
-            with self.assertRaisesRegex(RuntimeError, "job ID for identify"):
-                quick_scan_identify._identify_after_scan({}, {
-                    "scanJobId": "scan-id", "identifyInput": {},
-                })
+    def test_queue_request_errors_are_still_reported(self):
+        for responses, count in (
+            ([RuntimeError("Scan request failed")], 1),
+            ([{"metadataScan": "scan-id"}, RuntimeError("Identify request failed")], 2),
+        ):
+            with self.subTest(count=count):
+                with patch.object(quick_scan_identify, "_identify_input", return_value={}), \
+                     patch.object(quick_scan_identify, "_scan_input", return_value={}), \
+                     patch.object(quick_scan_identify, "_graphql", side_effect=responses) as graphql:
+                    with self.assertRaisesRegex(RuntimeError, "request failed"):
+                        quick_scan_identify.run_scan_and_identify({}, "/stash/one")
+                self.assertEqual(graphql.call_count, count)
 
     def test_directory_modes_resolve_their_own_setting(self):
         for mode, setting in (("directory_a", "directoryA"), ("directory_b", "directoryB")):
