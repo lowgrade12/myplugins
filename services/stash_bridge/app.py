@@ -226,7 +226,9 @@ class PrivateTransport:
         try:
             connection.sock = socket.create_connection((ip, port), timeout=timeout)
             if parsed.scheme == "https":
-                connection.sock = ssl.create_default_context().wrap_socket(
+                context = ssl.create_default_context()
+                context.minimum_version = ssl.TLSVersion.TLSv1_2
+                connection.sock = context.wrap_socket(
                     connection.sock, server_hostname=parsed.hostname,
                 )
             # HTTPConnection clears .sock for closing responses while their
