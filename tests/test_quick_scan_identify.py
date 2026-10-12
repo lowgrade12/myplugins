@@ -189,7 +189,7 @@ class QuickScanIdentifyTest(unittest.TestCase):
                     else:
                         self.assertEqual(result, {"output": "Scan and identify continuation queued."})
 
-    def test_navbar_buttons_launch_named_plugin_tasks_without_popups_and_show_errors(self):
+    def test_navbar_buttons_launch_named_plugin_tasks_without_page_messages_or_popups(self):
         result = subprocess.run(
             ["node", "-e", r"""
 const assert = require("node:assert/strict");
@@ -215,12 +215,13 @@ const document = {
   createElement: () => new Element()
 };
 const calls = [];
+const errors = [];
 let response = { data: { runPluginTask: "task-job-id" } };
 let httpOk = true;
 vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
   document,
   MutationObserver: class { observe() {} },
-  console: { error() {} },
+  console: { error: (...args) => errors.push(args) },
   window: { alert() { assert.fail("No popup should be shown"); } },
   fetch: async (url, options) => {
     assert.equal(url, "/graphql");
@@ -244,7 +245,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
     assert.deepEqual(request.variables, {
       plugin_id: "quickScanIdentify", task_name: taskName
     });
-    assert.equal(container.children[0].textContent, "Scan & Identify queued.");
+    assert.equal(container.children.length, 0);
     assert.equal(container.link.dataset.running, undefined);
   }
   const container = nav.children[0];
@@ -255,21 +256,28 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
   ]) {
     response = body;
     await container.link.click({ preventDefault() {} });
-    assert.equal(container.children[0].textContent, "Could not start: " + message);
+    assert.equal(container.children.length, 0);
+    assert.equal(errors.at(-1)[0], "[QuickScanIdentify] Failed to queue task:");
+    assert.equal(errors.at(-1)[1].message, message);
     assert.equal(container.link.attrs["aria-disabled"], undefined);
     assert.equal(container.link.style.opacity, "");
   }
   httpOk = false;
   await container.link.click({ preventDefault() {} });
-  assert.match(container.children[0].textContent, /HTTP 503/);
+  assert.equal(container.children.length, 0);
+  assert.match(errors.at(-1)[1].message, /HTTP 503/);
   httpOk = true;
   response = { data: { runPluginTask: "task-job-id" } };
   const count = calls.length;
   const pending = container.link.click({ preventDefault() {} });
+  assert.equal(container.children.length, 0);
   await container.link.click({ preventDefault() {} });
   await pending;
   assert.equal(calls.length, count + 1);
-  assert.equal(container.children[0].textContent, "Scan & Identify queued.");
+  assert.equal(container.children.length, 0);
+  assert.equal(container.link.dataset.running, undefined);
+  assert.equal(container.link.attrs["aria-disabled"], undefined);
+  assert.equal(container.link.style.opacity, "");
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """, str(PLUGIN_PATH.with_suffix(".js")), str(PLUGIN_PATH.with_suffix(".yml"))],
             capture_output=True,

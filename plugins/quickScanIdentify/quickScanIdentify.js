@@ -78,10 +78,6 @@
       `;
 
       const link = container.querySelector("a");
-      const status = document.createElement("small");
-      status.setAttribute("role", "status");
-      status.className = "d-block";
-      container.appendChild(status);
       link.addEventListener("click", async function (event) {
         event.preventDefault();
         if (link.dataset.running === "true") {
@@ -90,13 +86,10 @@
         link.dataset.running = "true";
         link.setAttribute("aria-disabled", "true");
         link.style.opacity = "0.6";
-        status.textContent = "Starting…";
         try {
           await runTask(task);
-          status.textContent = "Scan & Identify queued.";
         } catch (error) {
           console.error("[QuickScanIdentify] Failed to queue task:", error);
-          status.textContent = "Could not start: " + error.message;
         } finally {
           delete link.dataset.running;
           link.removeAttribute("aria-disabled");
