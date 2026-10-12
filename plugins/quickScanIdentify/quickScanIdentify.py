@@ -80,6 +80,10 @@ query IdentifyDefaults {
 }
 """
 
+LEGACY_IDENTIFY_DEFAULTS_QUERY = IDENTIFY_DEFAULTS_QUERY.replace(
+    "performerGenders", "includeMalePerformers"
+)
+
 SCAN_DEFAULT_FIELDS = (
     "scanGenerateCovers",
     "scanGeneratePreviews",
@@ -129,6 +133,12 @@ def _graphql(server_connection: dict, query: str, variables: dict | None = None)
         with urllib.request.urlopen(request, timeout=30) as response:
             result = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
+        try:
+            error_response = json.loads(exc.read().decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            error_response = {}
+        if isinstance(error_response, dict) and error_response.get("errors"):
+            raise RuntimeError(f"Stash GraphQL error: {error_response['errors']}") from exc
         raise RuntimeError(f"Stash GraphQL returned HTTP {exc.code}: {exc.reason}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Could not reach Stash GraphQL: {exc.reason}") from exc
@@ -179,7 +189,13 @@ def _scan_input(server_connection: dict, path: str) -> dict:
 
 
 def _identify_input(server_connection: dict, path: str) -> dict:
-    configuration = _graphql(server_connection, IDENTIFY_DEFAULTS_QUERY)["configuration"]
+    try:
+        data = _graphql(server_connection, IDENTIFY_DEFAULTS_QUERY)
+    except RuntimeError as exc:
+        if 'Cannot query field "performerGenders"' not in str(exc):
+            raise
+        data = _graphql(server_connection, LEGACY_IDENTIFY_DEFAULTS_QUERY)
+    configuration = data["configuration"]
     defaults = configuration.get("defaults", {}).get("identify")
     if isinstance(defaults, dict):
         sources = defaults.get("sources")
@@ -220,7 +236,7 @@ def _identify_after_scan(server_connection: dict, args: dict) -> None:
     identify_job_id = identify_data.get("metadataIdentify")
     if not identify_job_id:
         raise RuntimeError("Stash did not return a job ID for identify.")
-    print(f"[QuickScanIdentify] Queued Identify job {identify_job_id}.", flush=True)
+    print(f"[QuickScanIdentify] Queued Identify job {identify_job_id}.", file=sys.stderr, flush=True)
 
 
 def run_scan_and_identify(server_connection: dict, path: str) -> None:
@@ -229,7 +245,7 @@ def run_scan_and_identify(server_connection: dict, path: str) -> None:
     path = path.strip()
     identify_input = _identify_input(server_connection, path)
 
-    print(f"[QuickScanIdentify] Starting selective scan for {path}.", flush=True)
+    print(f"[QuickScanIdentify] Starting selective scan for {path}.", file=sys.stderr, flush=True)
     scan_data = _graphql(
         server_connection,
         SCAN_MUTATION,
@@ -252,6 +268,7 @@ def run_scan_and_identify(server_connection: dict, path: str) -> None:
         raise RuntimeError(f"Scan job {scan_job_id} queued, but identify continuation was not queued.")
     print(
         f"[QuickScanIdentify] Queued Scan job {scan_job_id} and identify continuation for {path}.",
+        file=sys.stderr,
         flush=True,
     )
 
@@ -265,6 +282,7 @@ def main() -> int:
         mode = args.get("mode")
         if mode == "after_scan":
             _identify_after_scan(server_connection, args)
+            print(json.dumps({"output": "Identify queued."}), flush=True)
             return 0
         path_setting = {
             "directory_a": "directoryA",
@@ -274,9 +292,11 @@ def main() -> int:
             raise ValueError(f"Unknown task mode: {mode!r}.")
         path = _configured_path(server_connection, path_setting)
         run_scan_and_identify(server_connection, path)
+        print(json.dumps({"output": "Scan and identify continuation queued."}), flush=True)
         return 0
     except Exception as exc:
         print(f"[QuickScanIdentify] ERROR: {exc}", file=sys.stderr, flush=True)
+        print(json.dumps({"error": str(exc)}), flush=True)
         return 1
 
 
