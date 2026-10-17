@@ -206,7 +206,8 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
   }
 });
 (async () => {
-  assert.equal(nav.children.length, 2);
+  // Directory A, Directory B, and the Tag & Refresh button
+  assert.equal(nav.children.length, 3);
   const taskNames = fs.readFileSync(process.argv[2], "utf8")
     .split("\n").filter(line => line.startsWith("  - name: "))
     .map(line => line.slice("  - name: ".length).trim());
@@ -223,6 +224,15 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
     });
     assert.equal(container.children.length, 0);
     assert.equal(container.link.dataset.running, undefined);
+  }
+  // Tag & Refresh queues PerformerTagger then Restash, in that order
+  {
+    const before = calls.length;
+    await nav.children[2].link.click({ preventDefault() {} });
+    assert.deepEqual(calls.slice(before).map(c => c.variables), [
+      { plugin_id: "performerTagger", task_name: "Batch Tag Performers (Missing Only)" },
+      { plugin_id: "restash", task_name: "Quick Refresh" }
+    ]);
   }
   const container = nav.children[0];
   for (const [body, message] of [
