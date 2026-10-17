@@ -61,7 +61,9 @@
     },
     {
       category: "Height",
-      tags: ["Tall", "Average", "Short", "Tiny"],
+      // "Average Height" (not "Average") so it doesn't collide with the
+      // Body Type "Average" tag - a tag can only have one name.
+      tags: ["Tall", "Average Height", "Short", "Tiny"],
     },
     {
       category: "Genitalia",
@@ -413,6 +415,24 @@
    * @param {Object} performer - Performer data object from getPerformerFull
    * @returns {Array<{tagName: string, categoryName: string}>}
    */
+  const NONE_VALUES = new Set(["none", "no", "n/a", "na", "nothing", "0"]);
+  const UNKNOWN_VALUES = new Set(["", "unknown", "?", "-"]);
+
+  /**
+   * Map a free-text tattoos/piercings field to a tag name, or null if no data.
+   * @param {string|null|undefined} value
+   * @param {string} yesTag
+   * @param {string} noTag
+   * @returns {string|null}
+   */
+  function presenceTag(value, yesTag, noTag) {
+    if (value === null || value === undefined) return null;
+    const v = String(value).trim().toLowerCase();
+    if (UNKNOWN_VALUES.has(v)) return null;
+    if (NONE_VALUES.has(v)) return noTag;
+    return yesTag;
+  }
+
   function deriveTagsFromPerformerData(performer) {
     const derived = [];
 
@@ -455,14 +475,8 @@
       if (tagName) derived.push({ tagName, categoryName: "Ethnicity" });
     }
 
-    // Body Type from height — suggest Skinny for shorter performers.
-    // Only applied when the Body Type category has no existing tags.
-    // Threshold: <= 160 cm (approx 5'3").
-    if (performer.height_cm && performer.height_cm > 0) {
-      if (performer.height_cm <= 160) {
-        derived.push({ tagName: "Skinny", categoryName: "Body Type" });
-      }
-    }
+    // Body Type is not derived from data: height says nothing about build, and
+    // deriving it would replace a manually chosen body type.
 
     // Height category
     // Tall: >= 175 cm (5'9"+), Average: 165–174 cm (5'5"–5'8"),
@@ -470,16 +484,17 @@
     if (performer.height_cm && performer.height_cm > 0) {
       let tagName = null;
       if (performer.height_cm >= 175) tagName = "Tall";
-      else if (performer.height_cm >= 165) tagName = "Average";
+      else if (performer.height_cm >= 165) tagName = "Average Height";
       else if (performer.height_cm >= 155) tagName = "Short";
       else tagName = "Tiny";
       derived.push({ tagName, categoryName: "Height" });
     }
 
-    // Bust type from fake_tits field (Stash stores cup size string or empty for natural)
+    // Bust type from fake_tits field. Stash returns "" when the field was never
+    // filled in, so empty means "no data" (matches the Python batch task).
     if (performer.fake_tits !== null && performer.fake_tits !== undefined) {
       const ft = String(performer.fake_tits).toLowerCase().trim();
-      if (ft === "" || ft === "no" || ft === "false" || ft === "natural") {
+      if (ft === "no" || ft === "false" || ft === "natural") {
         derived.push({ tagName: "Natural Tits", categoryName: "Bust Type" });
       } else if (ft !== "" && ft !== "unknown") {
         // Any non-empty, non-natural value indicates enhancement
@@ -510,17 +525,13 @@
       }
     }
 
-    // Tattoos
-    if (performer.tattoos !== null && performer.tattoos !== undefined) {
-      const t = String(performer.tattoos).trim();
-      derived.push({ tagName: t === "" ? "No Tattoos" : "Tattoos", categoryName: "Tattoos" });
-    }
-
-    // Piercings
-    if (performer.piercings !== null && performer.piercings !== undefined) {
-      const p = String(performer.piercings).trim();
-      derived.push({ tagName: p === "" ? "No Piercings" : "Piercings", categoryName: "Piercings" });
-    }
+    // Tattoos / Piercings. Stash returns "" for fields that were never filled
+    // in, so an empty value means "no data", not "none". Only an explicit
+    // "none"/"no" means none.
+    const tattooTag = presenceTag(performer.tattoos, "Tattoos", "No Tattoos");
+    if (tattooTag) derived.push({ tagName: tattooTag, categoryName: "Tattoos" });
+    const piercingTag = presenceTag(performer.piercings, "Piercings", "No Piercings");
+    if (piercingTag) derived.push({ tagName: piercingTag, categoryName: "Piercings" });
 
     return derived;
   }
