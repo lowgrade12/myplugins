@@ -1,7 +1,7 @@
 # Set Stashbox Favorites Plugin
 #
 # Inspired by stashSetStashboxFavoritePerformers
-# Original: https://github.com/lowgrade12/hotornottest/tree/main/plugins/stashSetStashboxFavoritePerformers
+# Original: https://github.com/lowgrade12/myplugins/tree/main/reference/stashSetStashboxFavoritePerformers
 #
 
 import json
