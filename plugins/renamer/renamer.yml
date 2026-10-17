@@ -1,6 +1,6 @@
 name: Renamer
 description: Renames files and directories when they are updated in Stash.
-version: 0.1.0
+version: 0.1.1
 exec:
   - python
   - "{pluginDir}/renamer_main.py"

@@ -1,6 +1,6 @@
 name: stashdb performer gallery
 description: Automatically download performer images from stashdb or other stash-boxes. Add the [Stashbox Performer Gallery] tag to a performer and it will create a gallery of images from that stash-box database. Apply the tag [Set Profile Image] to an image to set it as the profile image of that performer. Note you will need to configure the download path and add this as a path under settings > library
-version: 0.8
+version: 0.9
 url: https://github.com/lowgrade12/myplugins
 exec:
   - python
@@ -22,7 +22,7 @@ settings:
 
 hooks:
   - name: modify performer
-    description: Download galleries on performer update if the [performer gallery] tag is applied
+    description: Download galleries when the [Stashbox Performer Gallery] tag is newly applied to a performer (or its stash IDs change). Use the Process Performers task to refresh already-tagged performers.
     triggeredBy:
       - Performer.Update.Post
   - name: image add

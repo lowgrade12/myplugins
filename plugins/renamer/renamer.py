@@ -16,11 +16,44 @@ def _is_in_scenes_directory(file_path: pathlib.Path) -> bool:
         return False
 
 
+# Update-input fields that can change a renamed path. Stash sends the names of
+# the fields included in an update as hookContext.inputFields. (The "input"
+# object itself always contains every key, mostly null, so it can't be used to
+# tell what changed.)
+NAME_AFFECTING_SCENE_FIELDS = {
+    "title", "code", "date", "director", "studio_id", "organized", "primary_file_id",
+}
+NAME_AFFECTING_STUDIO_FIELDS = {"name", "parent_id"}
+
+
+def changed_fields(hook_context):
+    """Return the set of fields this update touched, or None if unknown.
+
+    None means Stash didn't say: scan-triggered hooks (a file was added or
+    changed) and older Stash versions. Callers treat that as "may matter".
+    """
+    fields = hook_context.get("inputFields")
+    return set(fields) if fields is not None else None
+
+
+def hook_may_affect_names(hook_context) -> bool:
+    fields = changed_fields(hook_context)
+    if fields is None:
+        return True
+    hook_type = hook_context.get("type")
+    if hook_type == "Scene.Update.Post":
+        return bool(fields & NAME_AFFECTING_SCENE_FIELDS)
+    if hook_type == "Studio.Update.Post":
+        return bool(fields & NAME_AFFECTING_STUDIO_FIELDS)
+    return True
+
+
 SCENE_FRAGMENT = """
 id
 title
 code
 date
+director
 organized
 
 studio {
@@ -58,8 +91,9 @@ def rename_scene(stash: StashInterface, config: Config, args):
         log.info("Scene is not marked as organized, ignoring scene.")
         return
 
-    input_data = args["hookContext"].get("input", {})
-    relevant_metadata_changing = "title" in input_data or "studio_id" in input_data
+    fields = changed_fields(args["hookContext"])
+    # Unknown fields (scan-triggered hooks, older Stash) count as relevant.
+    relevant_metadata_changing = fields is None or bool(fields & {"title", "studio_id"})
 
     for file in scene["files"]:
         file_path = pathlib.Path(file["path"])

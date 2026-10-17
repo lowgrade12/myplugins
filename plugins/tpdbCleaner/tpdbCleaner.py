@@ -73,7 +73,7 @@ def stash_graphql(server_connection: dict, query: str, variables: dict | None = 
     url = get_stash_url(server_connection)
     req = urllib.request.Request(url, data=payload, headers=get_headers(server_connection), method="POST")
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             result = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"HTTP {exc.code} from Stash GraphQL endpoint: {exc.reason}") from exc

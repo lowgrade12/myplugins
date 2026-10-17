@@ -417,7 +417,7 @@ def processPerformerStashid(endpoint, stashid, p):
                         filename,
                     )
                 )
-                r = requests.get(img["url"])
+                r = requests.get(img["url"], timeout=60)
                 with open(filename, "wb") as f:
                     f.write(r.content)
                     f.close()
@@ -565,7 +565,7 @@ def processPerformerStashid(endpoint, stashid, p):
                                                 / p["id"]
                                                 / ("%s.jpg" % (image_id,))
                                             )
-                                            r = requests.get(img["url"])
+                                            r = requests.get(img["url"], timeout=60)
                                             if r.status_code == 200:
                                                 with open(filename, "wb") as f:
                                                     f.write(r.content)
@@ -583,7 +583,7 @@ def processPerformerStashid(endpoint, stashid, p):
 def setPerformerPicture(img):
     if len(img["performers"]) == 1:
         log.debug(img["paths"]["image"])
-        res = request_s.get(img["paths"]["image"])
+        res = request_s.get(img["paths"]["image"], timeout=60)
         log.debug(res.headers["Content-Type"])
         if res.status_code == 200:
             encoded = base64.b64encode(res.content).decode()
@@ -755,7 +755,77 @@ def relink_images(performer_id=None, processed_performer_ids=None):
             log.info(f"Removed [Stashbox Performer Gallery] tag from {removed_count} performers")
 
 
+def _seen_tagged_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        ".hook_tagged_performers.json")
+
+
+def _load_seen_tagged():
+    try:
+        with open(_seen_tagged_path()) as fh:
+            return set(str(x) for x in json.load(fh))
+    except (OSError, ValueError):
+        return set()
+
+
+def _save_seen_tagged(ids):
+    path = _seen_tagged_path()
+    tmp = path + ".%d.tmp" % os.getpid()
+    try:
+        with open(tmp, "w") as fh:
+            json.dump(sorted(ids), fh)
+        os.replace(tmp, path)
+    except OSError as e:
+        log.debug(f"Could not save hook state: {e}")
+
+
+def should_queue_performer(performer_id, changed_fields):
+    """Decide whether a Performer.Update.Post should queue "Process Performers".
+
+    Queue only for performers carrying the [Stashbox Performer Gallery] tag,
+    and only when the tag was newly applied (as far as this hook has seen) or
+    the performer's stash IDs changed. Re-saving an already-tagged performer
+    (ratings, other tags, batch jobs) no longer re-downloads and rescans.
+    New images for already-tagged performers are picked up by running the
+    "Process Performers" task (manually or on a schedule).
+    """
+    performer_id = str(performer_id)
+    p = stash.find_performer(performer_id)
+    has_tag = bool(p) and tag_stashbox_performer_gallery in [
+        x["id"] for x in (p.get("tags") or [])
+    ]
+    seen = _load_seen_tagged()
+    if not has_tag:
+        if performer_id in seen:
+            seen.discard(performer_id)
+            _save_seen_tagged(seen)
+        return False
+    if changed_fields is None:
+        # Older Stash without inputFields: keep the previous behaviour.
+        return True
+    newly_tagged = performer_id not in seen
+    if newly_tagged:
+        seen.add(performer_id)
+        _save_seen_tagged(seen)
+    return newly_tagged or "stash_ids" in changed_fields
+
+
 json_input = json.loads(sys.stdin.read())
+
+# Performer.Update.Post fires for every performer edit (HotOrNot ratings,
+# custom fields, other plugins' batch tagging...). Only tag or stash ID changes
+# can mean "start/refresh this performer's gallery", and only tag changes can
+# apply [Set Profile Image] to an image, so exit before any Stash calls for
+# everything else. Older Stash versions don't send inputFields; those fall
+# through to the checks below.
+_hook = json_input.get("args", {}).get("hookContext") or {}
+_changed_fields = _hook.get("inputFields")
+if _changed_fields is not None:
+    _changed_fields = set(_changed_fields)
+    if _hook.get("type") == "Performer.Update.Post" and not (_changed_fields & {"tag_ids", "stash_ids"}):
+        sys.exit(0)
+    if _hook.get("type") == "Image.Update.Post" and "tag_ids" not in _changed_fields:
+        sys.exit(0)
 
 FRAGMENT_SERVER = json_input["server_connection"]
 stash = StashInterface(FRAGMENT_SERVER)
@@ -770,6 +840,16 @@ if "stashdb-performer-gallery" in config:
     settings.update(config["stashdb-performer-gallery"])
 # log.info('config: %s ' % (settings,))
 
+
+# Image.Create.Post fires for every image added by any scan or importer.
+# Only images under our download folder are ours to process, so check the
+# path before doing anything else.
+if _hook.get("type") == "Image.Create.Post":
+    _img = stash.find_image(image_in=_hook.get("id"), fragment=FRAGMENT_IMAGE)
+    if not _img or not any(
+        settings["path"] in f["path"] for f in (_img.get("visual_files") or [])
+    ):
+        sys.exit(0)
 
 tag_stashbox_performer_gallery = stash.find_tag(
     "[Stashbox Performer Gallery]", create=True
@@ -848,7 +928,7 @@ elif "hookContext" in json_input["args"]:
                 "Performer.Update.Post: a stashdb-performer-gallery task is already "
                 "running, bypassing hook to avoid reprocessing loop."
             )
-        else:
+        elif should_queue_performer(id, _changed_fields):
             stash.run_plugin_task(
                 "stashdb-performer-gallery", "Process Performers", args={"mode": "processPerformers", "performer": id}
             )

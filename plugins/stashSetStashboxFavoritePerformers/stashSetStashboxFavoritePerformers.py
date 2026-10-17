@@ -22,6 +22,16 @@ name = args.get('name')
 hook_context = args.get('hookContext')
 server_connection = json_input.get("server_connection", {})
 
+# Hooks fire on every performer/studio update (ratings, tags, custom fields,
+# other plugins' batch jobs...). Only the favorite flag matters here, so exit
+# before making any Stash or StashDB requests when Stash reports which fields
+# changed and "favorite" isn't one of them. Older Stash versions don't send
+# inputFields, in which case we fall through to the previous behaviour.
+if hook_context:
+    _changed_fields = hook_context.get('inputFields')
+    if _changed_fields is not None and 'favorite' not in _changed_fields:
+        sys.exit(0)
+
 
 def get_stash_url():
     """Build the Stash GraphQL URL from server connection info."""
