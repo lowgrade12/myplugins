@@ -43,7 +43,8 @@
   let pluginConfigCache = null; // Cached plugin configuration from Stash settings
   let hotCardsConfigCache = null; // Cached hotCards plugin configuration (used for tier rankings)
   let tierConfigCache = undefined; // undefined = not yet loaded; null = no valid tier config
-  let apolloFailed = false; // Track whether Apollo client has failed (skip after first failure to reduce noise)
+  let apolloFailed = false;
+  let badgeFailedKey = null; // "<navigationVersion>:<performerId>" of the last failed badge injection // Track whether Apollo client has failed (skip after first failure to reduce noise)
   let navigationVersion = 0; // Incremented on every page navigation; used to abort stale async work
   const MAX_LOAD_RETRIES = 3; // Max auto-retries when not enough performers are available
 
@@ -453,6 +454,82 @@
       }
     }
   `;
+
+  // ============================================
+  // PERFORMER POOL CACHE
+  // ============================================
+
+  // Swiss, Calibration and KOTH need every performer (rating + stats) to pick a
+  // pair. Fetching that list - with scene_count, which Stash computes per
+  // performer - before every single battle was the main cost of a battle on a
+  // large library. Fetch it once per modal session/filter, keep it current by
+  // applying each mutation's result locally, and refetch after a TTL.
+  const PERFORMER_POOL_TTL = 10 * 60 * 1000;
+  let performerPoolCache = null; // { key, performers, byId, fetchedAt }
+
+  /**
+   * Sort performers like Stash's "rating DESC" (unrated last), keeping the
+   * current order for ties.
+   * @param {Array} performers
+   * @returns {Array} New sorted array (same objects)
+   */
+  function sortByRatingDesc(performers) {
+    return performers
+      .map((p, i) => ({ p, i }))
+      .sort((a, b) => {
+        const ra = a.p.rating100 ?? -1;
+        const rb = b.p.rating100 ?? -1;
+        return rb - ra || a.i - b.i;
+      })
+      .map((x) => x.p);
+  }
+
+  /**
+   * Get all performers matching the filter, sorted by rating (highest first).
+   * Uses the session cache when it is fresh and for the same filter.
+   * @param {Object} performerFilter - PerformerFilterType
+   * @returns {Promise<Array>} Sorted array of performer objects
+   */
+  async function getPerformerPool(performerFilter) {
+    const key = JSON.stringify(performerFilter || {});
+    const cache = performerPoolCache;
+    if (cache && cache.key === key && Date.now() - cache.fetchedAt < PERFORMER_POOL_TTL) {
+      cache.performers = sortByRatingDesc(cache.performers);
+      return cache.performers.slice();
+    }
+
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
+      performer_filter: performerFilter,
+      filter: { per_page: -1, sort: "rating", direction: "DESC" }
+    });
+    const performers = result.findPerformers.performers || [];
+    performerPoolCache = {
+      key,
+      performers,
+      byId: new Map(performers.map((p) => [String(p.id), p])),
+      fetchedAt: Date.now()
+    };
+    return performers.slice();
+  }
+
+  /** Drop the cached performer pool (e.g. when the modal is reopened). */
+  function invalidatePerformerPool() {
+    performerPoolCache = null;
+  }
+
+  /**
+   * Apply a performerUpdate mutation result to the cached pool so the next
+   * pairing sees the new rating/stats without refetching everything.
+   * @param {Object|null} updated - { id, rating100?, custom_fields?, image_path? }
+   */
+  function applyPerformerUpdateToPool(updated) {
+    if (!updated || !updated.id || !performerPoolCache) return;
+    const cached = performerPoolCache.byId.get(String(updated.id));
+    if (!cached) return;
+    for (const field of ["rating100", "custom_fields", "image_path"]) {
+      if (field in updated) cached[field] = updated[field];
+    }
+  }
 
   // ============================================
   // URL FILTER PARSING
@@ -1002,7 +1079,9 @@
       };
     }
     
-    return await graphqlQuery(mutation, variables);
+    const result = await graphqlQuery(mutation, variables);
+    applyPerformerUpdateToPool(result && result.performerUpdate);
+    return result;
   }
 
 
@@ -1976,17 +2055,8 @@ async function fetchPerformerCount(performerFilter = {}) {
   async function fetchSwissPairPerformers() {
     const performerFilter = getPerformerFilter();
 
-    // Get all performers for accurate ranking
-    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
-      performer_filter: performerFilter,
-      filter: {
-        per_page: -1,
-        sort: "rating",
-        direction: "DESC"
-      }
-    });
-
-    const performers = result.findPerformers.performers || [];
+    // Get all performers for accurate ranking (cached for the session)
+    const performers = await getPerformerPool(performerFilter);
     
     if (performers.length < 2) {
       // Fallback to random if not enough rated performers
@@ -2308,12 +2378,7 @@ async function fetchPerformerCount(performerFilter = {}) {
   async function fetchCalibrationPairPerformers() {
     const performerFilter = getPerformerFilter();
 
-    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
-      performer_filter: performerFilter,
-      filter: { per_page: -1, sort: "rating", direction: "DESC" }
-    });
-
-    const performers = result.findPerformers.performers || [];
+    const performers = await getPerformerPool(performerFilter);
 
     if (performers.length < 2) {
       return { performers: await fetchRandomPerformers(2), ranks: [null, null], coverageInfo: null };
@@ -2615,16 +2680,7 @@ async function fetchPerformerCount(performerFilter = {}) {
   async function fetchKothPairPerformers() {
     const performerFilter = getPerformerFilter();
 
-    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
-      performer_filter: performerFilter,
-      filter: {
-        per_page: -1,
-        sort: "rating",
-        direction: "DESC"
-      }
-    });
-
-    const performers = result.findPerformers.performers || [];
+    const performers = await getPerformerPool(performerFilter);
 
     if (performers.length < 2) {
       return { performers: await fetchRandomPerformers(2), ranks: [null, null] };
@@ -2801,6 +2857,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     `;
     try {
       const result = await graphqlQuery(mutation, { id: performerId, image: imageUrl });
+      applyPerformerUpdateToPool(result && result.performerUpdate);
       return !!(result && result.performerUpdate);
     } catch (err) {
       console.error("[HotOrNot] Error updating performer image:", err);
@@ -4039,8 +4096,8 @@ async function fetchPerformerCount(performerFilter = {}) {
     function renderMatchHTML(match, isActive) {
       const seed1Label = match.seed1 && match.seed1.tournamentSeed ? `(${match.seed1.tournamentSeed}) ` : "";
       const seed2Label = match.seed2 && match.seed2.tournamentSeed ? `(${match.seed2.tournamentSeed}) ` : "";
-      const name1 = match.seed1 ? `${seed1Label}${match.seed1.name}` : "—";
-      const name2 = !match.seed2 ? "—" : !match.seed2.name ? "BYE" : `${seed2Label}${match.seed2.name}`;
+      const name1 = match.seed1 ? `${seed1Label}${escapeHtml(match.seed1.name)}` : "—";
+      const name2 = !match.seed2 ? "—" : !match.seed2.name ? "BYE" : `${seed2Label}${escapeHtml(match.seed2.name)}`;
       const winnerClass1 = match.winner && match.seed1 && match.winner.id === match.seed1.id ? "hon-bracket-winner" : "";
       const winnerClass2 = match.winner && match.seed2 && match.winner.id === match.seed2.id ? "hon-bracket-winner" : "";
       const loserClass1 = match.winner && match.seed1 && match.winner.id !== match.seed1.id ? "hon-bracket-loser" : "";
@@ -4199,11 +4256,11 @@ async function fetchPerformerCount(performerFilter = {}) {
         <h2 class="hon-victory-title">TOURNAMENT CHAMPION!</h2>
         <div class="hon-victory-scene">
           ${imagePath
-            ? `<img class="hon-victory-image" src="${imagePath}" alt="${name}" />`
+            ? `<img class="hon-victory-image" src="${escapeHtml(imagePath)}" alt="${escapeHtml(name)}" />`
             : `<div class="hon-victory-image hon-no-image">No Image</div>`
           }
         </div>
-        <h3 class="hon-victory-name">${name}</h3>
+        <h3 class="hon-victory-name">${escapeHtml(name)}</h3>
         <p class="hon-victory-stats">
           Won the ${tournamentInfo?.size || "?"}-performer tournament!${winsText}
         </p>
@@ -4576,11 +4633,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       ? { hotornot_stats: oldStats }
       : {};
 
-    return await graphqlQuery(mutation, {
+    const result = await graphqlQuery(mutation, {
       id: performerId,
       rating: Math.max(1, Math.min(100, Math.round(oldRating))),
       fields
     });
+    applyPerformerUpdateToPool(result && result.performerUpdate);
+    return result;
   }
 
   /**
@@ -5062,51 +5121,48 @@ async function fetchPerformerCount(performerFilter = {}) {
    */
   async function getPerformerBattleRank(performerId) {
     try {
-      const performersQuery = `
-        query FindPerformersByRating($filter: FindFilterType) {
-          findPerformers(filter: $filter) {
+      // Count-based rank instead of downloading every performer on each
+      // performer page visit: rank = (performers rated higher) + 1.
+      // Performers with the same rating share a rank.
+      const performerQuery = `
+        query HonBattleRankPerformer($id: ID!) {
+          findPerformer(id: $id) {
+            id
+            rating100
+            custom_fields
+          }
+          total: findPerformers(filter: { per_page: 0 }) {
             count
-            performers {
-              id
-              rating100
-              custom_fields
-            }
           }
         }
       `;
+      const base = await graphqlQuery(performerQuery, { id: performerId });
+      const performer = base && base.findPerformer;
+      const total = base && base.total ? base.total.count : 0;
+      if (!performer || total === 0) {
+        return null;
+      }
 
-      // Get ALL performers sorted by rating descending (highest first)
-      const result = await graphqlQuery(performersQuery, {
-        filter: {
-          per_page: -1, // Get all
-          sort: "rating",
-          direction: "DESC"
+      const rating = performer.rating100;
+      // Unrated performers rank after everyone who has a rating
+      const criterion = rating === null || rating === undefined
+        ? { value: 0, modifier: "NOT_NULL" }
+        : { value: rating, modifier: "GREATER_THAN" };
+      const countQuery = `
+        query HonBattleRankCount($filter: PerformerFilterType) {
+          findPerformers(performer_filter: $filter, filter: { per_page: 0 }) {
+            count
+          }
         }
-      });
+      `;
+      const counted = await graphqlQuery(countQuery, { filter: { rating100: criterion } });
+      const ahead = counted && counted.findPerformers ? counted.findPerformers.count : 0;
 
-      const performers = result.findPerformers.performers || [];
-      const total = performers.length;
-
-      if (total === 0) {
-        return null;
-      }
-
-      // Find the performer's position in the sorted list
-      const index = performers.findIndex(p => p.id === performerId);
-      if (index === -1) {
-        return null;
-      }
-
-      const performer = performers[index];
-      
-      // Parse match stats from custom_fields
-      const stats = parsePerformerEloData(performer);
-      
       return {
-        rank: index + 1,
+        rank: ahead + 1,
         total: total,
-        rating: performer.rating100 || 0,
-        stats: stats
+        rating: rating || 0,
+        stats: parsePerformerEloData(performer)
       };
     } catch (error) {
       console.error("[HotOrNot] Error fetching performer battle rank:", error);
@@ -5249,12 +5305,18 @@ async function fetchPerformerCount(performerFilter = {}) {
         return;
       }
 
+      // Don't retry on every DOM mutation after a failure on this page
+      if (badgeFailedKey === `${navVersion}:${performerId}`) {
+        return;
+      }
+
       // Fetch the performer's battle rank
       const rankInfo = await getPerformerBattleRank(performerId);
       // Abort if user navigated away during the fetch
       if (navVersion !== navigationVersion) return;
       if (!rankInfo) {
         console.log("[HotOrNot] Could not fetch battle rank for performer");
+        badgeFailedKey = `${navVersion}:${performerId}`;
         return;
       }
 
@@ -5418,6 +5480,8 @@ function addFloatingButton() {
   }
 
   async function openRankingModal() {
+    // Start each session from fresh data (ratings may have changed elsewhere)
+    invalidatePerformerPool();
     // Detect if we're on performers or images page
     const path = window.location.pathname;
     if (path === '/images' || path === '/images/') {
@@ -5760,6 +5824,7 @@ function addFloatingButton() {
     });
 
     const updatedRating = result.performerUpdate.rating100;
+    applyPerformerUpdateToPool(result.performerUpdate);
     
     // Update the local cache so React re-renders use the correct value
     setCachedRatingForWidget(performerId, updatedRating);
