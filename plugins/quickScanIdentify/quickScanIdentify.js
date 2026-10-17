@@ -12,10 +12,19 @@
       id: "qsi-nav-directory-b",
       label: "Scan & Identify B",
       taskName: "Scan and Identify Directory B"
+    },
+    {
+      id: "qsi-nav-tag-refresh",
+      label: "Tag & Refresh",
+      icon: "🏷️",
+      steps: [
+        { pluginId: "performerTagger", taskName: "Batch Tag Performers (Missing Only)" },
+        { pluginId: "restash", taskName: "Quick Refresh" }
+      ]
     }
   ];
 
-  async function runTask(task) {
+  async function runStep(pluginId, taskName) {
     const query = `
       mutation RunQuickScanIdentify(
         $plugin_id: ID!,
@@ -34,8 +43,8 @@
       body: JSON.stringify({
         query: query,
         variables: {
-          plugin_id: PLUGIN_ID,
-          task_name: task.taskName
+          plugin_id: pluginId,
+          task_name: taskName
         }
       })
     });
@@ -52,6 +61,14 @@
     }
     if (!result.data || !result.data.runPluginTask) {
       throw new Error("Stash did not queue the task.");
+    }
+  }
+
+  async function runTask(task) {
+    const steps = task.steps || [{ pluginId: PLUGIN_ID, taskName: task.taskName }];
+    // Stash runs queued plugin tasks serially, so queue order is execution order.
+    for (const step of steps) {
+      await runStep(step.pluginId, step.taskName);
     }
   }
 
@@ -72,7 +89,7 @@
         <a href="javascript:void(0);" id="${task.id}"
           class="minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center"
           title="${task.label}">
-          <span class="d-block d-xl-inline mb-2 mb-xl-0" aria-hidden="true">📁</span>
+          <span class="d-block d-xl-inline mb-2 mb-xl-0" aria-hidden="true">${task.icon || "📁"}</span>
           <span>${task.label}</span>
         </a>
       `;
