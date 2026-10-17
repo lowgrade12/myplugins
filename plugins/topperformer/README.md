@@ -38,7 +38,7 @@ A plugin for [Stash](https://stashapp.cc/) that displays the performer with the 
 
 Simply browse the Studios page. The plugin automatically:
 1. Detects studio cards on the page
-2. Fetches scene data for each studio (up to 1000 scenes)
+2. Counts scene appearances per performer for each studio
 3. Aggregates performer appearances (excluding male performers)
 4. Displays the top performer on each card
 
@@ -57,9 +57,9 @@ Styled to match the Stash UI with:
 ## Technical Details
 
 ### Scene Fetching
-- Queries up to **1000 scenes** per studio for statistical accuracy
-- Uses GraphQL with studio filter
-- Aggregates performer appearances from all scenes
+- Studios with up to 500 scenes: all scenes are counted exactly in one request
+- Larger studios: the 25 performers in the studio with the most scenes overall are checked, each with an exact scene count for this studio, in one request
+- Results are cached for 30 minutes per browser session
 
 ### Card Detection
 The plugin detects studio cards using:
@@ -77,8 +77,7 @@ The plugin is **enabled** only on:
 This allowlist approach prevents the widget from appearing on unrelated pages (scenes, performers, tags, etc.) where studio links may exist in other contexts.
 
 ### Performance
-- **Parallel processing** for all studios on the page
-- **Promise.allSettled** for graceful error handling
+- Up to 4 studios are looked up at a time, so large studio pages don't flood Stash with queries
 - **Mutation Observer** watches for DOM changes (lazy loading, pagination)
 
 ## Requirements
@@ -88,9 +87,9 @@ This allowlist approach prevents the widget from appearing on unrelated pages (s
 
 ## Limitations
 
-- Processes a maximum of 1000 scenes per studio (sufficient for most studios)
+- For studios with more than 500 scenes, the top performer is chosen from the 25 most prolific performers in that studio (by total scenes), so a performer with few scenes elsewhere could in rare cases be missed
 - Gender filtering only excludes "MALE" - other genders are included
-- Cache expires after 5 minutes; manual refresh may show stale data briefly
+- Cache expires after 30 minutes; recent changes may take that long to show
 
 ## License
 
