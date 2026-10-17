@@ -7,7 +7,7 @@ Injects a quick-tag panel on performer detail pages for one-click attribute tagg
 - **Quick-tag panel** — one-click buttons on every performer detail page for manual tag assignment
 - **Auto-tagging** — automatically applies tags derived from a performer's stored Stash data fields when you open their page
 - **Batch Tag Performers** (task) — server-side task that scans every performer and applies tags in bulk
-- **Remove All Performer Tags** (task) — wipes all managed tags from every performer so the batch task can start fresh
+- **Remove Performer Tagger Tags** (task) — removes this plugin's managed tags from every performer (other tags are kept) so the batch task can start fresh
 - **Current-page batch** — ⚡ Batch Tag button on the performers list page that tags only the performers currently visible (respects active filters and pagination)
 
 ## Settings
@@ -81,13 +81,7 @@ Matching is case-insensitive substring matching.
 
 ### Body Type
 
-**Source field:** `height_cm`
-
-| Tag | Applied when… |
-|-----|---------------|
-| Skinny | `height_cm` > 0 and ≤ 160 cm (~5′3″) |
-
-Only the Skinny tag is auto-derived (for shorter performers). The remaining Body Type tags — Slim, Athletic, Average, Curvy, BBW, Muscular — are available as manual quick-tag buttons in the panel but are never auto-applied.
+Body Type tags — Skinny, Slim, Athletic, Average, Curvy, BBW, Muscular — are manual quick-tag buttons in the panel and are never auto-applied from performer data (height doesn't indicate build). The **Batch Tag from Scenes** task can still fill an empty Body Type category from scene tags.
 
 ---
 
@@ -98,11 +92,13 @@ Only the Skinny tag is auto-derived (for shorter performers). The remaining Body
 | Tag | Applied when… |
 |-----|---------------|
 | Tall | `height_cm` ≥ 175 cm (~5′9″) |
-| Average | `height_cm` ≥ 165 cm and < 175 cm (~5′5″–5′8″) |
+| Average Height | `height_cm` ≥ 165 cm and < 175 cm (~5′5″–5′8″) |
 | Short | `height_cm` ≥ 155 cm and < 165 cm (~5′1″–5′4″) |
 | Tiny | `height_cm` > 0 and < 155 cm (under ~5′1″) |
 
 If `height_cm` is 0 or absent, no Height tag is applied.
+
+> Versions before 1.7.0 used a plain `Average` tag for height, which was the same tag as Body Type `Average`. When the batch task knows a performer's height it now removes an `Average` tag whose parent is `Height`. If your existing `Average` tag sits under `Height`, you can also rename it to `Average Height` in Stash.
 
 ---
 
@@ -112,10 +108,10 @@ If `height_cm` is 0 or absent, no Height tag is applied.
 
 | Tag | Applied when `fake_tits`… |
 |-----|---------------------------|
-| Natural Tits | equals (case-insensitive) `""` (empty), `"no"`, `"false"`, or `"natural"` |
+| Natural Tits | equals (case-insensitive) `"no"`, `"false"`, or `"natural"` |
 | Enhanced | is any non-empty, non-natural value other than `"unknown"` |
 
-If `fake_tits` is `null`/not set, or equals `"unknown"`, no Bust Type tag is applied.
+If `fake_tits` is empty (Stash returns `""` for fields that were never filled in), `null`, or `"unknown"`, no Bust Type tag is applied.
 
 ---
 
@@ -183,7 +179,7 @@ Ethnicity
 
 Height
 ├── Tall
-├── Average
+├── Average Height
 ├── Short
 └── Tiny
 ```
@@ -200,6 +196,6 @@ Both tasks are accessible from **System → Tasks** in Stash.
 
 Scans every performer in your library and applies attribute tags derived from their Stash data fields. Male performers are skipped. For each category where a value can be derived, the correct tag is applied and any incorrect managed tags in that category are removed.
 
-### Remove All Performer Tags
+### Remove Performer Tagger Tags
 
-Removes **all** tags from every performer. Use this before running Batch Tag Performers when you want to rebuild tags from a completely clean slate.
+Removes the tags this plugin manages (every tag listed under Tag Categories) from every performer. Any other tags, such as `[Stashbox Performer Gallery]` or your own tags, are kept. Use this before running Batch Tag Performers when you want to rebuild attribute tags from a clean slate.

@@ -141,7 +141,9 @@ DEFAULT_TAG_GROUPS = [
     },
     {
         "category": "Height",
-        "tags": ["Tall", "Average", "Short", "Tiny"],
+        # "Average Height" (not "Average") so it doesn't collide with the
+        # Body Type "Average" tag - a tag can only have one name.
+        "tags": ["Tall", "Average Height", "Short", "Tiny"],
     },
     {
         "category": "Genitalia",
@@ -166,6 +168,11 @@ ALL_MANAGED_TAG_NAMES = {
     for group in DEFAULT_TAG_GROUPS
     for t in group["tags"]
 }
+
+# Names removed by the "Remove Performer Tagger Tags" task: everything this
+# plugin manages (this also covers the plain "Average" tag older versions used
+# for height, since "Average" is still a Body Type tag).
+REMOVABLE_TAG_NAMES = ALL_MANAGED_TAG_NAMES
 
 BATCH_PAGE_SIZE = 100
 
@@ -380,6 +387,22 @@ def get_or_create_category_tag(category_name: str) -> str | None:
 # Derived-tag logic — mirrors deriveTagsFromPerformerData() in JS
 # ---------------------------------------------------------------------------
 
+NONE_VALUES = {"none", "no", "n/a", "na", "nothing", "0"}
+UNKNOWN_VALUES = {"", "unknown", "?", "-"}
+
+
+def presence_tag(value, yes_tag: str, no_tag: str) -> str | None:
+    """Map a free-text tattoos/piercings field to a tag, or None if no data."""
+    if value is None:
+        return None
+    v = str(value).strip().lower()
+    if v in UNKNOWN_VALUES:
+        return None
+    if v in NONE_VALUES:
+        return no_tag
+    return yes_tag
+
+
 def derive_tags(performer: dict) -> list[dict]:
     """
     Return a list of {tag_name, category_name} dicts inferred from *performer*'s
@@ -442,19 +465,18 @@ def derive_tags(performer: dict) -> list[dict]:
         if tag_name:
             derived.append({"tag_name": tag_name, "category_name": "Ethnicity"})
 
-    # --- Body Type (height) ---
-    height_cm = performer.get("height_cm") or 0
-    if height_cm > 0 and height_cm <= 160:
-        derived.append({"tag_name": "Skinny", "category_name": "Body Type"})
+    # Body Type is not derived from data: height says nothing about build, and
+    # deriving it would replace a manually chosen body type on every batch run.
 
     # --- Height category ---
+    height_cm = performer.get("height_cm") or 0
     # Tall: >= 175 cm (5'9"+), Average: 165–174 cm (5'5"–5'8"),
     # Short: 155–164 cm (5'1"–5'4"), Tiny: < 155 cm (under 5'1")
     if height_cm > 0:
         if height_cm >= 175:
             tag_name = "Tall"
         elif height_cm >= 165:
-            tag_name = "Average"
+            tag_name = "Average Height"
         elif height_cm >= 155:
             tag_name = "Short"
         else:
@@ -490,17 +512,16 @@ def derive_tags(performer: dict) -> list[dict]:
             if bust_tag:
                 derived.append({"tag_name": bust_tag, "category_name": "Bust Size"})
 
-    # --- Tattoos ---
-    tattoos = performer.get("tattoos")
-    if tattoos is not None:
-        t = str(tattoos).strip()
-        derived.append({"tag_name": "No Tattoos" if t == "" else "Tattoos", "category_name": "Tattoos"})
-
-    # --- Piercings ---
-    piercings = performer.get("piercings")
-    if piercings is not None:
-        p = str(piercings).strip()
-        derived.append({"tag_name": "No Piercings" if p == "" else "Piercings", "category_name": "Piercings"})
+    # --- Tattoos / Piercings ---
+    # Stash returns "" for fields that were never filled in, so an empty value
+    # means "no data", not "none". Only an explicit "none"/"no" means none.
+    for field, yes_tag, no_tag in (
+        ("tattoos", "Tattoos", "No Tattoos"),
+        ("piercings", "Piercings", "No Piercings"),
+    ):
+        tag_name = presence_tag(performer.get(field), yes_tag, no_tag)
+        if tag_name:
+            derived.append({"tag_name": tag_name, "category_name": yes_tag})
 
     return derived
 
@@ -755,7 +776,7 @@ def fetch_performer_page(page: int) -> dict:
           gender
           tattoos
           piercings
-          tags { id name aliases }
+          tags { id name aliases parents { name } }
         }
       }
     }
@@ -847,6 +868,19 @@ def process_performer(performer: dict, skip_tagged: bool = False) -> str:
             if tag_id:
                 new_ids.add(tag_id)
                 log_items.append(f"{group['category']}: {correct_derived['tag_name']}")
+
+    # Earlier versions used a plain "Average" tag for height, shared with the
+    # Body Type "Average" tag. When we now know the height, drop an "Average"
+    # tag that sits under the Height category (it has been replaced by
+    # "Average Height" or another height tag above).
+    if "Height" in derived_by_category:
+        for t in current_tags:
+            if t["name"].lower() == "average" and any(
+                (parent.get("name") or "").lower() == "height"
+                for parent in (t.get("parents") or [])
+            ) and t["id"] in new_ids:
+                new_ids.discard(t["id"])
+                log_items.append("Height: remove legacy 'Average'")
 
     if new_ids == current_ids:
         return "skipped"
@@ -944,10 +978,12 @@ def fetch_performer_page_tags_only(page: int) -> dict:
 
 def task_remove_performer_tags():
     """
-    Remove ALL tags from every performer so the batch-tag task can re-apply
-    correct tags from a clean slate.
+    Remove the tags this plugin manages (hair colour, ethnicity, height, ...)
+    from every performer so the batch-tag task can re-apply them from a clean
+    slate. Any other tags (e.g. [Stashbox Performer Gallery], your own tags)
+    are left in place.
     """
-    log.LogInfo("PerformerTagger: Remove All Performer Tags starting…")
+    log.LogInfo("PerformerTagger: Remove Performer Tagger Tags starting…")
 
     first_page = fetch_performer_page_tags_only(1)
     total = first_page.get("count", 0)
@@ -968,16 +1004,18 @@ def task_remove_performer_tags():
 
             processed += 1
 
-            if not current_tags:
+            keep_ids = [t["id"] for t in current_tags
+                        if t["name"].lower() not in REMOVABLE_TAG_NAMES]
+            removed = len(current_tags) - len(keep_ids)
+            if removed == 0:
                 skipped += 1
             else:
-                # Remove every tag — pass an empty list to wipe the performer clean
-                success = update_performer_tags(performer_id, [])
+                success = update_performer_tags(performer_id, keep_ids)
                 if success:
                     cleared += 1
                     log.LogDebug(
                         f"Performer {performer_id} ({performer.get('name', '?')}): "
-                        f"removed {len(current_tags)} tag(s)"
+                        f"removed {removed} managed tag(s)"
                     )
                 else:
                     errors += 1

@@ -1,6 +1,6 @@
 name: PerformerTagger
 description: Injects a quick-tag panel on performer detail pages for one-click attribute tagging (hair color, body type, bust size, ethnicity, age range). Also provides a server-side batch task that auto-tags all performers from Stash's Task Queue.
-version: 1.6.1
+version: 1.7.0
 url: https://github.com/lowgrade12/myplugins
 ui:
   javascript:
@@ -61,9 +61,10 @@ tasks:
     defaultArgs:
       mode: batch_tag_from_scenes
       skip_tagged: true
-  - name: Remove All Performer Tags
+  - name: Remove Performer Tagger Tags
     description: >
-      Remove ALL tags from every performer, including any unrecognised leftover
-      tags, so the Batch Tag task can re-apply correct ones from a clean slate.
+      Remove the tags this plugin manages (hair colour, ethnicity, height, body
+      type, bust, tattoos, piercings...) from every performer so the Batch Tag
+      task can re-apply them from a clean slate. Other tags are kept.
     defaultArgs:
       mode: remove_all_tags
