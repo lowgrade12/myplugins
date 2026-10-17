@@ -17,29 +17,18 @@ stash_ids { endpoint stash_id }
 """
 
 # ---------- HTTP helpers ----------
+# Without a timeout a hung or unreachable Whisparr blocks the hook process
+# (and the Stash update that triggered it) indefinitely.
+HTTP_TIMEOUT = 30
+
 def http_get_json(url, api_key):
     req = urllib.request.Request(
         url,
         headers={"Accept": "application/json", "X-Api-Key": api_key},
         method="GET",
     )
-    with urllib.request.urlopen(req) as r:
-        raw = r.read().decode("utf-8", "ignore")
-        try:
-            return r.status, json.loads(raw)
-        except Exception:
-            return r.status, raw
-
-def http_post_json(url, body, api_key):
-    data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json", "X-Api-Key": api_key},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(req) as r:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
             raw = r.read().decode("utf-8", "ignore")
             try:
                 return r.status, json.loads(raw)
@@ -51,6 +40,32 @@ def http_post_json(url, body, api_key):
             return e.code, json.loads(raw)
         except Exception:
             return e.code, raw
+    except (urllib.error.URLError, TimeoutError) as e:
+        return 0, str(e)
+
+def http_post_json(url, body, api_key):
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json", "X-Api-Key": api_key},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
+            raw = r.read().decode("utf-8", "ignore")
+            try:
+                return r.status, json.loads(raw)
+            except Exception:
+                return r.status, raw
+    except urllib.error.HTTPError as e:
+        raw = (e.read() or b"").decode("utf-8", "ignore")
+        try:
+            return e.code, json.loads(raw)
+        except Exception:
+            return e.code, raw
+    except (urllib.error.URLError, TimeoutError) as e:
+        return 0, str(e)
 
 def is_already_exists_error(status, resp):
     """Check if the response indicates the item already exists.
@@ -146,6 +161,16 @@ def load_plugin_settings(stash: StashInterface) -> dict:
 
     return cfg
 
+def stash_ids_may_have_changed(hook: dict) -> bool:
+    """Return True if this hook's update could have changed the scene's stash_ids."""
+    fields = hook.get("inputFields")
+    if fields is not None:
+        return "stash_ids" in fields
+    # Scan-triggered hooks carry no input at all, and a scan never changes
+    # stash IDs. Older Stash versions don't send inputFields; fall back to
+    # processing those updates as before.
+    return hook.get("input") is not None
+
 # ---------- main ----------
 def main():
     STASH_DATA = json.loads(sys.stdin.read())
@@ -154,6 +179,14 @@ def main():
     scene_id = hook.get("id")
     if not scene_id:
         log.info("No scene id in hook; exit.")
+        return
+
+    # Scene.Update.Post fires for every scene edit (ratings, tags, play counts,
+    # other plugins' batch jobs) and for scans. Only a change to stash_ids can
+    # make a scene newly matchable, so skip everything else before touching
+    # Stash or Whisparr.
+    if not stash_ids_may_have_changed(hook):
+        log.debug("stash_ids not changed in this update; skip.")
         return
 
     # Stash API client

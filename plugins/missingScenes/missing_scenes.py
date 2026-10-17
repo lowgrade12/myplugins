@@ -2394,6 +2394,16 @@ def task_cleanup_whisparr(plugin_settings):
 # Plugin Entry Point
 # ============================================================================
 
+def stash_ids_may_have_changed(hook_context):
+    """Return True if this hook's update could have changed the scene's stash_ids."""
+    fields = hook_context.get("inputFields")
+    if fields is not None:
+        return "stash_ids" in fields
+    # Scan-triggered hooks carry no input, and scans never change stash IDs.
+    # Older Stash versions don't send inputFields - keep the old behaviour.
+    return hook_context.get("input") is not None
+
+
 def main():
     """Main entry point for the plugin."""
 
@@ -2403,6 +2413,15 @@ def main():
     except json.JSONDecodeError as e:
         output = {"error": f"Invalid JSON input: {e}"}
         print(json.dumps(output))
+        return
+
+    # Scene.Update.Post fires for every scene edit and scan. Auto-cleanup only
+    # cares about scenes that just received a stash ID, so bail out before any
+    # Stash/Whisparr requests when stash_ids weren't part of the update.
+    early_hook = input_data.get("args", {}).get("hookContext")
+    if (early_hook and early_hook.get("type") == "Scene.Update.Post"
+            and not stash_ids_may_have_changed(early_hook)):
+        print(json.dumps({"output": {"success": True, "message": "stash_ids unchanged"}}))
         return
 
     # Get plugin settings
