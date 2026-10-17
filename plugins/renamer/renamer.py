@@ -4,13 +4,22 @@ from config_parser import Config
 from file_manager import StashFile
 import pathlib
 
-SCENES_DIRECTORY = pathlib.Path("/data/scenes")
+_sorted_directory = None
+
+
+def configure_sorted_directory(config) -> None:
+    """Read the "Sorted directory" setting (default /data/scenes)."""
+    global _sorted_directory
+    raw = (config.sorted_directory or "").strip()
+    _sorted_directory = pathlib.Path(raw).resolve() if raw else None
 
 
 def _is_in_scenes_directory(file_path: pathlib.Path) -> bool:
-    """Return True if the file is inside /data/scenes/."""
+    """Return True if the file is inside the configured sorted directory."""
+    if _sorted_directory is None:
+        return False
     try:
-        file_path.resolve().relative_to(SCENES_DIRECTORY)
+        file_path.resolve().relative_to(_sorted_directory)
         return True
     except ValueError:
         return False
@@ -98,7 +107,7 @@ def rename_scene(stash: StashInterface, config: Config, args):
     for file in scene["files"]:
         file_path = pathlib.Path(file["path"])
         if _is_in_scenes_directory(file_path) and not relevant_metadata_changing:
-            log.info(f"File {file_path} is in /data/scenes/ and no relevant metadata is changing, skipping.")
+            log.info(f"File {file_path} is in the sorted directory and no relevant metadata is changing, skipping.")
             continue
         stash_file = StashFile(stash, config, scene, file)
         stash_file.rename_file()
@@ -137,7 +146,7 @@ def rename_all_scenes(stash: StashInterface, config: Config):
         for file in scene["files"]:
             file_path = pathlib.Path(file["path"])
             if _is_in_scenes_directory(file_path):
-                log.info(f"File {file_path} is in /data/scenes/, skipping.")
+                log.info(f"File {file_path} is in the sorted directory, skipping.")
                 continue
             stash_file = StashFile(stash, config, scene, file)
             stash_file.rename_file()
@@ -171,7 +180,7 @@ def rename_scenes_in_directory(stash: StashInterface, config: Config):
                 # File is within the filter directory, proceed with rename
                 log.debug(f"File {file_path} is within filter directory {filter_path}")
                 if _is_in_scenes_directory(file_path):
-                    log.info(f"File {file_path} is in /data/scenes/, skipping.")
+                    log.info(f"File {file_path} is in the sorted directory, skipping.")
                     continue
                 stash_file = StashFile(stash, config, scene, file)
                 stash_file.rename_file()
