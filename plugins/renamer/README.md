@@ -26,7 +26,8 @@ A plugin for [Stash](https://stashapp.cc/) that automatically renames scene file
 |---------|------|---------|-------------|
 | `Rename unorganized scenes` | Boolean | `false` | When disabled, only scenes marked as "Organized" will be renamed |
 | `Rename/move files with the same name but different extensions` | Boolean | `true` | Rename related files (e.g., `.funscript`, `.vtt`) alongside the main video file |
-| `Rename directory` | Boolean | `true` | Rename the parent directory to match the new file name (stem only) |
+| `Rename directory` | Boolean | `false` | Rename the file's folder to match the new file name (stem only), only when the folder holds just this scene's files |
+| `Sorted directory` | String | `/data/scenes` | Files in this folder are only renamed when title or studio changes; bulk tasks skip it. Empty disables |
 | `Delete empty directory after renaming` | Boolean | `false` | Delete the original directory after renaming if it becomes empty |
 | `Default directory path format` | String | `""` | Template for the destination directory path |
 | `Default file name format` | String | `""` | Template for the new file name |
@@ -44,11 +45,11 @@ When **disabled** (default), the plugin only processes scenes that have been mar
 When **enabled**, all scenes will be renamed regardless of their organized status.
 
 #### Rename Directory
-When **enabled**, the parent directory of the file will be renamed to match the file's stem (filename without extension). For example:
+When **enabled**, the folder the file ends up in is renamed to match the file's stem (filename without extension). For example:
 - File renamed to: `My Scene Title.mp4`
-- Parent directory renamed to: `My Scene Title`
+- Folder renamed to: `My Scene Title`
 
-**Note**: This renames the immediate parent directory, not the entire path structure.
+**Safety**: the folder is only renamed when it contains nothing but this scene's file and its related files (same name, other extensions). Folders shared with other scenes or containing subfolders are left alone. When a `Default directory path format` is set, the template decides folder names and this setting has no effect (add `$title$` to the template for per-scene folders). The rename is done by moving the file into the new folder through Stash, so Stash's library stays in sync, and the old folder is removed once it is empty.
 
 #### Delete Empty Directory
 When **enabled**, the plugin will delete the original parent directory after renaming if it becomes empty. This is useful for cleaning up leftover empty folders when files are moved to a new location.

@@ -1,6 +1,6 @@
 name: Renamer
 description: Renames files and directories when they are updated in Stash.
-version: 0.1.1
+version: 0.2.0
 exec:
   - python
   - "{pluginDir}/renamer_main.py"
@@ -27,7 +27,7 @@ settings:
     type: BOOLEAN
   renameDirectory:
     displayName: Rename directory
-    description: If enabled, the plugin will also rename the parent directory to match the new file name.
+    description: "Off by default. If enabled, the file's folder is renamed to match the new file name - but only when that folder holds nothing except this scene's files. Shared folders (studio folders, download folders) are never renamed, and it has no effect when a directory path format is set."
     type: BOOLEAN
   defaultDirectoryPathFormat:
     displayName: Default directory path format
@@ -62,6 +62,10 @@ settings:
     displayName: Delete empty directory after renaming
     description: If enabled, the plugin will delete the original directory after renaming if it becomes empty.
     type: BOOLEAN
+  sortedDirectory:
+    displayName: Sorted directory
+    description: "Files already inside this folder are only renamed when the scene's title or studio changes, and the bulk rename tasks skip them. Default /data/scenes. Clear it to disable."
+    type: STRING
   protectedDirectories:
     displayName: Protected directories
     description: |

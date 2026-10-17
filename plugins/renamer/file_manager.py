@@ -220,8 +220,67 @@ class StashFile:
 
         return file_name
 
+    def _holds_only_this_scene(self, folder: pathlib.Path) -> bool:
+        """True if *folder* is missing, empty, or contains only this scene's
+        file and its related files (same stem, other extensions)."""
+        if not folder.exists():
+            return True
+        old_path = self.get_old_file_path()
+        prefix = old_path.stem + "."
+        try:
+            entries = list(folder.iterdir())
+        except OSError as error:
+            log.warning(f"Could not list {folder}: {error}")
+            return False
+        for entry in entries:
+            if entry == old_path:
+                continue
+            if entry.is_file() and entry.name.startswith(prefix):
+                continue
+            return False
+        return True
+
+    def get_target_folder(self) -> pathlib.Path:
+        """Folder the file will end up in.
+
+        With "Rename directory" on, the destination folder is renamed to match
+        the file name - but only when that folder belongs to this scene alone.
+        A shared folder (a studio folder, a downloads folder, a folder with
+        other scenes or subfolders) is never renamed. The rename is done by
+        moving the file into the new folder through Stash's moveFiles, so
+        Stash's database stays in sync instead of pointing at a folder that
+        was renamed behind its back.
+        """
+        base_folder = self.get_new_file_folder()
+        if not self.config.rename_directory:
+            return base_folder
+
+        # With a directory template the template decides folder names (put
+        # $title$ in it for per-scene folders). Renaming the template's last
+        # folder would turn e.g. a "$studio_name$" folder into a scene title.
+        if self.config.default_directory_path_format:
+            log.debug("Directory path format is set; not renaming directories.")
+            return base_folder
+
+        renamed_folder = base_folder.parent / self.get_new_file_base_stem()
+        if renamed_folder == base_folder:
+            return base_folder
+
+        if renamed_folder.exists():
+            log.warning(f"Directory already exists at {renamed_folder}, skipping directory rename")
+            return base_folder
+
+        if not self._holds_only_this_scene(base_folder):
+            log.info(
+                f"Not renaming directory {base_folder}: it contains other files or folders "
+                "besides this scene's files."
+            )
+            return base_folder
+
+        return renamed_folder
+
     def get_new_file_path(self) -> pathlib.Path:
-        return self.get_new_file_folder() / self.get_new_file_name()
+        return self.get_target_folder() / self.get_new_file_name()
 
     def rename_related_files(self, old_path: pathlib.Path, new_path: pathlib.Path, dry_run: bool):
         if not self.config.rename_related_files:
@@ -261,45 +320,37 @@ class StashFile:
             except OSError as error:
                 log.error(f"Failed to rename related file from {related_file} to {target_path}: {error}")
 
-    def rename_directory(self, old_path: pathlib.Path, new_path: pathlib.Path, dry_run: bool):
-        """Rename the parent directory to match the new file name.
-        
-        Note: This renames the parent directory of the file to match the file's
-        base stem (filename without extension and without duplicate suffix).
-        For example, if a file is renamed to "MyScene (1).mp4", the parent
-        directory will still be renamed to "MyScene" (without the duplicate suffix).
+    def remove_renamed_source_directory(self, old_path: pathlib.Path, new_path: pathlib.Path, dry_run: bool):
+        """After a directory rename, remove the old folder once it is empty.
+
+        The file itself was moved into the renamed folder by Stash
+        (see get_target_folder); this only cleans up the now-empty original.
         """
         if not self.config.rename_directory:
             return
 
-        # Use the new path's parent as the current directory since the file has been moved
-        old_directory = new_path.parent
-        # Use base stem without duplicate suffix to avoid naming directories like "MyScene (1)"
-        new_directory_name = self.get_new_file_base_stem()
-        
-        # Get the parent of the current directory
-        parent_of_old_directory = old_directory.parent
-        new_directory_path = parent_of_old_directory / new_directory_name
-
-        if old_directory == new_directory_path:
-            log.info("Directory paths are the same, no directory renaming needed.")
+        old_directory = old_path.parent
+        if old_directory == new_path.parent or old_directory != self.get_new_file_folder():
             return
 
-        if new_directory_path.exists():
-            log.warning(f"Directory already exists at {new_directory_path}, skipping directory rename")
-            return
-
-        log.info(f"Renaming directory from {old_directory} to {new_directory_path}")
-
-        if dry_run:
-            log.info("Dry run enabled, not actually renaming the directory.")
+        if old_directory.resolve() in self.config.protected_directories:
+            log.info(f"Skipping protected directory: {old_directory}")
             return
 
         try:
-            old_directory.rename(new_directory_path)
-            log.info(f"Directory renamed successfully from {old_directory} to {new_directory_path}")
+            if any(old_directory.iterdir()):
+                return
+        except OSError:
+            return
+
+        log.info(f"Removing renamed-from directory {old_directory}")
+        if dry_run:
+            return
+
+        try:
+            old_directory.rmdir()
         except OSError as error:
-            log.error(f"Failed to rename directory from {old_directory} to {new_directory_path}: {error}")
+            log.error(f"Failed to remove directory {old_directory}: {error}")
 
     def delete_empty_directory(self, old_path: pathlib.Path, new_path: pathlib.Path, dry_run: bool):
         """Delete empty directories left behind after renaming.
@@ -389,7 +440,6 @@ class StashFile:
         if self.config.dry_run:
             log.info("Dry run enabled, not actually renaming the file.")
             self.rename_related_files(old_path, new_path, dry_run=True)
-            self.rename_directory(old_path, new_path, dry_run=True)
             self.delete_empty_directory(old_path, new_path, dry_run=True)
             return
 
@@ -397,13 +447,13 @@ class StashFile:
             MOVE_FILE_MUTATION,
             {"input": {
                     "ids": [self.file_data["id"]],
-                    "destination_folder": str(self.get_new_file_folder()),
-                    "destination_basename": self.get_new_file_name(),
+                    "destination_folder": str(new_path.parent),
+                    "destination_basename": new_path.name,
                 }
             }
         )
 
         log.info(f"File renamed successfully: {moved_file}")
         self.rename_related_files(old_path, new_path, dry_run=False)
-        self.rename_directory(old_path, new_path, dry_run=False)
+        self.remove_renamed_source_directory(old_path, new_path, dry_run=False)
         self.delete_empty_directory(old_path, new_path, dry_run=False)

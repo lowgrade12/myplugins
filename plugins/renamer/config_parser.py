@@ -10,10 +10,13 @@ class Config:
         "renameRelatedFiles": True,
         "removeExtraSpacesFromFileName": False,
         "duplicateFileSuffix": " ($index$)",
-        "renameDirectory": True,
+        "renameDirectory": False,
         "directoryFilter": "",
         "deleteEmptyDirectory": False,
         "protectedDirectories": "",
+        # Previously hard-coded in renamer.py; kept as the default so existing
+        # installs behave the same. Set to an empty value to disable.
+        "sortedDirectory": "/data/scenes",
     }
 
     def __init__(self, config):

@@ -3,7 +3,7 @@ import json
 import sys
 
 from config_parser import Config
-from renamer import hook_may_affect_names, rename_scene, rename_scenes_for_studio, rename_all_scenes, rename_scenes_in_directory
+from renamer import configure_sorted_directory, hook_may_affect_names, rename_scene, rename_scenes_for_studio, rename_all_scenes, rename_scenes_in_directory
 
 STASH_DATA = json.loads(sys.stdin.read())
 
@@ -20,6 +20,7 @@ stash = StashInterface(STASH_DATA["server_connection"])
 stash_config = stash.get_configuration()
 
 config = Config(stash_config["plugins"].get("renamer", {}))
+configure_sorted_directory(config)
 
 if "hookContext" in ARGS:
     hook_data = ARGS["hookContext"]
