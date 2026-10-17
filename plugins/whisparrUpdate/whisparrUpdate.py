@@ -3,7 +3,7 @@
 # Whisparr Update Plugin
 #
 # Inspired by whisparr-bridge
-# Original: https://github.com/lowgrade12/hotornottest/tree/main/plugins/whisparr-bridge
+# Original: https://github.com/lowgrade12/myplugins/tree/main/reference/whisparr-bridge
 #
 
 import json, sys, urllib.request, urllib.error
