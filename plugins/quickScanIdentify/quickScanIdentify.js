@@ -4,11 +4,6 @@
   const PLUGIN_ID = "quickScanIdentify";
   const TASKS = [
     {
-      id: "qsi-nav-directory-a",
-      label: "Scan & Identify A",
-      taskName: "Scan and Identify Directory A"
-    },
-    {
       id: "qsi-nav-directory-b",
       label: "Scan & Identify B",
       taskName: "Scan and Identify Directory B"

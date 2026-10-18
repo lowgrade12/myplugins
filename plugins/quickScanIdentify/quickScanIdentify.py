@@ -223,7 +223,6 @@ def main() -> int:
         args = payload.get("args", {})
         mode = args.get("mode")
         path_setting = {
-            "directory_a": "directoryA",
             "directory_b": "directoryB",
         }.get(mode)
         if not path_setting:
