@@ -1,28 +1,20 @@
 name: Quick Scan & Identify
-description: Run a selective scan followed by identify for either of two configured directories.
-version: 1.0.4
+description: Run a selective scan followed by identify for the configured directory.
+version: 1.1.0
 url: https://github.com/lowgrade12/myplugins
 ui:
   javascript:
     - quickScanIdentify.js
 settings:
-  directoryA:
-    displayName: Directory A
-    description: First directory path as seen by Stash.
-    type: STRING
   directoryB:
     displayName: Directory B
-    description: Second directory path as seen by Stash.
+    description: Directory path as seen by Stash.
     type: STRING
 exec:
   - python
   - "{pluginDir}/quickScanIdentify.py"
 interface: raw
 tasks:
-  - name: Scan and Identify Directory A
-    description: Queue a selective scan followed by identify for Directory A.
-    defaultArgs:
-      mode: directory_a
   - name: Scan and Identify Directory B
     description: Queue a selective scan followed by identify for Directory B.
     defaultArgs:

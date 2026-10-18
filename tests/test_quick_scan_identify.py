@@ -142,7 +142,7 @@ class QuickScanIdentifyTest(unittest.TestCase):
                         quick_scan_identify._graphql({}, "query Test { configuration { ui } }")
 
     def test_operations_return_json_success_or_error(self):
-        for mode in ("directory_a", "directory_b"):
+        for mode in ("directory_b",):
             for error in (None, ValueError("Configure Identify sources")):
                 with self.subTest(mode=mode, error=error):
                     stdout = io.StringIO()
@@ -206,12 +206,12 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
   }
 });
 (async () => {
-  // Directory A, Directory B, and the Tag & Refresh button
-  assert.equal(nav.children.length, 3);
+  // Directory B and the Tag & Refresh button
+  assert.equal(nav.children.length, 2);
   const taskNames = fs.readFileSync(process.argv[2], "utf8")
     .split("\n").filter(line => line.startsWith("  - name: "))
     .map(line => line.slice("  - name: ".length).trim());
-  assert.equal(taskNames.length, 2);
+  assert.equal(taskNames.length, 1);
   for (const [index, taskName] of taskNames.entries()) {
     const container = nav.children[index];
     await container.link.click({ preventDefault() {} });
@@ -228,7 +228,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
   // Tag & Refresh queues PerformerTagger then Restash, in that order
   {
     const before = calls.length;
-    await nav.children[2].link.click({ preventDefault() {} });
+    await nav.children[1].link.click({ preventDefault() {} });
     assert.deepEqual(calls.slice(before).map(c => c.variables), [
       { plugin_id: "performerTagger", task_name: "Batch Tag Performers (Missing Only)" },
       { plugin_id: "restash", task_name: "Quick Refresh" }
@@ -310,7 +310,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), {
                 self.assertEqual(graphql.call_count, count)
 
     def test_directory_modes_resolve_their_own_setting(self):
-        for mode, setting in (("directory_a", "directoryA"), ("directory_b", "directoryB")):
+        for mode, setting in (("directory_b", "directoryB"),):
             with self.subTest(mode=mode):
                 payload = {"server_connection": {"Port": 9999}, "args": {"mode": mode}}
                 with patch.object(quick_scan_identify.sys, "stdin", io.StringIO(json.dumps(payload))), \
