@@ -1,18 +1,40 @@
-.hot-card {
+/* Hot cards are tagged with data-hot-card; the card itself is never moved
+   or wrapped. Both pseudo-elements live inside .card, so its overflow:hidden
+   doesn't clip them:
+   ::before - gradient ring along the card edge, above the card content
+   ::after  - gradient fill behind the card content (hidden when fill is off) */
+[data-hot-card] {
   --border-width: 0.2rem;
-  display: flex;
   position: relative;
+  isolation: isolate;
 }
 
-.hot-card > .hot-border {
-  height: auto;
+[data-hot-card]::before,
+[data-hot-card]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
 }
 
-.hot-card:after {
+[data-hot-card]::before {
+  z-index: 1;
+  padding: var(--border-width);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+[data-hot-card]::after {
   z-index: -1;
 }
 
-.hot-border:hover {
+[data-hot-card]:hover {
   box-shadow:
     0px 0px 1em var(--hover-color),
     0px 0px 2em var(--hover-color) !important;
@@ -42,8 +64,13 @@
   display: grid;
 }
 
-.holo-img {
-  grid-area: 1/1;
+[data-hot-holo] {
+  position: relative;
+}
+
+.hot-holo-shine {
+  position: absolute;
+  pointer-events: none;
 }
 
 .shine {
@@ -167,28 +194,14 @@
   }
 }
 
-@media (max-width: 576px) {
-  .hot-card {
-    width: 100%;
-  }
-}
-
-@media (max-width: 576px) and (orientation: portrait) {
-  div[class*=" hot-performer-card"] {
-    width: 14rem;
-  }
-}
-
 /* Deceased performer - darken and desaturate while preserving the earned border color */
-.hot-deceased {
+[data-hot-deceased] {
   filter: brightness(0.6) saturate(0.65);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hot-card {
-    animation: none;
-  }
-  .hot-card:hover {
-    animation: none;
+  [data-hot-card],
+  [data-hot-card]::before {
+    animation: none !important;
   }
 }
