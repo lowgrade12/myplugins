@@ -50,20 +50,12 @@ const CARD_PATTERNS = {
 const STYLE_ELEMENT = document.createElement("style");
 document.head.appendChild(STYLE_ELEMENT);
 
-// Backup card elements
-let backupCardElements = [];
-// Current hot card elements
-let hotCardElements = [];
-// Current hot card classes
+// Current hot card selectors (one per configured value segment)
 let hotCardClasses = _hc.hotCardClasses = [];
 // Home page observer for detecting late-loading recommendation rows
 let homeObserver = null;
 let homeDebounceTimer = null;
 let homeDisconnectTimer = null;
-// Backup img elements for holo cards
-let backupImgElements = [];
-// Current holo elements
-let holoElements = [];
 
 async function hotCardsSetup() {
   await setConfiguration();
@@ -80,34 +72,23 @@ async function hotCardsSetup() {
   }
 
   /**
-   * Since it was necessary to insert a div before the card for
-   * the border design to be visible (otherwise the overflow:hidden; property of
-   * the .card class does not allow it to be seen), this also brought up another problem:
-   *
-   * "DOMException: Node.removeChild: The node to be removed is not a child of this node".
-   *
-   * Because of how the internal content of some divs are updated when navigating.
-   *
-   * This restores the card back to the original DOM structure to prevent that.
+   * Cards are React-owned DOM nodes, so hot cards never move or wrap them:
+   * doing so makes React's own removeChild/insertBefore calls throw
+   * ("The node to be removed is not a child of this node") and unmounts the
+   * whole page. Instead cards are only tagged with data attributes (which
+   * React leaves alone) and styled from CSS. On navigation those tags are
+   * cleared so the next page's cards are evaluated fresh.
    */
   function restoreCards() {
     cleanupHomeObserver();
-    backupCardElements.forEach((backupCard, i) => {
-      if (hotCardElements[i] && hotCardElements[i].parentNode) {
-        hotCardElements[i].before(backupCard);
-        hotCardElements[i].remove();
-      }
+    document.querySelectorAll("[data-hot-card]").forEach((el) => {
+      delete el.dataset.hotCard;
+      delete el.dataset.hotDeceased;
     });
-    backupImgElements.forEach((backupImg, i) => {
-      if (holoElements[i] && holoElements[i].parentNode) {
-        holoElements[i].before(backupImg);
-        holoElements[i].remove();
-      }
+    document.querySelectorAll("[data-hot-holo]").forEach((el) => {
+      delete el.dataset.hotHolo;
     });
-    backupCardElements.length = 0;
-    hotCardElements.length = 0;
-    backupImgElements.length = 0;
-    holoElements.length = 0;
+    document.querySelectorAll(".hot-holo-shine").forEach((el) => el.remove());
   }
 
   onPathChange(restoreCards);
@@ -141,14 +122,14 @@ function cleanupHomeObserver() {
 /**
  * Process all enabled card types on the home page.
  * Only triggers handleHotCards for types that have unprocessed cards
- * (cards not yet wrapped with the hot-border class).
+ * (cards not yet tagged with data-hot-card).
  */
 function processHomeCards() {
   Object.values(CARD_KEYS).forEach((type) => {
     if (!CARDS[type].enabled) return;
     const cardClass = CARDS[type].class;
     const hasUnprocessedCards = document.querySelector(
-      `.recommendation-row .${cardClass}:not(.hot-border)`
+      `.recommendation-row .${cardClass}:not([data-hot-card])`
     );
     if (hasUnprocessedCards) {
       handleHotCards(type, true);
@@ -226,8 +207,8 @@ function createAndInsertHotCards(stashData, cardClass, config, isHome) {
   const deceasedCheckQueue = [];
 
   cards.forEach((card) => {
-    // Skip cards that are already wrapped in a hot card element
-    if (card.classList.contains("hot-border")) return;
+    // Skip cards that are already tagged as hot cards
+    if (card.dataset.hotCard) return;
 
     // FIX: Some card layouts may not have a thumbnail-section link element,
     // skip processing for cards without proper structure
@@ -251,12 +232,7 @@ function createAndInsertHotCards(stashData, cardClass, config, isHome) {
 
     if (segmentParams) {
       const classId = segmentParams.value.join("-").replace(/[.\s]/g, "-");
-      const hotCardEl = createHotElementAndAttachToDOM(
-        card,
-        cardClass,
-        classId,
-        isHome
-      );
+      const hotCardEl = markHotCard(card, cardClass, classId);
       checkHoloCardAndAttachToDOM(
         hotCardEl,
         cardClass,
@@ -267,7 +243,7 @@ function createAndInsertHotCards(stashData, cardClass, config, isHome) {
       if (isPerformerCard) {
         if (data.death_date) {
           // death_date present in intercepted data and is set — mark immediately
-          hotCardEl.classList.add("hot-deceased");
+          hotCardEl.dataset.hotDeceased = "";
         } else if (data.death_date === undefined) {
           // death_date not included in intercepted data — queue for batch lookup
           deceasedCheckQueue.push({ id, element: hotCardEl });
@@ -373,26 +349,20 @@ function matchesRatingCriterion(rating, valueSegment, valueNotSet, useDecimalSca
     : parsedRating >= parseFloat(ratingThresholds[0]);
 }
 
-function createHotElementAndAttachToDOM(
-  cardElement,
-  className,
-  classId,
-  isHome
-) {
-  const hotCardClassName = `hot-${className}-${classId}`;
-  const hotElement = createElementFromHTML(
-    `<div class="hot-card ${hotCardClassName}"></div>`
-  );
-  if (isHome) hotElement.style.height = "100%";
-
-  backupCardElements.push(cardElement);
+/**
+ * Tags a card as hot. The card stays exactly where React put it; the border
+ * and fill are drawn by ::before/::after pseudo-elements inside the card
+ * (see getHotCardPseudoElementString), so .card's overflow:hidden is no
+ * longer a problem and no wrapper element is needed.
+ */
+function markHotCard(cardElement, className, classId) {
   cardElement.style.removeProperty("box-shadow");
-  cardElement.classList.add("hot-border");
-  cardElement.before(hotElement);
-  hotElement.append(cardElement);
-  hotCardElements.push(hotElement);
+  cardElement.dataset.hotCard = `hot-${className}-${classId}`;
+  return cardElement;
+}
 
-  return hotElement;
+function hotCardSelector(hotCardName) {
+  return `[data-hot-card="${hotCardName}"]`;
 }
 
 /**
@@ -408,50 +378,42 @@ function setHotCardStyling(card) {
     return;
   }
 
-  const hotElement = document.querySelector(".hot-card");
-  // Check if the hot card already contains all the necessary classes
-  const hotCardContainsAllClasses = hotCardClasses.every((hotCardClass) =>
-    hotElement?.classList.contains(hotCardClass)
-  );
+  const pseudoElementStyles = value.map((segment, index) => {
+    const segmentOrValue = Array.isArray(segment) ? segment : value;
+    const classId = segmentOrValue.join("-").replace(/[.\s]/g, "-");
+    const hotCardClass = hotCardSelector(`hot-${card.class}-${classId}`);
 
-  if (hotCardClasses.length === 0 || !hotCardContainsAllClasses) {
-    const pseudoElementStyles = value.map((segment, index) => {
-      const segmentOrValue = Array.isArray(segment) ? segment : value;
-      const classId = segmentOrValue.join("-").replace(/[.\s]/g, "-");
-      const hotCardClass = `.hot-${card.class}-${classId}`;
+    // Skip if styles for this selector were already injected
+    if (hotCardClasses.includes(hotCardClass)) return;
 
-      // Skip if the hot card class is already present
-      if (hotCardClasses.includes(hotCardClass)) return;
+    hotCardClasses.push(hotCardClass);
+    const currentStyle = Array.isArray(style[index]) ? style[index] : style;
+    const gradientOptions = gradient_opts[index] || gradient_opts[0];
+    const hoverOptions = hover_opts[index] || hover_opts[0];
+    const cardOptions = card_opts[index] || card_opts[0];
 
-      hotCardClasses.push(hotCardClass);
-      const currentStyle = Array.isArray(style[index]) ? style[index] : style;
-      const gradientOptions = gradient_opts[index] || gradient_opts[0];
-      const hoverOptions = hover_opts[index] || hover_opts[0];
-      const cardOptions = card_opts[index] || card_opts[0];
-
-      // If there is only a single style, get the single color style
-      if (style.length === 1 || style[index].length === 1) {
-        return getSingleColorStyle(
-          hotCardClass,
-          style[index] || style[0],
-          gradientOptions,
-          hoverOptions,
-          cardOptions
-        );
-      }
-
-      return getCustomGradientStyle(
+    // If there is only a single style, get the single color style
+    if (style.length === 1 || style[index].length === 1) {
+      return getSingleColorStyle(
         hotCardClass,
-        currentStyle,
+        style[index] || style[0],
         gradientOptions,
         hoverOptions,
         cardOptions
       );
-    });
+    }
 
-    // Join pseudo styles to the style element
-    STYLE_ELEMENT.innerHTML += pseudoElementStyles.join("");
-  }
+    return getCustomGradientStyle(
+      hotCardClass,
+      currentStyle,
+      gradientOptions,
+      hoverOptions,
+      cardOptions
+    );
+  });
+
+  // Join pseudo styles to the style element
+  STYLE_ELEMENT.innerHTML += pseudoElementStyles.join("");
 }
 
 /**
@@ -578,36 +540,39 @@ function getHotCardPseudoElementString(
       ? `box-shadow: none; animation: none;`
       : `animation: pulse ${hoverOptions.animation};`;
   const additionalAttrStr = cardOptions.additional || "";
-  const fillStr = fill
-    ? `background-color: rgba(0, 0, 0, ${opacity}) !important;`
-    : "box-shadow: none;";
+  // ::before is the gradient border ring, ::after the gradient fill behind the
+  // card content. Fill matches the old look of a translucent black card over
+  // the gradient: black card background + gradient at (1 - black alpha).
+  const cardFillStr = fill ? "background-color: #000 !important;" : "";
+  const afterFillStr = fill
+    ? `opacity: ${(1 - opacity).toFixed(2)};`
+    : "display: none;";
   const filterStr = filter ? `filter: ${filter};` : "";
 
-  return `${hotCardClass}::before,
+  return `${hotCardClass} {
+      --hover-color: ${hoverOptions.color};
+      ${hoverAnimationStr}
+      ${cardFillStr}
+    }
+    ${hotCardClass}::before,
     ${hotCardClass}::after {
-      content: "";
-      position: absolute;
-      top: calc(0.8 * var(--border-width));
-      left: calc(0.8 * var(--border-width));
-      width: calc(100% + var(--border-width) * -1.5);
-      height: calc(100% + var(--border-width) * -1.5);
-      border-radius: calc(2 * var(--border-width));
       background: ${background};
       background-size: 300% 300%;
       background-position: 0 50%;
       ${gradientAnimationStr}
       ${additionalAttrStr}
     }
-    ${hotCardClass} > .hot-border {
-      --hover-color: ${hoverOptions.color};
-      ${hoverAnimationStr}
-      ${fillStr}
-    }
     ${hotCardClass}::after {
+      ${afterFillStr}
       ${filterStr}
     }`;
 }
 
+/**
+ * Holo effect: a "shine" overlay drawn over the card image. The overlay is
+ * inserted next to the image (never wrapping it) and positioned over the
+ * image's box, so React-owned nodes are never moved.
+ */
 function checkHoloCardAndAttachToDOM(hotCardEl, cardClass, style, cardOptions) {
   if (style !== "holo") return;
 
@@ -619,72 +584,69 @@ function checkHoloCardAndAttachToDOM(hotCardEl, cardClass, style, cardOptions) {
   const classSuffix = isImageOrSceneCard ? "preview-image" : "image";
   const imgClass = `.${cardClass}-${classSuffix}`;
   const targetEl = hotCardEl.querySelector(imgClass);
+  const container = targetEl?.parentElement;
 
-  if (!targetEl) return;
+  if (!container || container.querySelector(":scope > .hot-holo-shine")) return;
 
-  const holoEl = createElementFromHTML(`<div class="holo"></div>`);
-  const shineEl = createElementFromHTML(`<div class="shine"></div>`);
+  const shineEl = createElementFromHTML(
+    `<div class="holo shine hot-holo-shine"></div>`
+  );
   const seedX = getRandomInt(100);
   const seedY = getRandomInt(100);
 
   const calculateAspectRatio = (width, height) => width / height;
   const calculateDegrees = (aspectRatio, degreesOffset) =>
     degreesOffset + Math.atan(aspectRatio) * (180 / Math.PI);
-  const setFixedAspectRatio = (el, aspectRatio) => {
-    el.style.setProperty("aspect-ratio", aspectRatio.toFixed(3));
-  };
-  const applyInitialStyles = () => {
-    if (isStudioCard) {
-      holoEl.style.display = "block";
-      shineEl.style.position = "absolute";
-      shineEl.style.top = "0px";
-      shineEl.style.left = "0px";
-    }
-    holoEl.style.setProperty("--posx", `${seedX}%`);
-    holoEl.style.setProperty("--posy", `${seedY}%`);
+  const positionOverImage = () => {
+    shineEl.style.top = `${targetEl.offsetTop}px`;
+    shineEl.style.left = `${targetEl.offsetLeft}px`;
+    shineEl.style.width = `${targetEl.offsetWidth}px`;
+    shineEl.style.height = `${targetEl.offsetHeight}px`;
   };
 
-  backupImgElements.push(targetEl);
-  targetEl.classList.add("holo-img");
-  targetEl.before(holoEl);
-  holoEl.append(targetEl);
-  holoEl.append(shineEl);
-  holoElements.push(holoEl);
-  applyInitialStyles();
+  shineEl.style.setProperty("--posx", `${seedX}%`);
+  shineEl.style.setProperty("--posy", `${seedY}%`);
+  container.dataset.hotHolo = "";
+  targetEl.after(shineEl);
+  positionOverImage();
+
+  // Keep the overlay aligned when the grid reflows (window resize, zoom slider)
+  if (typeof ResizeObserver === "function") {
+    const resizeObserver = new ResizeObserver(() => {
+      if (!shineEl.isConnected || !targetEl.isConnected) {
+        resizeObserver.disconnect();
+        return;
+      }
+      positionOverImage();
+    });
+    resizeObserver.observe(targetEl);
+  }
 
   waitForImageLoad(targetEl, () => {
-    const hotBorderEl = hotCardEl.querySelector(".hot-border");
-
-    if (!hotBorderEl) return;
-
     const studioCardMarginSize = 5;
     const isSceneCard = cardClass === "scene-card";
     const degreesOffset = isStudioCard ? 98 : isSceneCard ? 83 : 97;
-    let aspectRatio = 0;
-    let degrees = 0;
 
-    // Delay to ensure the resizing of the width for the cardClass element / hotBorderEl has been completed
+    // Delay to ensure the card has finished resizing
     setTimeout(() => {
-      if (isStudioCard) {
-        aspectRatio = calculateAspectRatio(
-          hotBorderEl.offsetWidth - studioCardMarginSize,
-          hotBorderEl.offsetHeight - studioCardMarginSize
-        );
-        degrees = Math.floor(calculateDegrees(aspectRatio, degreesOffset));
-      } else {
-        aspectRatio = calculateAspectRatio(
-          hotBorderEl.offsetWidth,
-          targetEl.offsetHeight
-        );
-        degrees = Math.round(calculateDegrees(aspectRatio, degreesOffset));
-      }
+      if (!shineEl.isConnected) return;
+      positionOverImage();
 
-      holoEl.style.setProperty("--angle", `${degrees}deg`);
-      setFixedAspectRatio(shineEl, aspectRatio);
+      const aspectRatio = isStudioCard
+        ? calculateAspectRatio(
+            hotCardEl.offsetWidth - studioCardMarginSize,
+            hotCardEl.offsetHeight - studioCardMarginSize
+          )
+        : calculateAspectRatio(hotCardEl.offsetWidth, targetEl.offsetHeight);
+      const degrees = isStudioCard
+        ? Math.floor(calculateDegrees(aspectRatio, degreesOffset))
+        : Math.round(calculateDegrees(aspectRatio, degreesOffset));
+
+      shineEl.style.setProperty("--angle", `${degrees}deg`);
     }, 100);
   });
 
-  if (animateCard) animateHoloCards(holoEl, seedX, seedY);
+  if (animateCard) animateHoloCards(shineEl, seedX, seedY);
 }
 
 function animateHoloCards(holoEl, seedX, seedY) {
@@ -1042,8 +1004,8 @@ async function fetchAndApplyDeceasedStyling(queue) {
         .map((p) => p.id)
     );
     queue.forEach(({ id, element }) => {
-      if (deceasedIds.has(id)) {
-        element.classList.add("hot-deceased");
+      if (deceasedIds.has(id) && element.isConnected) {
+        element.dataset.hotDeceased = "";
       }
     });
   } catch (e) {
