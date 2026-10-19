@@ -67,6 +67,30 @@ def http_post_json(url, body, api_key):
     except (urllib.error.URLError, TimeoutError) as e:
         return 0, str(e)
 
+def http_put_json(url, body, api_key):
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json", "X-Api-Key": api_key},
+        method="PUT",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
+            raw = r.read().decode("utf-8", "ignore")
+            try:
+                return r.status, json.loads(raw)
+            except Exception:
+                return r.status, raw
+    except urllib.error.HTTPError as e:
+        raw = (e.read() or b"").decode("utf-8", "ignore")
+        try:
+            return e.code, json.loads(raw)
+        except Exception:
+            return e.code, raw
+    except (urllib.error.URLError, TimeoutError) as e:
+        return 0, str(e)
+
 def is_already_exists_error(status, resp):
     """Check if the response indicates the item already exists.
     
@@ -143,6 +167,31 @@ def refresh_movie(whisparr_url, api_key, movie_id):
     
     status, resp = http_post_json(url, body, api_key)
     return status in (200, 201)
+
+def unmonitor_movie(whisparr_url, api_key, movie_id):
+    """Set an existing movie in Whisparr to unmonitored.
+
+    Whisparr's movie PUT replaces the whole record, so the current movie is
+    fetched and sent back with only monitored changed.
+    Returns True if the movie was changed, False if it was already
+    unmonitored or the update failed.
+    """
+    url = f"{whisparr_url}/api/v3/movie/{movie_id}"
+    status, movie = http_get_json(url, api_key)
+    if status != 200 or not isinstance(movie, dict):
+        log.error(f"Whisparr: cannot load movie id={movie_id}: {status} {movie}")
+        return False
+
+    if not movie.get("monitored"):
+        log.debug(f"Whisparr: movie id={movie_id} already unmonitored")
+        return False
+
+    movie["monitored"] = False
+    status, resp = http_put_json(url, movie, api_key)
+    if status not in (200, 202):
+        log.error(f"Whisparr: failed to unmonitor movie id={movie_id}: {status} {resp}")
+        return False
+    return True
 
 def load_plugin_settings(stash: StashInterface) -> dict:
     """Return this plugin's settings using the manifest name."""
@@ -275,6 +324,10 @@ def main():
             
             if movie_id:
                 log.info(f"Whisparr: found existing movie id={movie_id} for stashId={stashdb_id}")
+                # The scene is in Stash now, so with monitoring off there is
+                # nothing left for Whisparr to download or upgrade.
+                if not monitored and unmonitor_movie(whisparr_url, whisparr_key, movie_id):
+                    log.info(f"Whisparr: unmonitored movie id={movie_id}")
                 if refresh_movie(whisparr_url, whisparr_key, movie_id):
                     log.info(f"Whisparr: refreshed movie id={movie_id}")
                 else:

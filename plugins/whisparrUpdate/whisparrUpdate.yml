@@ -1,6 +1,6 @@
 name: Whisparr Update
 description: Add matched StashDB scene to Whisparr on update
-version: 0.8
+version: 0.9
 exec:
   - python
   - "{pluginDir}/whisparrUpdate.py"
@@ -24,5 +24,5 @@ settings:
     type: STRING
   MONITORED:
     displayName: Monitor after add
-    description: Mark the scene as monitored when synced
+    description: Mark the scene as monitored when synced. When off, scenes already in Whisparr are set to unmonitored too
     type: BOOLEAN
