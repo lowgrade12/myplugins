@@ -14,6 +14,7 @@ A plugin for [Stash](https://stashapp.cc/) that automatically adds scenes to [Wh
 ### Duplicate Handling
 - **Detects existing scenes** - Recognizes 409 Conflict and MovieExistsValidator errors
 - **Automatic refresh** - When a scene already exists, triggers a metadata refresh instead
+- **Unmonitor existing** - With "Monitor after add" off, scenes already in Whisparr are set to unmonitored so they aren't upgraded or re-downloaded
 - **Multiple lookup methods** - Uses stashId parameter and foreignId fallback to find existing movies
 
 ### Configurable Settings
@@ -42,7 +43,7 @@ A plugin for [Stash](https://stashapp.cc/) that automatically adds scenes to [Wh
 | Setting | Description | Default |
 |---------|-------------|---------|
 | **StashDB host match** | Substring to match in stash_id endpoints | `stashdb.org` |
-| **Monitor after add** | Mark scenes as monitored when added | `true` |
+| **Monitor after add** | Mark scenes as monitored when added. When off, scenes that already exist in Whisparr are also set to unmonitored | `true` |
 
 ## Usage
 
@@ -50,7 +51,7 @@ Once configured, the plugin works automatically:
 
 1. **Match a scene** - Use Stash's tagger or scraper to match a scene with StashDB
 2. **Automatic addition** - The plugin detects the new StashDB ID and adds the scene to Whisparr
-3. **Duplicate handling** - If the scene already exists in Whisparr, a metadata refresh is triggered instead
+3. **Duplicate handling** - If the scene already exists in Whisparr, a metadata refresh is triggered instead (and the scene is unmonitored if "Monitor after add" is off)
 
 ### Example Workflow
 
@@ -60,7 +61,7 @@ Once configured, the plugin works automatically:
    - Extracts the StashDB ID from the scene
    - Queries Whisparr for quality profiles and root folders
    - Adds the scene to Whisparr with the correct metadata
-   - If already in Whisparr, triggers a refresh to sync metadata
+   - If already in Whisparr, unmonitors it (when "Monitor after add" is off) and triggers a refresh to sync metadata
 
 ## Hooks
 
@@ -77,6 +78,7 @@ The plugin uses Whisparr's v3 API:
 - `GET /api/v3/rootfolder` - Fetch configured root folders
 - `POST /api/v3/movie` - Add a new scene
 - `GET /api/v3/movie?stashId=...` - Lookup existing movie by StashDB ID
+- `GET /api/v3/movie/{id}` / `PUT /api/v3/movie/{id}` - Unmonitor an existing scene
 - `POST /api/v3/command` - Trigger a RefreshMovie command
 
 ### Scene Payload
@@ -126,7 +128,7 @@ Configure both the URL and API Key in Settings → Plugins → Whisparr Update.
 
 ### Scene shows as "already exists"
 
-This is normal behavior - the plugin triggers a metadata refresh for existing scenes to keep them in sync.
+This is normal behavior - the plugin triggers a metadata refresh for existing scenes to keep them in sync. If "Monitor after add" is off, the scene is also set to unmonitored.
 
 ## License
 
