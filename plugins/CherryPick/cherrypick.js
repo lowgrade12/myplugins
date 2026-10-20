@@ -6103,39 +6103,29 @@
       const pill = document.createElement("div");
       pill.className = "cherrypick-pill-slot cherrypick-ui";
       const place = () => {
-        const toolbar2 = findRoot(anchor.current)?.querySelector(
+        const toolbar = findRoot(anchor.current)?.querySelector(
           ".filtered-list-toolbar"
         );
-        const target = toolbar2?.querySelector(":scope > .list-operations");
+        const target = toolbar?.querySelector(":scope > .list-operations");
         if (!target) return;
         if (target.firstChild !== ops) target.insertBefore(ops, target.firstChild);
-        if (toolbar2.nextElementSibling !== pill) toolbar2.after(pill);
+        if (toolbar.nextElementSibling !== pill) toolbar.after(pill);
       };
       const inPlace = () => ops.isConnected && ops.parentElement.firstChild === ops && pill.previousElementSibling?.classList.contains("filtered-list-toolbar");
-      let root = null;
-      let toolbar = null;
+      let frame = 0;
       const watch = new MutationObserver(() => {
-        if (!inPlace()) place();
-        observe();
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          if (!inPlace()) place();
+        });
       });
-      const observe = () => {
-        const r = findRoot(anchor.current);
-        const t = r?.querySelector(".filtered-list-toolbar") || null;
-        if (r === root && t === toolbar) return;
-        root = r;
-        toolbar = t;
-        watch.disconnect();
-        watch.observe(host, { childList: true });
-        if (root) watch.observe(root, { childList: true });
-        if (toolbar?.parentElement)
-          watch.observe(toolbar.parentElement, { childList: true });
-        if (toolbar) watch.observe(toolbar, { childList: true, subtree: true });
-      };
       place();
-      observe();
+      watch.observe(host, { childList: true, subtree: true });
       setSlots({ ops, pill });
       return () => {
         watch.disconnect();
+        cancelAnimationFrame(frame);
         ops.remove();
         pill.remove();
       };
