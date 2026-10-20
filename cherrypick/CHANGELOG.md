@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- "Not in your library" cards (on performer pages and in More like this) get a Whisparr button when the Whisparr Update plugin (0.10 or later) is installed and enabled. A click adds the scene to Whisparr, monitored, and starts a search; a scene already in Whisparr is set monitored and searched for again instead. The button also says what Whisparr has: Downloaded, Wanted (monitored, no file yet) or In Whisparr (not monitored). Cherry Pick asks Whisparr Update through Stash's runPluginOperation, so Whisparr's URL and API key stay in that plugin's settings on the server; a page's cards are looked up in one call.
+
 ## 0.3.0 (local copy in lowgrade12/myplugins)
 
 A copy of Cherry Pick 0.2.2 from CandyBoudoir, tuned for very large libraries (tested against 144,500 scenes and 25,900 performers, with every rating set by Restash's mirror). Source in `cherrypick/`, built with `npm run build` into `plugins/CherryPick/`.

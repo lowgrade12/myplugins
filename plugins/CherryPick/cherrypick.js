@@ -4663,7 +4663,7 @@
 
   // src/js/ui/dialogs.jsx
   var views = /* @__PURE__ */ new Map();
-  var registerDialog = (view, Component) => views.set(view, Component);
+  var registerDialog = (view2, Component) => views.set(view2, Component);
   var openDialog = (dialog) => store.set({ dialog });
   var closeDialog = () => store.set({ dialog: null });
   var owner = null;
@@ -6199,7 +6199,7 @@
     const timeoutMs = io.timeoutMs ?? TIMEOUT_MS;
     const log = io.log || (() => {
     });
-    let view = 0;
+    let view2 = 0;
     let sent = 0;
     let lastAt = -Infinity;
     let restUntil = 0;
@@ -6220,12 +6220,12 @@
         return null;
       };
       if (refused) return skip2("StashDB refused the key");
-      if (forView !== view) return skip2("the page changed");
+      if (forView !== view2) return skip2("the page changed");
       if (now() < restUntil) return skip2("resting");
       if (sent >= perView) return skip2(`${perView} requests this page already`);
       const delay = lastAt + gapMs - now();
       if (delay > 0) await wait(delay);
-      if (forView !== view) return skip2("the page changed");
+      if (forView !== view2) return skip2("the page changed");
       sent++;
       stats.requests++;
       lastAt = now();
@@ -6273,14 +6273,14 @@
       // A new page view: the per-view count starts again, and requests still
       // queued for the page before are dropped.
       newView() {
-        view++;
+        view2++;
         sent = 0;
         later.clear();
       },
       // One GraphQL request, queued behind the others. Resolves to the
       // answer's data, or null (skipped or failed).
       request(text, variables) {
-        const forView = view;
+        const forView = view2;
         const p = chain.then(() => send(text, variables, forView));
         chain = p.catch(() => null);
         return p;
@@ -6309,9 +6309,9 @@
       // same queue and per-view budget as every request. A new view drops
       // the rest; a refresh that fails leaves the stale entry for next time.
       async revalidate() {
-        const forView = view;
+        const forView = view2;
         for (const [key, job] of later) {
-          if (forView !== view) return;
+          if (forView !== view2) return;
           later.delete(key);
           refreshing.add(key);
           try {
@@ -6628,6 +6628,135 @@ ${s.stashdb.apiKey}`;
     if (old.length) await cache.delMany(old);
   }
 
+  // src/js/whisparr/client.js
+  var WHISPARR_PLUGIN = "whisparrUpdate";
+  var OPERATION = `
+  mutation CherryPickWhisparr($args: Map) {
+    runPluginOperation(plugin_id: "${WHISPARR_PLUGIN}", args: $args)
+  }
+`;
+  var BATCH_MS = 60;
+  var BATCH_MAX = 50;
+  var whisparr = createStore({ available: null, scenes: {} });
+  var setScene = (id, state) => whisparr.set((s) => ({ scenes: { ...s.scenes, [id]: state } }));
+  var setScenes = (states) => whisparr.set((s) => ({ scenes: { ...s.scenes, ...states } }));
+  async function operation(args) {
+    const data = await runMutation(OPERATION, { args });
+    const out = data?.runPluginOperation;
+    if (!out || typeof out !== "object") throw new Error("No answer from Whisparr Update");
+    if (!out.ok) throw new Error(out.error || "Whisparr Update failed");
+    return out.result;
+  }
+  var toState = (m) => m ? { kind: "have", ...m } : { kind: "none" };
+  var availability = null;
+  function checkAvailable() {
+    availability || (availability = run(PLUGINS).then(
+      ({ plugins }) => (plugins || []).some((p) => p.id === WHISPARR_PLUGIN && p.enabled)
+    ).catch(() => false).then((available) => {
+      whisparr.set({ available });
+      return available;
+    }));
+    return availability;
+  }
+  var queue = /* @__PURE__ */ new Set();
+  var timer = null;
+  function flush() {
+    timer = null;
+    const ids = [...queue].slice(0, BATCH_MAX);
+    ids.forEach((id) => queue.delete(id));
+    if (queue.size) timer = setTimeout(flush, 0);
+    operation({ mode: "status", stash_ids: ids }).then(
+      (result) => setScenes(
+        Object.fromEntries(ids.map((id) => [id, toState(result?.[id])]))
+      )
+    ).catch(
+      (e) => setScenes(
+        Object.fromEntries(
+          ids.map((id) => [id, { kind: "error", error: String(e.message || e) }])
+        )
+      )
+    );
+  }
+  function requestStatus(stashId) {
+    if (!stashId || whisparr.get().scenes[stashId]) return;
+    setScene(stashId, { kind: "loading" });
+    queue.add(stashId);
+    timer ?? (timer = setTimeout(flush, BATCH_MS));
+  }
+  async function addToWhisparr(stashId, title) {
+    const before = whisparr.get().scenes[stashId];
+    setScene(stashId, { kind: "adding" });
+    try {
+      const result = await operation({ mode: "add", stash_id: stashId, title });
+      setScene(stashId, toState(result));
+      return result;
+    } catch (e) {
+      setScene(stashId, { kind: "error", error: String(e.message || e), before });
+      throw e;
+    }
+  }
+  function useWhisparrScene(stashId) {
+    const available = useStoreValue(whisparr, (s) => s.available);
+    const state = useStoreValue(whisparr, (s) => s.scenes[stashId] || null);
+    React2.useEffect(() => {
+      checkAvailable();
+    }, []);
+    React2.useEffect(() => {
+      if (available && stashId) requestStatus(stashId);
+    }, [available, stashId]);
+    if (!available || !stashId) return null;
+    return state || { kind: "loading" };
+  }
+
+  // src/js/ui/WhisparrButton.jsx
+  var {
+    faCheck: faCheck2,
+    faDownload,
+    faExclamationTriangle,
+    faHourglassHalf,
+    faSearch,
+    faSpinner
+  } = FontAwesomeSolid;
+  function view(state) {
+    switch (state.kind) {
+      case "loading":
+        return { icon: faSpinner, label: "Whisparr", title: "Asking Whisparr…", click: false, spin: true };
+      case "adding":
+        return { icon: faSpinner, label: "Adding…", title: "Adding to Whisparr and searching", click: false, spin: true };
+      case "none":
+        return { icon: faDownload, label: "Whisparr", title: "Add to Whisparr, monitored, and search for it", click: true };
+      case "have":
+        if (state.hasFile)
+          return { icon: faCheck2, label: "Downloaded", title: "Whisparr has this scene. Stash picks it up at its next scan.", click: false, variant: "success" };
+        if (state.monitored)
+          return { icon: faHourglassHalf, label: "Wanted", title: "Monitored in Whisparr. Click to search again.", click: true };
+        return { icon: faSearch, label: "In Whisparr", title: "In Whisparr, not monitored. Click to monitor it and search.", click: true };
+      case "error":
+      default:
+        return { icon: faExclamationTriangle, label: "Whisparr", title: `Whisparr Update: ${state.error || "failed"}. Click to try adding again.`, click: true, variant: "warning" };
+    }
+  }
+  function WhisparrButton({ scene }) {
+    const { Icon: Icon3 } = components;
+    const state = useWhisparrScene(scene.stashId);
+    if (!state) return null;
+    const v = view(state);
+    const icon = v.icon || faDownload;
+    return /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        className: `minimal btn btn-primary cherrypick-whisparr cherrypick-whisparr-${state.kind}${v.variant ? ` text-${v.variant}` : ""}`,
+        title: v.title,
+        disabled: !v.click,
+        onClick: () => addToWhisparr(scene.stashId, scene.title).catch(() => {
+        })
+      },
+      Icon3 ? /* @__PURE__ */ React.createElement(Icon3, { icon, className: v.spin ? "fa-spin" : void 0 }) : null,
+      /* @__PURE__ */ React.createElement("span", null, v.label)
+    );
+  }
+
   // src/js/ui/StashdbSceneCard.jsx
   var { Link: Link3 } = ReactRouterDOM;
   var { faDatabase, faExternalLinkAlt } = FontAwesomeSolid;
@@ -6688,7 +6817,7 @@ ${s.stashdb.apiKey}`;
         },
         icon(faDatabase),
         /* @__PURE__ */ React.createElement("span", null, "StashDB")
-      ), item ? /* @__PURE__ */ React.createElement(CardMenu, { item, rowId }) : null)
+      ), /* @__PURE__ */ React.createElement(WhisparrButton, { scene }), item ? /* @__PURE__ */ React.createElement(CardMenu, { item, rowId }) : null)
     );
   }
 
@@ -6775,7 +6904,7 @@ ${s.stashdb.apiKey}`;
     faChevronLeft,
     faChevronRight,
     faMagnifyingGlass,
-    faSearch,
+    faSearch: faSearch2,
     faPlay: faPlay2,
     faStop,
     faUser
@@ -6958,7 +7087,7 @@ ${s.stashdb.apiKey}`;
           className: "btn btn-secondary cherrypick-look-btn",
           onClick: () => onLook(-1)
         },
-        /* @__PURE__ */ React2.createElement(Icon, { icon: faMagnifyingGlass || faSearch }),
+        /* @__PURE__ */ React2.createElement(Icon, { icon: faMagnifyingGlass || faSearch2 }),
         /* @__PURE__ */ React2.createElement("span", null, "Look closer")
       ), /* @__PURE__ */ React2.createElement(
         "button",
@@ -7228,12 +7357,12 @@ ${s.stashdb.apiKey}`;
     );
   }
   var PASS = /* @__PURE__ */ new Set(["Escape", "Tab", "Enter", " "]);
-  function usePickKeys(view, onKey, claims) {
+  function usePickKeys(view2, onKey, claims) {
     const latest3 = React2.useRef({ onKey, claims });
     latest3.current = { onKey, claims };
     React2.useEffect(() => {
       const listener = (e) => {
-        if (store.get().dialog?.view !== view) return;
+        if (store.get().dialog?.view !== view2) return;
         if (PASS.has(e.key) && !latest3.current.claims?.(e)) return;
         e.stopPropagation();
         if (e.type !== "keydown" || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -7245,7 +7374,7 @@ ${s.stashdb.apiKey}`;
         window.removeEventListener("keydown", listener, true);
         window.removeEventListener("keypress", listener, true);
       };
-    }, [view]);
+    }, [view2]);
   }
   var isUndoKey = (k) => k === "Backspace" || k === "u" || k === "U";
   function useSceneMatch(kind, pair, next, onPick) {
@@ -7529,7 +7658,7 @@ ${s.stashdb.apiKey}`;
 
   // src/js/features/brackets/results.jsx
   var { Link: Link4 } = ReactRouterDOM;
-  var { faCrown, faCheck: faCheck2, faRotateLeft: faRotateLeft3, faTrophy, faUndo: faUndo3 } = FontAwesomeSolid;
+  var { faCrown, faCheck: faCheck3, faRotateLeft: faRotateLeft3, faTrophy, faUndo: faUndo3 } = FontAwesomeSolid;
   var FIELD_LIST = `${FIELDS2.titles}, ${FIELDS2.best} and ${FIELDS2.last}`;
   var WINNERS_URL = customFieldUrl(FIELDS2.titles);
   var linkTo = (kind, id) => kind === "performer" ? `/performers/${id}` : `/scenes/${id}`;
@@ -7576,7 +7705,7 @@ ${s.stashdb.apiKey}`;
   }
   function Applied({ bracketId }) {
     const applied = useAppState((s) => s.applied);
-    return applied.filter((a) => a.bracketId === bracketId).map((a) => /* @__PURE__ */ React2.createElement("p", { className: "small cherrypick-applied", key: a.id }, /* @__PURE__ */ React2.createElement(Icon, { icon: faCheck2, className: "text-success" }), " ", a.changes.length ? `Applied ${a.changes.length} ${plural(a.changes.length, "rating")}. ` : "", keptText(a) ? `${keptText(a)} ` : "", /* @__PURE__ */ React2.createElement(
+    return applied.filter((a) => a.bracketId === bracketId).map((a) => /* @__PURE__ */ React2.createElement("p", { className: "small cherrypick-applied", key: a.id }, /* @__PURE__ */ React2.createElement(Icon, { icon: faCheck3, className: "text-success" }), " ", a.changes.length ? `Applied ${a.changes.length} ${plural(a.changes.length, "rating")}. ` : "", keptText(a) ? `${keptText(a)} ` : "", /* @__PURE__ */ React2.createElement(
       AppliedButton,
       {
         a,
@@ -9167,7 +9296,7 @@ ${s.stashdb.apiKey}`;
   // src/js/features/stashdb.jsx
   var { Button: Button3, Modal: Modal2 } = Bootstrap;
   var { Link: Link9 } = ReactRouterDOM;
-  var { faCheck: faCheck3, faExternalLinkAlt: faExternalLinkAlt2 } = FontAwesomeSolid;
+  var { faCheck: faCheck4, faExternalLinkAlt: faExternalLinkAlt2 } = FontAwesomeSolid;
   var GUIDELINES = "https://guidelines.stashdb.org/docs/faq_getting-started/stashdb/accessing-stashdb/";
   var REGISTER = "https://stashdb.org/register";
   var EXTERNAL2 = { target: "_blank", rel: "noopener noreferrer" };
@@ -9250,7 +9379,7 @@ ${s.stashdb.apiKey}`;
         busy ? "Validating…" : "Validate"
       ));
     } else {
-      body = /* @__PURE__ */ React2.createElement("div", { className: "cherrypick-connected" }, /* @__PURE__ */ React2.createElement(Icon2, { icon: faCheck3, className: "text-success" }), /* @__PURE__ */ React2.createElement("div", null, /* @__PURE__ */ React2.createElement("b", null, "Added StashDB to your Stash settings."), /* @__PURE__ */ React2.createElement("div", { className: "small text-muted" }, "You'll find it in Settings › Metadata Providers. Stash's Tagger can use it too.")));
+      body = /* @__PURE__ */ React2.createElement("div", { className: "cherrypick-connected" }, /* @__PURE__ */ React2.createElement(Icon2, { icon: faCheck4, className: "text-success" }), /* @__PURE__ */ React2.createElement("div", null, /* @__PURE__ */ React2.createElement("b", null, "Added StashDB to your Stash settings."), /* @__PURE__ */ React2.createElement("div", { className: "small text-muted" }, "You'll find it in Settings › Metadata Providers. Stash's Tagger can use it too.")));
       footer = /* @__PURE__ */ React2.createElement(Button3, { variant: "primary", onClick: closeDialog }, "Done");
     }
     return /* @__PURE__ */ React2.createElement(

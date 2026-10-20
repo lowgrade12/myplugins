@@ -23,6 +23,11 @@ A plugin for [Stash](https://stashapp.cc/) that automatically adds scenes to [Wh
 - **StashDB endpoint match** - Customizable for different stashbox instances
 - **Monitor setting** - Choose whether to monitor new scenes
 
+### Add from other plugins (Cherry Pick)
+- **Add and search** - Cherry Pick's "Not in your library" cards add a StashDB scene through this plugin: monitored, with a search started. A scene already in Whisparr is set monitored and searched for again. This always monitors, whatever "Monitor after add" says, since it is a request to download a scene you don't have.
+- **Status** - The cards show whether Whisparr has each scene (Downloaded, Wanted, In Whisparr), looked up by StashDB id.
+- Both run as plugin operations (`runPluginOperation` with `args.mode` = `add` or `status`), so the Whisparr URL and API key never leave the server.
+
 ## Installation
 
 1. Download the `/plugins/whisparrUpdate/` folder to your Stash plugins directory

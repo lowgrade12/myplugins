@@ -1015,6 +1015,17 @@ body:has(.cherrypick-dialog) #hon-floating-btn {
   font-size: 1.8rem;
 }
 
+/* With the Whisparr button the row holds four buttons: let it wrap on
+   narrow cards rather than spill out of the card. */
+.cherrypick-missing .card-popovers {
+  flex-wrap: wrap;
+}
+
+/* "Downloaded" is an answer, not an unavailable action: keep it legible. */
+.cherrypick-whisparr-have:disabled {
+  opacity: 1;
+}
+
 /* 45-judge.css */
 /* Judging a scene in a scene bracket: the contact-sheet match and the
    inspector (features/brackets/judge.jsx). Layout only: colours come from

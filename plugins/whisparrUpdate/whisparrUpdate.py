@@ -6,7 +6,8 @@
 # Original: https://github.com/lowgrade12/myplugins/tree/main/reference/whisparr-bridge
 #
 
-import json, sys, urllib.request, urllib.error
+import json, sys, urllib.parse, urllib.request, urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from stashapi.stashapp import StashInterface
 from stashapi import log
 
@@ -221,9 +222,134 @@ def stash_ids_may_have_changed(hook: dict) -> bool:
     return hook.get("input") is not None
 
 # ---------- main ----------
+# ---------- Operations for other plugins' UI ----------
+# Cherry Pick's "Not in your library" cards call this plugin through Stash's
+# runPluginOperation, so the Whisparr URL and API key stay in this plugin's
+# settings on the server. args.mode picks the operation:
+#   status: {"stash_ids": [...]} -> {"<stash_id>": {"id", "monitored",
+#           "hasFile"} or null}
+#   add:    {"stash_id", "title"} -> the scene added (or, already in
+#           Whisparr, set monitored), with a search started
+# The answer goes to stdout as Stash's plugin output: {"output": ...}.
+
+STATUS_MAX_IDS = 50
+STATUS_WORKERS = 8
+
+def movie_state(movie):
+    """The fields a card shows for a Whisparr movie, or None."""
+    if not isinstance(movie, dict):
+        return None
+    return {
+        "id": movie.get("id"),
+        "monitored": bool(movie.get("monitored")),
+        "hasFile": bool(movie.get("hasFile")),
+    }
+
+def find_by_stashid(whisparr_url, api_key, stashdb_id):
+    """The movie with this StashDB id, or None. Unlike
+    lookup_movie_by_stashid, never falls back to listing every movie: on a
+    library of 100,000+ scenes that download is far too big for a card."""
+    status, resp = http_get_json(
+        f"{whisparr_url}/api/v3/movie?stashId={urllib.parse.quote(stashdb_id)}",
+        api_key,
+    )
+    if status != 200 or not isinstance(resp, list):
+        raise RuntimeError(f"Whisparr lookup failed: {status} {resp}")
+    for movie in resp:
+        if movie.get("foreignId") == stashdb_id or movie.get("stashId") == stashdb_id:
+            return movie
+    return None
+
+def op_status(whisparr_url, api_key, args):
+    ids = [i for i in (args.get("stash_ids") or []) if isinstance(i, str) and i]
+    ids = list(dict.fromkeys(ids))[:STATUS_MAX_IDS]
+    out = {}
+    with ThreadPoolExecutor(max_workers=STATUS_WORKERS) as pool:
+        found = pool.map(lambda i: find_by_stashid(whisparr_url, api_key, i), ids)
+        for stashdb_id, movie in zip(ids, found):
+            out[stashdb_id] = movie_state(movie)
+    return out
+
+def search_movie(whisparr_url, api_key, movie_id):
+    status, resp = http_post_json(
+        f"{whisparr_url}/api/v3/command",
+        {"name": "MoviesSearch", "movieIds": [movie_id]},
+        api_key,
+    )
+    if status not in (200, 201):
+        raise RuntimeError(f"Whisparr search failed: {status} {resp}")
+
+def monitor_movie(whisparr_url, api_key, movie):
+    """Sets an existing movie monitored (a PUT of the whole record)."""
+    if movie.get("monitored"):
+        return movie
+    movie = dict(movie, monitored=True)
+    status, resp = http_put_json(
+        f"{whisparr_url}/api/v3/movie/{movie['id']}", movie, api_key
+    )
+    if status not in (200, 202):
+        raise RuntimeError(f"Whisparr monitor failed: {status} {resp}")
+    return resp if isinstance(resp, dict) else movie
+
+def op_add(whisparr_url, api_key, args):
+    """Adds a scene the user does not have, monitored, and searches for it.
+    Always monitored, whatever "Monitor after add" says: that setting is for
+    scenes already in Stash, and this is a request to download one."""
+    stashdb_id = args.get("stash_id")
+    if not isinstance(stashdb_id, str) or not stashdb_id:
+        raise ValueError("stash_id is required")
+    existing = find_by_stashid(whisparr_url, api_key, stashdb_id)
+    if existing:
+        movie = monitor_movie(whisparr_url, api_key, existing)
+        if not movie.get("hasFile"):
+            search_movie(whisparr_url, api_key, movie["id"])
+        log.info(f"Whisparr: monitored existing id={movie['id']} for {stashdb_id}")
+        return {**movie_state(movie), "monitored": True, "added": False}
+
+    s_qp, qps = http_get_json(f"{whisparr_url}/api/v3/qualityprofile", api_key)
+    if s_qp != 200 or not isinstance(qps, list) or not qps:
+        raise RuntimeError(f"Whisparr: cannot load quality profiles: {s_qp} {qps}")
+    s_rf, rfs = http_get_json(f"{whisparr_url}/api/v3/rootfolder", api_key)
+    if s_rf != 200 or not isinstance(rfs, list) or not rfs:
+        raise RuntimeError(f"Whisparr: cannot load root folders: {s_rf} {rfs}")
+    body = {
+        "title": args.get("title") or "",
+        "qualityProfileId": int(qps[0]["id"]),
+        "rootFolderPath": rfs[0]["path"],
+        "monitored": True,
+        "addOptions": {"monitor": "movieOnly", "searchForMovie": True},
+        "foreignId": stashdb_id,
+        "stashId": stashdb_id,
+    }
+    status, resp = http_post_json(f"{whisparr_url}/api/v3/movie", body, api_key)
+    if status not in (200, 201):
+        raise RuntimeError(f"Whisparr add failed: {status} {resp}")
+    log.info(f"Whisparr: added {stashdb_id} and started a search")
+    return {**(movie_state(resp) or {}), "monitored": True, "hasFile": False, "added": True}
+
+OPERATIONS = {"status": op_status, "add": op_add}
+
+def run_operation(stash_data, args):
+    """Runs args.mode and writes Stash's plugin output to stdout."""
+    try:
+        stash = StashInterface(stash_data["server_connection"])
+        cfg = load_plugin_settings(stash)
+        whisparr_url = (cfg.get("WHISPARR_URL") or "").rstrip("/")
+        whisparr_key = cfg.get("WHISPARR_API_KEY") or ""
+        if not whisparr_url or not whisparr_key:
+            raise RuntimeError("Set the Whisparr URL and API key in Whisparr Update's settings.")
+        result = {"ok": True, "result": OPERATIONS[args["mode"]](whisparr_url, whisparr_key, args)}
+    except Exception as e:
+        log.error(f"Whisparr Update {args.get('mode')}: {e}")
+        result = {"ok": False, "error": str(e)}
+    print(json.dumps({"output": result}))
+
 def main():
     STASH_DATA = json.loads(sys.stdin.read())
     ARGS = STASH_DATA.get("args") or {}
+    if ARGS.get("mode") in OPERATIONS:
+        run_operation(STASH_DATA, ARGS)
+        return
     hook = ARGS.get("hookContext") or {}
     scene_id = hook.get("id")
     if not scene_id:

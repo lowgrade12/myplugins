@@ -1,6 +1,6 @@
 name: Cherry Pick
 description: Learns what you like from your ratings and plays. A For you row, Your score on scenes you haven't rated, More like this and performer brackets.
-version: 0.3.0
+version: 0.3.1
 url: https://github.com/lowgrade12/myplugins/tree/main/cherrypick
 ui:
   javascript:
