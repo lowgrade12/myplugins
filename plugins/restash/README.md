@@ -7,7 +7,7 @@ Restash reads the behavioural log Stash keeps for every Scene and Performer — 
 ## Modifications from upstream
 
 - **Available from this repo** — install via this plugin source URL
-- **Hook on scene creation** — scores each new scene immediately against the cached taste model
+- **Hooks on scene and performer creation** — scores each new scene (and re-scores its performers) and each new performer immediately against the cached taste model
 - **"Disable Other Plugins" task** — can disable all other plugins before running to prevent interference, then re-enable them after
 - **Low write churn** — jitter re-rolls weekly and small score changes are not written, so a daily refresh touches a small fraction of the library
 - **Scale-aware wildcards** — a fixed handful of wildcards per day is placed by rank just under the top real scenes, so they surface in a descending sort even in very large libraries
@@ -80,9 +80,12 @@ Add this repository as a Stash plugin source:
 
 ## Hooks (automatic triggers)
 
-- **Scene.Create.Post** — scores just the new scene: its raw score is computed from the cached taste model and placed against the library score distribution saved by the last Recompute All / Quick Refresh. Nothing else is re-read or rewritten, so large scans stay cheap. If no valid cache exists yet, the scene is left for the next Quick Refresh.
+- **Scene.Create.Post** — scores just the new scene: its raw score is computed from the cached taste model and placed against the library score distribution saved by the last Recompute All / Quick Refresh. The library is never re-read, so large scans stay cheap. If no valid cache exists yet, the scene is left for the next Quick Refresh.
 
-New performers have no scenes yet, so they're scored by the next Quick Refresh.
+  It then re-scores that scene's performers, so a performer created by the same scrape gets a score that reflects the scene.
+- **Performer.Create.Post** — scores just the new performer from their own scenes' stored scores (usually none yet), the cached taste model, and the performer score distribution saved by the last Recompute All / Quick Refresh. A brand-new performer with no scenes lands mid-pack (favorites get the usual floor); their scene-based score arrives when a scene featuring them is created or on the next Quick Refresh.
+
+Caches written before 0.7.0 lack the performer distribution: run Quick Refresh once after upgrading and performer hooks start working.
 
 ## Disabled-plugin recovery
 

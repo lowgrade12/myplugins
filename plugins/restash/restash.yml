@@ -1,6 +1,6 @@
 name: Restash
 description: Computes a freshness score for scenes and performers into custom fields.
-version: 0.6.0
+version: 0.7.0
 url: https://github.com/lowgrade12/myplugins
 exec:
   - python
@@ -51,7 +51,8 @@ tasks:
     description: Temporarily disable all other enabled plugins. They are re-enabled when the next Dry Run, Recompute All or Quick Refresh finishes.
     defaultArgs: { mode: disable-plugins }
 hooks:
-  - name: Score new scenes
-    description: Scores a newly created scene against the cached taste model (one scene read and one write; no library re-read).
+  - name: Score new scenes and performers
+    description: Scores a newly created scene (and re-scores its performers) or a newly created performer against the cached taste model. Targeted reads and writes only; no library re-read.
     triggeredBy:
       - Scene.Create.Post
+      - Performer.Create.Post
