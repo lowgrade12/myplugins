@@ -1,6 +1,6 @@
 name: Restash
 description: Computes a freshness score for scenes and performers into custom fields.
-version: 0.4.0
+version: 0.5.0
 url: https://github.com/lowgrade12/myplugins
 exec:
   - python
@@ -27,6 +27,8 @@ settings:
   excludeTagName:       { displayName: Exclusion tag name, type: STRING, description: "Entities carrying this tag are dropped from scoring. Leave blank for the default ([Restash: Exclude])." }
   mirrorToRating100:    { displayName: "Also mirror score to rating100 (destructive)", type: BOOLEAN, description: "If on, each entity's Restash score is ALSO written to native rating100 (enables the in-app 'Rating, descending' sort). OVERWRITES manual ratings; a backup is auto-created first and can be reverted with 'Restore Ratings'. Default off." }
   disablePluginsBeforeRun: { displayName: "Disable other plugins before run", type: BOOLEAN, description: "If on, all other enabled plugins will be disabled before Restash runs, then re-enabled after. Prevents interference from other plugins during scoring. Default off." }
+  jitterPeriodDays:     { displayName: Jitter period (days), type: NUMBER, description: "How often the small random ordering jitter is re-rolled. Longer periods mean far fewer score writes between re-rolls; 1 re-rolls daily. Leave blank for the default (7)." }
+  minScoreChange:       { displayName: Minimum score change to write, type: NUMBER, description: "Skip writing a score unless it moved by at least this many points (wildcard changes always write). Cuts write volume and other plugins' update hooks; 1 writes every change. Leave blank for the default (3)." }
 tasks:
   - name: Dry Run Report
     description: Full compute, writes nothing, logs top-30 scenes/performers with score breakdowns. Run this first.
@@ -35,7 +37,7 @@ tasks:
     description: Read everything, rebuild the taste model, and write freshness scores to scenes + performers (custom_fields). Skips unchanged.
     defaultArgs: { mode: full }
   - name: Quick Refresh
-    description: Fast daily re-score from the cached taste model — re-applies freshness, novelty, jitter, and wildcards without rebuilding affinities, and now includes newly added scenes immediately. Run Recompute All at least once first.
+    description: Daily re-score of every scene and performer from live watch data against the cached taste model (affinities are not rebuilt). New plays and new scenes count immediately. Run Recompute All at least once first.
     defaultArgs: { mode: refresh }
   - name: Clear Restash Data
     description: Remove all Restash custom fields (restash_*) from scenes + performers. Other fields and ratings are left untouched.
@@ -47,5 +49,10 @@ tasks:
     description: Write the backed-up native rating100 values back from the file, reverting the library to the exact backup snapshot (undoes a rating100 mirror).
     defaultArgs: { mode: restore-ratings }
   - name: Disable Other Plugins
-    description: Temporarily disable all other enabled plugins. They will be re-enabled when any Restash scoring task completes (if the setting is on).
+    description: Temporarily disable all other enabled plugins. They are re-enabled when the next Dry Run, Recompute All or Quick Refresh finishes.
     defaultArgs: { mode: disable-plugins }
+hooks:
+  - name: Score new scenes
+    description: Scores a newly created scene against the cached taste model (one scene read and one write; no library re-read).
+    triggeredBy:
+      - Scene.Create.Post

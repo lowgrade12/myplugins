@@ -28,14 +28,42 @@ def performer_partial(score: models.PerformerScore, now_iso: str) -> dict:
             "restash_updated": now_iso}
 
 
-def needs_write(existing_custom_fields: dict, new_partial: dict) -> bool:
-    """Skip when the headline score is unchanged (spec §2.4). Compared as strings
-    because Stash's custom_fields Map may return ints or strings. The volatile
-    restash_updated timestamp is intentionally NOT part of the comparison."""
+def _is_wildcard(components) -> bool:
+    """True if a restash_components value (JSON string or dict) marks a wildcard."""
+    if isinstance(components, str):
+        try:
+            components = json.loads(components)
+        except ValueError:
+            return False
+    return isinstance(components, dict) and bool(components.get("wildcard"))
+
+
+def stored_score(existing_custom_fields: dict) -> int | None:
+    """The restash_score currently stored on an entity, or None if absent/garbled.
+    Stash's custom_fields Map may return ints, floats or strings."""
     existing = existing_custom_fields.get("restash_score")
+    try:
+        return int(float(existing))
+    except (TypeError, ValueError):
+        return None
+
+
+def needs_write(existing_custom_fields: dict, new_partial: dict,
+                min_change: float = 1) -> bool:
+    """Write when there is no stored score, when a wildcard promotion starts or
+    ends, or when the headline score moved by at least `min_change` (hysteresis:
+    small jitter-driven wobbles are not worth a mutation + every other plugin's
+    Scene.Update.Post hook). restash_updated is intentionally NOT compared."""
+    existing = stored_score(existing_custom_fields)
     if existing is None:
         return True
-    return str(existing) != str(new_partial.get("restash_score"))
+    new = int(new_partial["restash_score"])
+    if existing == new:
+        return False
+    if (_is_wildcard(existing_custom_fields.get("restash_components"))
+            or _is_wildcard(new_partial.get("restash_components"))):
+        return True
+    return abs(new - existing) >= max(1, min_change)
 
 
 _UPDATE_FIELD = {"scene": ("sceneUpdate", "SceneUpdateInput"),
@@ -89,8 +117,8 @@ def write_scores(stash, entity: str, scored: dict, existing_custom_fields: dict,
     `scored` maps id → SceneScore/PerformerScore; `existing_custom_fields` maps id →
     that entity's current custom_fields (for skip-unchanged). When
     cfg.mirror_to_rating100 is set, also writes rating100 = score and (using
-    `current_ratings`, id → current rating100) writes entities whose score is
-    unchanged but whose native rating differs (D20). Honors write_limit
+    `current_ratings`, id → current rating100) writes entities whose native rating
+    differs from the score left stored after hysteresis (D20). Honors write_limit
     (subset-first gate). Returns {written, skipped, would_write, failed} where
     `written`/`failed` count only server-acknowledged (non-null) aliases."""
     build = scene_partial if entity == "scene" else performer_partial
@@ -99,9 +127,12 @@ def write_scores(stash, entity: str, scored: dict, existing_custom_fields: dict,
     skipped = 0
     for eid, score in scored.items():
         partial = build(score, now_iso)
-        need = needs_write(existing_custom_fields.get(eid) or {}, partial)
+        existing = existing_custom_fields.get(eid) or {}
+        need = needs_write(existing, partial, cfg.min_score_change)
         if not need and cfg.mirror_to_rating100:
-            need = current_ratings.get(eid) != int(score.restash_score)
+            # The score held back by hysteresis is what stays stored, so the
+            # mirrored rating only needs to match that.
+            need = current_ratings.get(eid) != stored_score(existing)
         if not need:
             skipped += 1
             continue

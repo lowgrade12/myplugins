@@ -24,6 +24,8 @@ _PLUGIN_KEY_MAP = {
     "perfWeightFresh": "perf_w_fresh",
     "perfWeightSupply": "perf_w_supply",
     "perfWeightNovelty": "perf_w_novelty",
+    "jitterPeriodDays": "jitter_period_days",
+    "minScoreChange": "min_score_change",
 }
 
 
@@ -53,6 +55,9 @@ class Settings:
     satiation_floor: float = 0.3
     satiation_window_days: float = 7.0
     jitter_amplitude: float = 0.06
+    # Jitter is re-seeded once per period (not daily) so the bulk of the library
+    # only reshuffles on period boundaries; 1 restores the old daily re-roll.
+    jitter_period_days: float = 7.0
     wildcard_low_conf_max_events: int = 1
     wildcard_band_low: float = 85.0
     wildcard_band_high: float = 95.0
@@ -80,6 +85,9 @@ class Settings:
     write_backoff_base: float = 0.5
     write_limit: int = 0
     write_only_scene_ids: tuple[str, ...] = ()
+    # Hysteresis: skip a write unless the stored score moved by at least this much
+    # (wildcard promotions/demotions always write). 1 = write every change.
+    min_score_change: float = 3.0
 
     @classmethod
     def from_plugin_settings(cls, plugin_cfg: dict | None) -> "Settings":

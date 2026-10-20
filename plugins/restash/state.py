@@ -4,11 +4,14 @@ import json
 import os
 import tempfile
 
-STATE_FORMAT_VERSION = 1
+# v2: the per-scene `base` cache is gone (refresh re-scores every scene from live
+# data); the file now holds the taste model plus what the new-scene hook needs to
+# place one scene in the library: library context + the raw-score distribution.
+STATE_FORMAT_VERSION = 2
 
-# Settings that feed the cached pre-freshness `base` and the affinity model.
-# Changing any of these invalidates the cache; refresh recomputes everything else
-# (freshness / novelty / jitter / wildcards), so those settings are NOT listed here.
+# Settings that feed the cached affinity model. Changing any of these invalidates
+# the cache; refresh recomputes everything else from live data, so the rest are
+# NOT listed here.
 BASE_AFFECTING_FIELDS = (
     "taste_half_life_days", "o_event_value", "play_event_value",
     "abandonment_penalty", "completion_floor", "abandonment_completion_max",
@@ -31,8 +34,8 @@ def default_state_path() -> str:
                         "restash_state.json")
 
 
-def save_state(path: str, *, settings, affinities: dict, scenes: dict,
-               written_at: str) -> None:
+def save_state(path: str, *, settings, affinities: dict, context: dict,
+               raw_quantiles: list, written_at: str) -> None:
     """Write the cache atomically (temp file in the same dir + os.replace) so a
     run dying mid-write cannot corrupt it."""
     state = {
@@ -40,7 +43,8 @@ def save_state(path: str, *, settings, affinities: dict, scenes: dict,
         "written_at": written_at,
         "settings_fingerprint": settings_fingerprint(settings),
         "affinities": affinities,
-        "scenes": scenes,
+        "context": context,
+        "raw_quantiles": raw_quantiles,
     }
     directory = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=directory, prefix=".restash_state.", suffix=".tmp")
@@ -73,8 +77,8 @@ def is_valid(state: dict | None, settings) -> tuple[bool, str]:
     if state.get("format_version") != STATE_FORMAT_VERSION:
         return False, (f"cache format_version {state.get('format_version')} != "
                        f"{STATE_FORMAT_VERSION}")
-    if "scenes" not in state or "affinities" not in state:
-        return False, "cache missing scenes/affinities"
+    if not all(k in state for k in ("affinities", "context", "raw_quantiles")):
+        return False, "cache missing affinities/context/raw_quantiles"
     if state.get("settings_fingerprint") != settings_fingerprint(settings):
         return False, "base-affecting settings changed since cache was written"
     return True, "ok"
