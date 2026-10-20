@@ -5,6 +5,7 @@ import sys
 
 import algorithm
 import config
+import models
 import ratings_backup
 import report
 import state
@@ -150,37 +151,63 @@ def build_settings(plugin_cfg: dict | None, args: dict) -> config.Settings:
 
 # --- Hook handling ---
 
+HOOK_TYPES = ("Scene.Create.Post", "Performer.Create.Post")
+
+
 def _handle_hook(payload: dict) -> int:
-    """Scene.Create.Post: score just the new scene against the cached taste model
-    and cached library score distribution — one scene read and one write, never a
-    library re-read, so a scan importing thousands of scenes stays cheap. Without a
-    valid cache the scene is left for the next Quick Refresh / Recompute All."""
+    """Score new entities against the cached taste model and cached library score
+    distributions — a handful of targeted reads and writes, never a library
+    re-read, so a scan importing thousands of scenes stays cheap.
+
+    Scene.Create.Post scores the new scene, then re-scores its performers (a scrape
+    usually links performers right as the scene is created). Performer.Create.Post
+    scores the new performer. Without a valid cache nothing is scored and the next
+    Quick Refresh / Recompute All picks the entities up."""
     hook_context = (payload.get("args") or {}).get("hookContext") or {}
     hook_type = hook_context.get("type", "")
-    scene_id = str(hook_context.get("id") or "")
-    if hook_type != "Scene.Create.Post" or not scene_id:
+    entity_id = str(hook_context.get("id") or "")
+    if hook_type not in HOOK_TYPES or not entity_id:
         log.debug(f"[Restash] hook: ignoring {hook_type or 'unknown'} event.")
         return 0
+    kind = hook_type.split(".")[0].lower()
 
     stash = stash_io.connect(payload.get("server_connection") or {})
     settings = build_settings(stash_io.fetch_plugin_settings(stash, PLUGIN_ID), {})
     st = state.load_state(state.default_state_path())
     ok, reason = state.is_valid(st, settings)
     if not ok:
-        log.info(f"[Restash] hook: scene {scene_id} not scored ({reason}); the next "
+        log.info(f"[Restash] hook: {kind} {entity_id} not scored ({reason}); the next "
                  f"Quick Refresh / Recompute All will include it.")
         return 0
 
+    if (settings.mirror_to_rating100
+            and not ratings_backup.backup_exists(ratings_backup.default_backup_path())):
+        # Never overwrite rating100 without a backup; the next scoring run creates
+        # one and mirrors these entities then.
+        settings.mirror_to_rating100 = False
+    exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
+    now = stash_io.utcnow()
+
+    failed = 0
+    if kind == "scene":
+        scene_failed, performer_ids = _hook_score_scene(stash, settings, st, entity_id,
+                                                        exclude_id, now)
+        failed += scene_failed
+    else:
+        performer_ids = [entity_id]
+    failed += _hook_score_performers(stash, settings, st, performer_ids, exclude_id, now)
+    return 1 if failed else 0
+
+
+def _hook_score_scene(stash, settings, st, scene_id, exclude_id, now) -> tuple[int, list]:
+    """Score one new scene. Returns (failed writes, its performer ids to re-score)."""
     scene = stash_io.fetch_scene(stash, scene_id)
     if scene is None or not scene.has_file:
         log.info(f"[Restash] hook: scene {scene_id} missing or has no file; skipped.")
-        return 0
-    exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
+        return 0, []
     if exclude_id is not None and exclude_id in scene.tag_ids:
-        return 0
+        return 0, []
 
-    now = stash_io.utcnow()
-    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     scene_ratings, _ = _manual_ratings(
         settings,
         live_scene={scene.id: scene.rating100} if scene.rating100 is not None else {},
@@ -191,19 +218,73 @@ def _handle_hook(payload: dict) -> int:
     sc.percentile = algorithm.percentile_from_quantiles(sc.raw, st["raw_quantiles"])
     sc.restash_score = algorithm.to_restash_score(sc.percentile)
 
-    scene_kw = {}
-    if settings.mirror_to_rating100:
-        if ratings_backup.backup_exists(ratings_backup.default_backup_path()):
-            scene_kw = {"current_ratings": {scene.id: scene.rating100}}
-        else:
-            # Never overwrite rating100 without a backup; the next scoring run
-            # creates one and mirrors this scene then.
-            settings.mirror_to_rating100 = False
+    kw = ({"current_ratings": {scene.id: scene.rating100}}
+          if settings.mirror_to_rating100 else {})
     stats = writer.write_scores(stash, "scene", {scene.id: sc},
-                                {scene.id: scene.custom_fields}, settings, now_iso,
-                                **scene_kw)
+                                {scene.id: scene.custom_fields}, settings,
+                                _iso_now(now), **kw)
     log.info(f"[Restash] hook: scored new scene {scene.id} → {sc.restash_score}.")
-    return 1 if stats["failed"] else 0
+    return stats["failed"], scene.performer_ids
+
+
+def _hook_score_performers(stash, settings, st, performer_ids, exclude_id, now) -> int:
+    """Score the given performers from their own scenes' stored scores plus the
+    cached taste model, prior and performer score distribution. Returns failed
+    writes."""
+    if not performer_ids:
+        return 0
+    if not state.has_performer_inputs(st):
+        log.info(f"[Restash] hook: performer(s) {', '.join(performer_ids)} not scored "
+                 f"(cache predates performer scoring); run Quick Refresh once.")
+        return 0
+
+    performers, scenes = [], {}
+    for pid in performer_ids:
+        p = stash_io.fetch_performer(stash, pid)
+        if p is None or (exclude_id is not None and exclude_id in p.tag_ids):
+            continue
+        performers.append(p)
+        for s in stash_io.fetch_performer_scenes(stash, pid):
+            if s.has_file and not (exclude_id is not None and exclude_id in s.tag_ids):
+                scenes[s.id] = s
+    if not performers:
+        return 0
+
+    scores = algorithm.score_performers(
+        performers, list(scenes.values()),
+        _stored_scene_scores(scenes.values(), st["raw_quantiles"]),
+        st["affinities"], settings, now,
+        prior=st["perf_scenes_prior"], quantiles=st["perf_quantiles"])
+    kw = ({"current_ratings": {p.id: p.rating100 for p in performers}}
+          if settings.mirror_to_rating100 else {})
+    stats = writer.write_scores(stash, "performer", scores,
+                                {p.id: p.custom_fields for p in performers}, settings,
+                                _iso_now(now), **kw)
+    for p in performers:
+        log.info(f"[Restash] hook: scored performer {p.id} ({p.name}) → "
+                 f"{scores[p.id].restash_score}.")
+    return stats["failed"]
+
+
+def _stored_scene_scores(scenes, quantiles) -> dict:
+    """SceneScore stand-ins built from each scene's stored restash_raw, placed in
+    the cached scene distribution (raw is pre-wildcard, so promotions can't leak
+    into a performer's best-material term). Unscored scenes are left out."""
+    out = {}
+    for s in scenes:
+        try:
+            raw = float(s.custom_fields.get("restash_raw"))
+        except (TypeError, ValueError):
+            continue
+        pct = algorithm.percentile_from_quantiles(raw, quantiles)
+        out[s.id] = models.SceneScore(id=s.id, raw=raw,
+                                      restash_score=algorithm.to_restash_score(pct),
+                                      percentile=pct, n_events=0, wildcard=False)
+    return out
+
+
+def _iso_now(now) -> str:
+    return now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # --- Main run logic ---
@@ -379,6 +460,11 @@ def _score_and_write(stash, settings: config.Settings, cached_aff: dict | None) 
                      context=context,
                      raw_quantiles=algorithm.raw_quantiles(
                          [sc.raw for sc in scene_scores.values()]),
+                     perf_quantiles=algorithm.raw_quantiles(
+                         [ps.raw for ps in performer_scores.values()]),
+                     perf_scenes_prior=next(
+                         (ps.components["scenes_prior"]
+                          for ps in performer_scores.values()), None),
                      written_at=now_iso)
     log.info("[Restash] wrote taste-model cache to restash_state.json." if label == "full"
              else "[Restash] updated library distribution in restash_state.json.")

@@ -58,7 +58,16 @@ class FakeStash:
             self.add_scene(str(i), rng, now, watched=rng.random() < 0.4)
         self.plugins = {"restash": True, "other_a": True, "other_b": True,
                         "already_off": False}
+        self.exclude_tag_id = None
         self.calls = []
+
+    def add_performer(self, pid, favorite=False, tag_ids=()):
+        self.performers[pid] = {
+            "id": pid, "name": f"P{pid}", "favorite": favorite, "rating100": None,
+            "o_counter": 0, "scene_count": 0,
+            "created_at": _iso(datetime.now(timezone.utc)),
+            "tags": [{"id": t} for t in tag_ids], "custom_fields": {}}
+        return self.performers[pid]
 
     def add_scene(self, sid, rng, now, watched=False):
         plays = ([_iso(now - timedelta(days=rng.randint(1, 300)))
@@ -95,15 +104,24 @@ class FakeStash:
         if "plugins" in query:
             return {"plugins": [{"id": k, "enabled": v} for k, v in self.plugins.items()]}
         if "findTags" in query:
-            return {"findTags": {"tags": []}}
+            q = variables["filter"]["q"]
+            tags = [{"id": self.exclude_tag_id, "name": q}] if self.exclude_tag_id else []
+            return {"findTags": {"tags": tags}}
         if "findScene(" in query:
             return {"findScene": self.scenes.get(variables["id"])}
+        if "findPerformer(" in query:
+            return {"findPerformer": self.performers.get(variables["id"])}
         if "findScenes" in query or "findPerformers" in query:
             root, sub, store = (("findScenes", "scenes", self.scenes)
                                 if "findScenes" in query
                                 else ("findPerformers", "performers", self.performers))
             f = variables["filter"]
             items = sorted(store.values(), key=lambda x: int(x["id"]))
+            perf_filter = (variables.get("scene_filter") or {}).get("performers")
+            if perf_filter:
+                wanted = set(perf_filter["value"])
+                items = [x for x in items
+                         if wanted & {p["id"] for p in x["performers"]}]
             start = (f["page"] - 1) * f["per_page"]
             return {root: {sub: items[start:start + f["per_page"]]}}
         if query.lstrip().startswith("mutation("):
@@ -342,19 +360,81 @@ class RefreshTest(TempPathsMixin, unittest.TestCase):
 
 
 class HookTest(TempPathsMixin, unittest.TestCase):
-    def test_hook_scores_only_the_new_scene(self):
+    def full_library_reads(self, stash):
+        return [q for q, v in stash.calls
+                if ("findScenes" in q and "scene_filter" not in v)
+                or "findPerformers" in q]
+
+    def test_scene_hook_scores_scene_then_its_performers(self):
         stash = FakeStash()
         self.run_task(stash, "full")
-        stash.add_scene("500", random.Random(3), datetime.now(timezone.utc))
+        scene = stash.add_scene("500", random.Random(3), datetime.now(timezone.utc))
+        pid = scene["performers"][0]["id"]
+        stash.performers[pid]["custom_fields"].clear()   # force a performer write
         stash.calls.clear()
 
         self.assertEqual(self.run_hook(stash, "500"), 0)
         score = int(stash.scenes["500"]["custom_fields"]["restash_score"])
         self.assertTrue(1 <= score <= 100)
-        self.assertFalse(any("findScenes" in q for q, _ in stash.calls))
-        muts = stash.mutations()
-        self.assertEqual(len(muts), 1)
-        self.assertEqual([v["id"] for v in muts[0][1].values()], ["500"])
+        self.assertIn("restash_score", stash.performers[pid]["custom_fields"])
+        self.assertEqual(self.full_library_reads(stash), [])
+        written = [[v["id"] for v in m[1].values()] for m in stash.mutations()]
+        self.assertEqual(written, [["500"], [pid]])
+
+    def test_scene_hook_scores_performer_created_by_the_same_scrape(self):
+        stash = FakeStash()
+        self.run_task(stash, "full")
+        stash.add_performer("77")
+        scene = stash.add_scene("500", random.Random(3), datetime.now(timezone.utc))
+        scene["performers"] = [{"id": "77"}]
+
+        self.assertEqual(self.run_hook(stash, "500"), 0)
+        cf = stash.performers["77"]["custom_fields"]
+        self.assertEqual(json.loads(cf["restash_components"])["n_scene_vals"], 1)
+
+    def test_performer_hook_scores_new_performer_without_scenes(self):
+        stash = FakeStash()
+        self.run_task(stash, "full")
+        stash.add_performer("77")
+        stash.add_performer("78", favorite=True)
+        stash.calls.clear()
+
+        self.assertEqual(self.run_hook(stash, "77", "Performer.Create.Post"), 0)
+        self.assertEqual(self.run_hook(stash, "78", "Performer.Create.Post"), 0)
+        plain = int(stash.performers["77"]["custom_fields"]["restash_score"])
+        fav = int(stash.performers["78"]["custom_fields"]["restash_score"])
+        self.assertTrue(1 <= plain <= 100)
+        self.assertGreaterEqual(fav, 75)          # favorite_percentile_floor
+        self.assertEqual(self.full_library_reads(stash), [])
+        self.assertEqual(len(stash.mutations()), 2)
+
+    def test_performer_hook_matches_full_run_score(self):
+        # quantile placement converges on the exact ranking as the library grows;
+        # 40 performers keeps the small-N rank-method difference within a few points
+        stash = FakeStash(n_scenes=400, n_performers=40, seed=40)
+        self.run_task(stash, "full")
+        for pid, perf in stash.performers.items():
+            full = int(perf["custom_fields"]["restash_score"])
+            perf["custom_fields"].clear()
+            self.run_hook(stash, pid, "Performer.Create.Post")
+            hook = int(perf["custom_fields"]["restash_score"])
+            self.assertLessEqual(abs(hook - full), 3, f"performer {pid}")
+
+    def test_performer_hook_skips_excluded_and_old_cache(self):
+        stash = FakeStash()
+        self.run_task(stash, "full")
+        stash.exclude_tag_id = "99"
+        stash.add_performer("77", tag_ids=["99"])
+        self.run_hook(stash, "77", "Performer.Create.Post")
+        self.assertEqual(stash.performers["77"]["custom_fields"], {})
+
+        stash.exclude_tag_id = None
+        st = state.load_state(self.state_path)
+        st.pop("perf_quantiles")                 # cache written before 0.7.0
+        Path(self.state_path).write_text(json.dumps(st))
+        stash.calls.clear()
+        self.assertEqual(self.run_hook(stash, "77", "Performer.Create.Post"), 0)
+        self.assertEqual(stash.mutations(), [])
 
     def test_hook_without_cache_skips(self):
         stash = FakeStash()
@@ -364,7 +444,7 @@ class HookTest(TempPathsMixin, unittest.TestCase):
 
     def test_hook_ignores_other_events(self):
         stash = FakeStash()
-        self.assertEqual(self.run_hook(stash, "1", "Performer.Create.Post"), 0)
+        self.assertEqual(self.run_hook(stash, "1", "Tag.Create.Post"), 0)
         self.assertEqual(stash.calls, [])
 
 

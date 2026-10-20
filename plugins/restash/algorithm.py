@@ -499,7 +499,12 @@ def score_performers(performers: list[models.PerformerData],
                      scenes: list[models.SceneData],
                      scene_scores: dict[str, models.SceneScore],
                      aff: dict[str, dict], cfg: Settings,
-                     now: datetime) -> dict[str, models.PerformerScore]:
+                     now: datetime, prior: float | None = None,
+                     quantiles: list[float] | None = None
+                     ) -> dict[str, models.PerformerScore]:
+    """Score `performers`. For the hooks, which score one performer at a time,
+    pass the cached population `prior` for the best-material shrinkage and the
+    cached performer raw-score `quantiles` to place them in the library."""
     # index scenes by performer
     by_perf: dict[str, list[models.SceneData]] = {}
     for s in scenes:
@@ -549,8 +554,9 @@ def score_performers(performers: list[models.PerformerData],
 
     # D12: population prior = mean raw "best material" term; shrink each performer's
     # term toward it in proportion to how few scored scenes back it up.
-    scene_terms = [pre[pid]["scenes_raw"] for pid in ids]
-    prior = statistics.fmean(scene_terms) if scene_terms else 0.0
+    if prior is None:
+        scene_terms = [pre[pid]["scenes_raw"] for pid in ids]
+        prior = statistics.fmean(scene_terms) if scene_terms else 0.0
     k = cfg.perf_scenes_shrinkage_k
 
     # Pass 2: shrink the best-material term, then assemble the weighted raw score.
@@ -570,7 +576,10 @@ def score_performers(performers: list[models.PerformerData],
         c["raw"] = raw
         raw_values.append(raw)
 
-    pcts = percentiles(raw_values)
+    if quantiles is None:
+        pcts = percentiles(raw_values)
+    else:
+        pcts = [percentile_from_quantiles(r, quantiles) for r in raw_values]
     out: dict[str, models.PerformerScore] = {}
     for idx, pid in enumerate(ids):
         pct = pcts[idx]

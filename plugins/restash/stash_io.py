@@ -159,12 +159,13 @@ def map_performer(raw: dict):
 
 
 def _paginate(stash, query: str, root: str, sub: str, per_page: int, mapper,
-              progress=None):
+              progress=None, extra_vars: dict | None = None):
     out = []
     page = 1
     while True:
         variables = {"filter": {"per_page": per_page, "page": page,
-                                "sort": "id", "direction": "ASC"}}
+                                "sort": "id", "direction": "ASC"},
+                     **(extra_vars or {})}
         result = stash.call_GQL(query, variables)
         batch = ((result or {}).get(root) or {}).get(sub) or []
         if not batch:
@@ -210,6 +211,32 @@ def fetch_scene(stash, scene_id: str):
     result = stash.call_GQL(_FIND_SCENE, {"id": str(scene_id)})
     raw = (result or {}).get("findScene")
     return map_scene(raw) if raw else None
+
+
+_FIND_PERFORMER = """
+query($id: ID!) { findPerformer(id: $id) { %s } }
+""" % PERFORMER_FRAGMENT
+
+_FIND_PERFORMER_SCENES = """
+query($filter: FindFilterType, $scene_filter: SceneFilterType) {
+  findScenes(filter: $filter, scene_filter: $scene_filter) { scenes { %s } }
+}
+""" % SCENE_FRAGMENT
+
+
+def fetch_performer(stash, performer_id: str):
+    """One performer as PerformerData, or None if it does not exist."""
+    result = stash.call_GQL(_FIND_PERFORMER, {"id": str(performer_id)})
+    raw = (result or {}).get("findPerformer")
+    return map_performer(raw) if raw else None
+
+
+def fetch_performer_scenes(stash, performer_id: str, per_page: int = 500):
+    """Every scene featuring the given performer, as SceneData."""
+    scene_filter = {"performers": {"value": [str(performer_id)],
+                                   "modifier": "INCLUDES"}}
+    return _paginate(stash, _FIND_PERFORMER_SCENES, "findScenes", "scenes",
+                     per_page, map_scene, extra_vars={"scene_filter": scene_filter})
 
 
 def fetch_performers(stash, per_page: int = 500, progress=None):

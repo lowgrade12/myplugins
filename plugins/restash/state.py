@@ -35,7 +35,9 @@ def default_state_path() -> str:
 
 
 def save_state(path: str, *, settings, affinities: dict, context: dict,
-               raw_quantiles: list, written_at: str) -> None:
+               raw_quantiles: list, written_at: str,
+               perf_quantiles: list | None = None,
+               perf_scenes_prior: float | None = None) -> None:
     """Write the cache atomically (temp file in the same dir + os.replace) so a
     run dying mid-write cannot corrupt it."""
     state = {
@@ -45,6 +47,9 @@ def save_state(path: str, *, settings, affinities: dict, context: dict,
         "affinities": affinities,
         "context": context,
         "raw_quantiles": raw_quantiles,
+        # performer-hook inputs; absent in caches written before 0.7.0
+        "perf_quantiles": perf_quantiles or [],
+        "perf_scenes_prior": perf_scenes_prior,
     }
     directory = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=directory, prefix=".restash_state.", suffix=".tmp")
@@ -82,3 +87,8 @@ def is_valid(state: dict | None, settings) -> tuple[bool, str]:
     if state.get("settings_fingerprint") != settings_fingerprint(settings):
         return False, "base-affecting settings changed since cache was written"
     return True, "ok"
+
+
+def has_performer_inputs(state: dict) -> bool:
+    """Whether the cache can score a single performer (written by 0.7.0+)."""
+    return bool(state.get("perf_quantiles")) and state.get("perf_scenes_prior") is not None
