@@ -1,3 +1,4 @@
+if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
 (() => {
   // src/js/react-shim.js
   var React = window.PluginApi.React;
@@ -70,6 +71,18 @@
       return store2.subscribe(check);
     }, [store2]);
     return value;
+  }
+
+  // src/js/runtime/storeReset.js
+  function isStoreReset(e) {
+    const text = String(e?.message || e || "");
+    if (text.includes("Store reset while query was in flight")) return true;
+    if (!text.includes("go.apollo.dev/c/err")) return false;
+    try {
+      return /"message"\s*:\s*42\b/.test(decodeURIComponent(text));
+    } catch {
+      return false;
+    }
   }
 
   // src/js/runtime/location.js
@@ -2465,7 +2478,12 @@
     const keys2 = [...unsaved, ...own];
     unsaved.clear();
     unsavedSettings.clear();
-    return tier1.save(toConfig(store.get()), keys2, own).catch(reportError);
+    return tier1.save(toConfig(store.get()), keys2, own).catch((e) => {
+      if (!isStoreReset(e)) return reportError(e);
+      keys2.forEach((k) => (own.includes(k) ? unsavedSettings : unsaved).add(k));
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveNow, RESET_RETRY_MS);
+    });
   }
   function changeSettings(changes2) {
     store.set((s) => ({ settings: { ...s.settings, ...changes2 } }));
@@ -2496,8 +2514,10 @@
     unsavedSettings.clear();
   }
   var leaving = false;
+  var RESET_RETRY_MS = 5e3;
   function reportError(e) {
     if (leaving) return;
+    if (isStoreReset(e)) return;
     console.error(`${PLUGIN_ID}:`, e);
     store.set({ error: String(e?.message || e) });
   }
@@ -2560,9 +2580,14 @@
     }).then((library) => {
       const cur = store.get().library;
       if (!cur || library.syncedAt !== cur.syncedAt) store.set({ library });
-    }).catch(reportError).finally(() => loading = null);
+    }).catch((e) => {
+      if (!isStoreReset(e)) return reportError(e);
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => refreshLibrary(force), RESET_RETRY_MS);
+    }).finally(() => loading = null);
     return loading;
   }
+  var retryTimer = null;
   var booted = false;
   function boot() {
     if (booted) return;
@@ -2590,7 +2615,11 @@
         refreshLibrary();
     });
     if (onFrontPage()) store.set((s) => ({ visit: s.visit + 1 }));
-    loadConfig().catch(reportError).then(() => refreshLibrary());
+    const configure = () => loadConfig().catch((e) => {
+      if (!isStoreReset(e)) return reportError(e);
+      return new Promise((r) => setTimeout(r, RESET_RETRY_MS)).then(configure);
+    });
+    configure().then(() => refreshLibrary());
   }
   function patchLibrary(list, patches) {
     if (!patches.size) return;
@@ -6627,6 +6656,7 @@ ${s.stashdb.apiKey}`;
 `;
   var BATCH_MS = 60;
   var BATCH_MAX = 50;
+  var RESET_RETRY_MS2 = 5e3;
   var whisparr = createStore({ available: null, scenes: {} });
   var setScene = (id, state) => whisparr.set((s) => ({ scenes: { ...s.scenes, [id]: state } }));
   var setScenes = (states) => whisparr.set((s) => ({ scenes: { ...s.scenes, ...states } }));
@@ -6642,7 +6672,15 @@ ${s.stashdb.apiKey}`;
   function checkAvailable() {
     availability || (availability = run(PLUGINS).then(
       ({ plugins }) => (plugins || []).some((p) => p.id === WHISPARR_PLUGIN && p.enabled)
-    ).catch(() => false).then((available) => {
+    ).catch((e) => {
+      if (isStoreReset(e)) {
+        availability = null;
+        setTimeout(checkAvailable, RESET_RETRY_MS2);
+        return null;
+      }
+      return false;
+    }).then((available) => {
+      if (available == null) return null;
       whisparr.set({ available });
       return available;
     }));
@@ -6659,13 +6697,22 @@ ${s.stashdb.apiKey}`;
       (result) => setScenes(
         Object.fromEntries(ids.map((id) => [id, toState(result?.[id])]))
       )
-    ).catch(
-      (e) => setScenes(
+    ).catch((e) => {
+      if (isStoreReset(e)) {
+        whisparr.set((s) => {
+          const scenes = { ...s.scenes };
+          ids.forEach((id) => delete scenes[id]);
+          return { scenes };
+        });
+        setTimeout(() => ids.forEach(requestStatus), RESET_RETRY_MS2);
+        return;
+      }
+      setScenes(
         Object.fromEntries(
           ids.map((id) => [id, { kind: "error", error: String(e.message || e) }])
         )
-      )
-    );
+      );
+    });
   }
   function requestStatus(stashId) {
     if (!stashId || whisparr.get().scenes[stashId]) return;
@@ -9582,3 +9629,4 @@ ${s.stashdb.apiKey}`;
   watchPlayback();
   boot();
 })();
+}

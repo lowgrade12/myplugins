@@ -9,6 +9,7 @@
 import { PLUGIN_ID } from '../name.js'
 import { createStore } from './store.js'
 import { client, gql, GQL, mutate, query, utils } from './api.js'
+import { isStoreReset } from './storeReset.js'
 import { inSettings, onFrontPage, onLocation } from './location.js'
 import * as Q from '../data/queries.js'
 import { loadLibrary, REFRESH_MS } from '../data/library.js'
@@ -137,7 +138,14 @@ function saveNow() {
   const keys = [...unsaved, ...own]
   unsaved.clear()
   unsavedSettings.clear()
-  return tier1.save(toConfig(store.get()), keys, own).catch(reportError)
+  return tier1.save(toConfig(store.get()), keys, own).catch((e) => {
+    // Cut off by a store reset: the changes wait for the next try (the
+    // mirror already holds them).
+    if (!isStoreReset(e)) return reportError(e)
+    keys.forEach((k) => (own.includes(k) ? unsavedSettings : unsaved).add(k))
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(saveNow, RESET_RETRY_MS)
+  })
 }
 
 // Settings the user changes through Cherry Pick, off Stash's Settings page
@@ -187,8 +195,14 @@ export function cancelWrites() {
 // Firefox cuts them off when the navigation starts, before pagehide.
 let leaving = false
 
+// After a store reset cut a request off, try again this much later: resets
+// come in bursts while Stash scans a batch of files.
+const RESET_RETRY_MS = 5000
+
 function reportError(e) {
   if (leaving) return
+  // Stash reset its store under the request: nothing went wrong
+  if (isStoreReset(e)) return
   console.error(`${PLUGIN_ID}:`, e)
   store.set({ error: String(e?.message || e) })
 }
@@ -269,10 +283,16 @@ export function refreshLibrary(force = false) {
       // (runtime/engine.js).
       if (!cur || library.syncedAt !== cur.syncedAt) store.set({ library })
     })
-    .catch(reportError)
+    .catch((e) => {
+      if (!isStoreReset(e)) return reportError(e)
+      // Cut off by a store reset: check again once the burst has passed
+      clearTimeout(retryTimer)
+      retryTimer = setTimeout(() => refreshLibrary(force), RESET_RETRY_MS)
+    })
     .finally(() => (loading = null))
   return loading
 }
+let retryTimer = null
 
 let booted = false
 export function boot() {
@@ -308,10 +328,14 @@ export function boot() {
   })
   if (onFrontPage()) store.set((s) => ({ visit: s.visit + 1 }))
   // The library loads even if the configuration could not be read: the
-  // rows then run on the default settings.
-  loadConfig()
-    .catch(reportError)
-    .then(() => refreshLibrary())
+  // rows then run on the default settings. A configuration read cut off by
+  // a store reset is tried again, until it lands.
+  const configure = () =>
+    loadConfig().catch((e) => {
+      if (!isStoreReset(e)) return reportError(e)
+      return new Promise((r) => setTimeout(r, RESET_RETRY_MS)).then(configure)
+    })
+  configure().then(() => refreshLibrary())
 }
 
 // After the plugin changes a record in Stash (a gender, a rating, custom

@@ -11,6 +11,7 @@ import { run, runMutation } from '../runtime/app.js'
 import { createStore, useStoreValue } from '../runtime/store.js'
 import { PLUGINS } from '../data/queries.js'
 import { React } from '../runtime/api.js'
+import { isStoreReset } from '../runtime/storeReset.js'
 
 export const WHISPARR_PLUGIN = 'whisparrUpdate'
 
@@ -24,6 +25,8 @@ const OPERATION = `
 const BATCH_MS = 60
 // and at most this many in one operation (the plugin's own cap)
 const BATCH_MAX = 50
+// After a store reset cut a request off, try again this much later
+const RESET_RETRY_MS = 5000
 
 // { available: null|boolean, scenes: { [stashId]: State } }, a State being
 //   { kind: 'loading' }
@@ -56,8 +59,17 @@ export function checkAvailable() {
     .then(({ plugins }) =>
       (plugins || []).some((p) => p.id === WHISPARR_PLUGIN && p.enabled),
     )
-    .catch(() => false)
+    .catch((e) => {
+      // Cut off by a store reset: ask again shortly, not never
+      if (isStoreReset(e)) {
+        availability = null
+        setTimeout(checkAvailable, RESET_RETRY_MS)
+        return null
+      }
+      return false
+    })
     .then((available) => {
+      if (available == null) return null
       whisparr.set({ available })
       return available
     })
@@ -78,13 +90,23 @@ function flush() {
         Object.fromEntries(ids.map((id) => [id, toState(result?.[id])])),
       ),
     )
-    .catch((e) =>
+    .catch((e) => {
+      if (isStoreReset(e)) {
+        // Cut off by a store reset: forget these and look them up again
+        whisparr.set((s) => {
+          const scenes = { ...s.scenes }
+          ids.forEach((id) => delete scenes[id])
+          return { scenes }
+        })
+        setTimeout(() => ids.forEach(requestStatus), RESET_RETRY_MS)
+        return
+      }
       setScenes(
         Object.fromEntries(
           ids.map((id) => [id, { kind: 'error', error: String(e.message || e) }]),
         ),
-      ),
-    )
+      )
+    })
 }
 
 // Looks a scene up, once per load, batched with the page's other cards
