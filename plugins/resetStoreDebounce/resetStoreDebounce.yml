@@ -1,0 +1,7 @@
+name: Reset Store Debounce
+description: Coalesces Stash's Apollo store resets during scan bursts into one refresh, so the page stops redrawing after every finished scan.
+version: 0.1.0
+url: https://github.com/lowgrade12/myplugins
+ui:
+  javascript:
+    - resetStoreDebounce.js
