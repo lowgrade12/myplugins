@@ -1,0 +1,14 @@
+/* The watch journey: once the scene player plays, every Cherry Pick piece on
+   the page steps out. The navbar icon keeps its space so nothing jumps. */
+.cherrypick-watching .cherrypick-ui:not(.cherrypick-nav-icon) {
+  display: none !important;
+}
+
+.cherrypick-watching .cherrypick-nav-icon {
+  visibility: hidden;
+}
+
+/* The cherries mark fills with currentColor: the theme's text colour. */
+.cherrypick-mark {
+  vertical-align: -0.1em;
+}

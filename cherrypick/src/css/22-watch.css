@@ -1,0 +1,93 @@
+/* Watch This: one scene in Stash's own player, at the full width of the
+   front page's content area and as tall as 16:9 allows while the line under
+   it stays on screen. features/watchThis.jsx measures what sits above the
+   player (the navbar and Stash's padding, whatever the theme makes of them)
+   and the line's height. Layout only: the player and the line take the
+   theme's colours and fonts. */
+.cherrypick-watch {
+  --cherrypick-watch-above: calc(48.75px + 0.5rem);
+  --cherrypick-watch-line: 3rem;
+  --cherrypick-watch-cap: calc(
+    100vh - var(--cherrypick-watch-above) - var(--cherrypick-watch-line)
+  );
+
+  margin-bottom: 0.5rem;
+}
+
+/* Stash sizes its player for the scene page: the window's width at 16:9
+   under 1200px, the window's height above it, and a portrait video taller
+   than wide. Here the video's box is 16:9 of the content area, and the
+   player, Stash's scrubber included when it shows, stays within the cap:
+   the video's box gives way, the scrubber keeps its height. The player's
+   black fills the space beside a narrower video. Stash's player styles load
+   with its lazy module, after this file, so these rules carry an extra
+   class to win. */
+.cherrypick-watch .cherrypick-watch-player .VideoPlayer {
+  height: auto;
+  max-height: var(--cherrypick-watch-cap);
+  padding-bottom: 0;
+}
+
+.cherrypick-watch .cherrypick-watch-player .VideoPlayer .video-wrapper {
+  aspect-ratio: 16 / 9;
+  flex: 0 1 auto;
+  height: auto;
+  min-height: 0;
+  width: 100%;
+}
+
+/* Stash's skeleton card, stretched to the player's box */
+.cherrypick-watch .cherrypick-watch-skeleton {
+  aspect-ratio: 16 / 9;
+  height: auto;
+  margin: 0;
+  max-height: var(--cherrypick-watch-cap);
+  max-width: none;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+/* The line under the player: title, performers, reason, and its buttons at
+   the end. On wide screens it stays one line and cuts the text short; on a
+   phone it wraps. */
+.cherrypick-watch-line {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  min-height: 3rem;
+  padding: 0.5rem 0;
+}
+
+.cherrypick-watch-what {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cherrypick-watch-what > * + *::before {
+  content: ' · ';
+}
+
+.cherrypick-watch-title {
+  font-weight: 600;
+}
+
+.cherrypick-watch-buttons {
+  display: flex;
+  flex: none;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+@media (width >= 768px) {
+  .cherrypick-watch-line {
+    flex-wrap: nowrap;
+  }
+
+  .cherrypick-watch-what {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

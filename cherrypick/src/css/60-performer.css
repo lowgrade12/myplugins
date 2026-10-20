@@ -1,0 +1,35 @@
+/* The For you line in a performer's details: Stash's detail-item markup
+   does the rest. */
+.cherrypick-performer-line .cherrypick-mark {
+  opacity: 0.85;
+}
+
+/* Crown or medal, bottom left of a performer card's photo, with the drop
+   shadow Stash gives its favourite heart. The colour is the theme's
+   (text-warning, text-light). */
+.cherrypick-honours {
+  bottom: 0.5rem;
+  filter: drop-shadow(0 0 2px rgb(0 0 0 / 90%));
+  font-size: 1.35rem;
+  left: 0.5rem;
+  line-height: 1;
+  position: absolute;
+}
+
+.cherrypick-honours small {
+  font-size: 0.6em;
+  font-weight: 700;
+  margin-left: 0.1em;
+}
+
+/* Stash's card links (an option in Interface settings) take the bottom left
+   corner as a column of buttons: sit beside them. */
+.performer-card__links ~ .cherrypick-honours {
+  left: 3rem;
+}
+
+/* Xenith puts its rank badge at the bottom left of each card it marks
+   .hon-processed, over the crown: the crown goes above it. */
+.thumbnail-section.hon-processed .cherrypick-honours {
+  bottom: 3rem;
+}
