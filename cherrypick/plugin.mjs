@@ -33,6 +33,16 @@ export async function build(out) {
     charset: 'utf8',
     legalComments: 'none',
     logLevel: 'warning',
+    // Load once per page. Stash's plugin loader drops and re-adds plugin
+    // script tags when its Apollo store resets (every finished scan), and
+    // the browser runs a re-added script again; the first run's patches
+    // are still registered, so a second run would add every piece twice
+    // (two navbar icons, two front-page rows) and boot a second library
+    // and model.
+    banner: {
+      js: `if (!window.__${id}Loaded__) { window.__${id}Loaded__ = true;`,
+    },
+    footer: { js: '}' },
   })
 
   // CSS: concatenate the numbered partials in order, one file for Stash to serve.

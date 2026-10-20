@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- Cherry Pick runs once per page. Stash resets its data store each time a scan finishes, and its plugin loader then drops and re-adds the plugins' scripts, so the browser ran Cherry Pick again on top of the copy already running: every reset during a batch of updates added another navbar icon (and another set of everything else), each copy with its own library and model.
+- A request cut off by one of those resets is no longer reported as an error ("Invariant Violation … go.apollo.dev … 42" in the console). The library check, the configuration read at start and waiting saves try again 5 seconds later, and the Whisparr button's lookups ask again instead of showing a failure.
+
 ## 0.3.2
 
 - Bracket and Options are back beside the Performers and Scenes lists' toolbar, with the resume pill under it. 0.3.0 watched only the list's top levels for the toolbar, but Stash draws it several levels down, inside the sidebar pane, once the list has loaded, so the buttons never found their place. The whole list is watched again, checked at most once a frame.

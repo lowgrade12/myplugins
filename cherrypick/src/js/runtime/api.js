@@ -48,3 +48,4 @@ export async function mutate(doc, variables) {
   const { data } = await client().mutate({ mutation: doc, variables })
   return data
 }
+
