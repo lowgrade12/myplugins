@@ -4,12 +4,14 @@
 // SceneCard needs a scene from the user's library, so this one is drawn
 // here: the StashDB cover, title, date and studio, the reason it is shown,
 // a "Not in your library" badge, and links to where to get the scene (a
-// store or its studio's site) and to StashDB. Its menu has Not interested
-// only.
+// store or its studio's site) and to StashDB, and, with Whisparr Update
+// installed, a Whisparr button (WhisparrButton). Its menu has Not
+// interested only.
 import { components, FontAwesomeSolid, ReactRouterDOM } from '../runtime/api.js'
 import { fetchedScene } from '../stashdb/layer.js'
 import { stashdbPage, storeOf } from '../stashdb/queries.js'
 import { CardMenu } from './CardMenu.jsx'
+import { WhisparrButton } from './WhisparrButton.jsx'
 import { useAppState } from './hooks.js'
 
 const { Link } = ReactRouterDOM
@@ -122,6 +124,7 @@ export function StashdbSceneCard({ scene, item, rowId, width, zoom = 1 }) {
           {icon(faDatabase)}
           <span>StashDB</span>
         </a>
+        <WhisparrButton scene={scene} />
         {item ? <CardMenu item={item} rowId={rowId} /> : null}
       </div>
     </div>
