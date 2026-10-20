@@ -1,0 +1,52 @@
+/* Your score in the rating corner: Stash's rating banner, outlined, on a
+   half-black dim so the text reads over any cover. No colour of its own.
+   Not backdrop-filter: brightness(0.5), which dims the same way but stops a
+   page with a few dozen banners from ever rendering again in Linux WebKit. */
+.rating-banner.cherrypick-score-banner {
+  background: rgb(0 0 0 / 50%);
+  box-shadow: inset 0 0 0 1px currentcolor;
+  text-transform: none;
+}
+
+/* Stash sizes the ribbon to its text and rotates it about its center, and
+   its shortest label, "Rating: 5", is what carries the strip past the top
+   and left edges. "~3.5★" is half as wide, so the ribbon stopped inside the
+   picture with its end showing. A hidden line of Stash's label holds the
+   ribbon at that width in the theme's own font, with Your score centered on
+   it where Stash's text sits. */
+.rating-banner.cherrypick-score-banner::before {
+  content: 'Rating: 5';
+  display: block;
+  height: 0;
+  overflow: hidden;
+  text-transform: uppercase;
+  visibility: hidden;
+}
+
+/* Xenith hides Stash's rating on each card it marks .hon-processed
+   (.thumbnail-section.hon-processed .rating-banner) and puts its rank badge
+   at the bottom left. Your score is no rating of Stash's, so it stays,
+   displayed as Stash displays the banner. */
+.thumbnail-section.hon-processed .rating-banner.cherrypick-score-banner {
+  display: block;
+}
+
+/* Your score shows only on scenes you haven't rated, so on a card that also
+   has Stash's banner, the rating there is another plugin's (an Elo ranking,
+   Restash's mirror, Ascension's Prime). Your score takes the corner, as
+   Ascension and Xenith take it for their own badges, which already hide
+   Stash's banner while they are enabled. */
+.scene-card-link:has(> .cherrypick-score-banner)
+  > .rating-banner:not(.cherrypick-score-banner) {
+  display: none;
+}
+
+.grid-card:hover .rating-banner.cherrypick-score-banner {
+  opacity: 1;
+}
+
+.cherrypick-score-banner .cherrypick-star {
+  font-size: 0.7em;
+  margin-left: 0.15em;
+  vertical-align: 0.1em;
+}

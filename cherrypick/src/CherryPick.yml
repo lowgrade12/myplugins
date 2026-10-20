@@ -1,0 +1,73 @@
+name: Cherry Pick
+description: Learns what you like from your ratings and plays. A For you row, Your score on scenes you haven't rated, More like this and performer brackets.
+version: 0.3.0
+url: https://github.com/lowgrade12/myplugins/tree/main/cherrypick
+ui:
+  javascript:
+    - cherrypick.js
+  css:
+    - cherrypick.css
+  # StashDB lookups go from the browser to StashDB with the user's own key,
+  # only when a StashDB stash-box is set up in Stash.
+  csp:
+    connect-src:
+      - https://stashdb.org
+# Stash shows a setting nobody has touched as off, so Cherry Pick writes the
+# defaults (src/js/storage/settings.js) the first time it loads.
+settings:
+  watchThis:
+    displayName: Watch This
+    description: Replaces Cherry Pick's front-page rows with one scene, ready to play.
+    type: BOOLEAN
+  showForYou:
+    displayName: For you row
+    description: The first row on the front page.
+    type: BOOLEAN
+  showFollowRows:
+    displayName: Rows that follow your watching
+    description: '"More with..." and "Back to..." after For you, only when your recent watching calls for them.'
+    type: BOOLEAN
+  showHallOfFame:
+    displayName: Hall of Fame row
+    description: Your bracket champions on the front page.
+    type: BOOLEAN
+  showMoreLikeThis:
+    displayName: More like this
+    description: 'Under the player on scene pages: In your library, then Not in your library.'
+    type: BOOLEAN
+  outOfLibrary:
+    displayName: Show scenes you don't have
+    description: StashDB scenes in More like this and on performer pages (needs a StashDB key).
+    type: BOOLEAN
+  badges:
+    displayName: Score badges on cards
+    description: Your score in the rating corner of scenes you haven't rated, with the reason on hover.
+    type: BOOLEAN
+  sceneLine:
+    displayName: Your score on scene pages
+    description: '"likely 4★ for you" beside the stars.'
+    type: BOOLEAN
+  medals:
+    displayName: Crowns and medals on performer cards
+    description: Bracket champions and finalists.
+    type: BOOLEAN
+  performerLine:
+    displayName: For you line in performer details
+    description: How you rate their scenes and how they do in your brackets.
+    type: BOOLEAN
+  relativeBadges:
+    displayName: Relative badge style
+    description: 'Off: a likely rating (~4.5★). On: where it ranks among your unrated scenes (Top 10%).'
+    type: BOOLEAN
+  excludedTags:
+    displayName: Tags to keep out of my picks
+    description: Comma-separated tag names. Scenes with any of them never appear in Cherry Pick's rows.
+    type: STRING
+  learnFromMatches:
+    displayName: Learn from Ascension, HotOrNot and Xenith matches
+    description: Each match those plugins recorded counts as half a bracket pick, leaving out skips, draws and anything not in your library. Off, only your own ratings, plays and brackets teach Cherry Pick.
+    type: BOOLEAN
+  autoApply:
+    displayName: Apply bracket ratings automatically
+    description: "On: closing a bracket's champion screen sets the ratings it found, with Undo on Cherry Pick's page. Off: Apply to my ratings shows them first. Starts off while Ascension, HotOrNot, Xenith or Restash's mirror manages your ratings."
+    type: BOOLEAN

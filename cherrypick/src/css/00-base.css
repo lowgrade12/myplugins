@@ -1,0 +1,6 @@
+/*
+ * Cherry Pick's CSS is layout only: position, size and spacing. Colours,
+ * fonts and backgrounds come from Stash's own classes and Bootstrap's
+ * (btn-primary, text-muted, badge-secondary), so any Stash theme restyles the
+ * plugin. Every class starts with .cherrypick-.
+ */

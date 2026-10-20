@@ -109,3 +109,6 @@ venv.bak/
 # PornPics generated state
 plugins/stash-ppics/state/*.json
 plugins/stash-ppics/state/imports/*.json
+
+# Cherry Pick source dependencies
+cherrypick/node_modules/

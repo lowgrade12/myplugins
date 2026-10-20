@@ -1,0 +1,72 @@
+/* Beside the scene page's rating: the score line and Don't learn, on one
+   line. Stash's toolbar may then wrap its buttons onto a second line; on a
+   phone, Don't learn wraps under the score line. */
+.scene-toolbar:has(.cherrypick-score-line) {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.cherrypick-score-line {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  margin-left: 0.4rem;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.cherrypick-line-button.btn {
+  padding: 0 0.25rem;
+  text-decoration: none;
+}
+
+.cherrypick-rate-more {
+  padding: 0 0.25rem;
+}
+
+.cherrypick-line-popover {
+  min-width: 16rem;
+}
+
+.cherrypick-line-popover .d-block + .d-block {
+  margin-top: 0.3rem;
+}
+
+/* More like this, under the player: two labelled rows under one heading. */
+.cherrypick-more-like-this {
+  flex: 0 0 100%;
+  max-width: 100%;
+  order: 99;
+  padding: 0 15px 1rem;
+}
+
+/* Stash draws a row's arrows outside its slider, 20px to the left and 25px
+   to the right, and its front page leaves room for them in its container's
+   padding. More like this spans the page, so its slider makes the room
+   itself, and only when it has arrows: touch screens get none. */
+.cherrypick-more-like-this .slick-slider:has(> .slick-arrow) {
+  margin: 0 20px;
+}
+
+/* Below Stash's xl breakpoint the scene's tabs come before More like this.
+   Stash caps their box at the window's height and lets the rest spill out,
+   which is harmless with nothing after it, but More like this would sit on
+   the spilled performer cards, so the box takes its content's height. */
+@media (width <= 1199.98px) {
+  .row:has(> .cherrypick-more-like-this) > .scene-tabs {
+    max-height: none;
+  }
+}
+
+.cherrypick-more-like-this .recommendation-row .recommendation-row-head h2 {
+  font-size: 1rem;
+  text-transform: none;
+}
+
+.cherrypick-connect-line {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 0.25rem;
+}
