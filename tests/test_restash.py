@@ -29,6 +29,7 @@ except ImportError:
 
 import algorithm  # noqa: E402
 import config  # noqa: E402
+import models  # noqa: E402
 import ratings_backup  # noqa: E402
 import restash  # noqa: E402
 import state  # noqa: E402
@@ -205,6 +206,104 @@ class JitterAndQuantileTest(unittest.TestCase):
         self.assertAlmostEqual(algorithm.percentile_from_quantiles(500.0, q), 0.5, delta=0.01)
         self.assertEqual(algorithm.percentile_from_quantiles(-5.0, q), 0.0)
         self.assertEqual(algorithm.percentile_from_quantiles(5000.0, q), 1.0)
+
+
+def _scene_score(sid, pct, n_events=0):
+    return models.SceneScore(id=sid, raw=pct, restash_score=algorithm.to_restash_score(pct),
+                             percentile=pct, n_events=n_events, wildcard=False,
+                             components={})
+
+
+def _library_scores(n):
+    return {str(i): _scene_score(str(i), i / (n - 1)) for i in range(n)}
+
+
+class WildcardPlacementTest(unittest.TestCase):
+    def test_fixed_count_lands_just_under_top_rank_at_scale(self):
+        cfg = config.Settings()
+        scores = _library_scores(144_500)
+        real_desc = sorted((s.restash_score for s in scores.values()), reverse=True)
+        algorithm._apply_wildcards(scores, cfg, "2026-10-19")
+        wild = [s for s in scores.values() if s.wildcard]
+        self.assertEqual(len(wild), cfg.wildcard_count)
+        floor = real_desc[cfg.wildcard_top_rank + cfg.wildcard_count]
+        for s in wild:
+            self.assertTrue(cfg.wildcard_pool_low <= s.percentile <= cfg.wildcard_pool_high)
+            self.assertGreaterEqual(s.restash_score, floor)
+        # the old 85-95 band sat thousands of ranks down at this size
+        self.assertGreater(sum(1 for v in real_desc if v > 95), 5000)
+        self.assertTrue(all(s.restash_score > 95 for s in wild))
+
+    def test_small_library_places_by_rank(self):
+        cfg = config.Settings(wildcard_count=5, wildcard_top_rank=10)
+        scores = _library_scores(1000)
+        algorithm._apply_wildcards(scores, cfg, "2026-10-19")
+        real = sorted((s.restash_score for s in scores.values() if not s.wildcard),
+                      reverse=True)
+        wild = sorted((s.restash_score for s in scores.values() if s.wildcard),
+                      reverse=True)
+        self.assertEqual(wild, sorted(real[9:14], reverse=True))
+
+    def test_count_zero_disables_and_pool_caps(self):
+        scores = _library_scores(100)
+        algorithm._apply_wildcards(scores, config.Settings(wildcard_count=0), "d")
+        self.assertFalse(any(s.wildcard for s in scores.values()))
+        algorithm._apply_wildcards(scores, config.Settings(wildcard_count=1000), "d")
+        pool = sum(1 for s in scores.values() if 0.40 <= s.percentile <= 0.70)
+        self.assertEqual(sum(1 for s in scores.values() if s.wildcard), pool)
+
+    def test_plugin_settings_map(self):
+        cfg = config.Settings.from_plugin_settings({"wildcardCount": 7,
+                                                    "wildcardTopRank": "30"})
+        self.assertEqual((cfg.wildcard_count, cfg.wildcard_top_rank), (7, 30))
+
+
+class PerformerTermsTest(unittest.TestCase):
+    NOW = datetime(2026, 10, 19, tzinfo=timezone.utc)
+
+    def _scene(self, sid, pid, played_days_ago=None):
+        plays = ([self.NOW - timedelta(days=played_days_ago)]
+                 if played_days_ago is not None else [])
+        return models.SceneData(
+            id=sid, title=sid, play_history=plays, o_history=[],
+            play_count=len(plays), o_counter=0, play_duration=1800.0 * len(plays),
+            resume_time=None, last_played_at=plays[0] if plays else None,
+            file_duration=1800.0, height=1080, marker_count=0, organized=False,
+            date=None, created_at=self.NOW - timedelta(days=400), rating100=None,
+            tag_ids=[], performer_ids=[pid], studio_id=None, custom_fields={},
+            has_file=True)
+
+    def _perf(self, pid):
+        return models.PerformerData(id=pid, name=pid, favorite=False, rating100=None,
+                                    o_counter=0, scene_count=0, tag_ids=[],
+                                    created_at=self.NOW - timedelta(days=400),
+                                    custom_fields={})
+
+    def _score(self, scenes, scene_scores, cfg):
+        perfs = [self._perf(p) for p in sorted({s.performer_ids[0] for s in scenes})]
+        aff = {"performers": {}, "tags": {}, "studios": {}}
+        return algorithm.score_performers(perfs, scenes, scene_scores, aff, cfg, self.NOW)
+
+    def test_fresh_term_is_normalized_by_rediscovery_bonus(self):
+        scenes = [self._scene("a", "p1", played_days_ago=1000),
+                  self._scene("b", "p2", played_days_ago=1)]
+        scores = {"a": _scene_score("a", 0.5, 1), "b": _scene_score("b", 0.5, 1)}
+        for bonus in (0.25, 0.40, 1.0):
+            out = self._score(scenes, scores, config.Settings(rediscovery_bonus=bonus))
+            self.assertAlmostEqual(out["p1"].components["fresh"], 1.0)
+            self.assertAlmostEqual(out["p2"].components["fresh"], 0.0)
+
+    def test_wildcard_override_does_not_inflate_performer(self):
+        cfg = config.Settings()
+        scenes = [self._scene(f"s{i}", f"p{i % 4}") for i in range(40)]
+        scores = {s.id: _scene_score(s.id, i / 39) for i, s in enumerate(scenes)}
+        before = self._score(scenes, scores, cfg)
+        for sid in ("s20", "s21", "s22"):          # mid-pack scenes of p0..p2
+            scores[sid].restash_score, scores[sid].wildcard = 99, True
+        after = self._score(scenes, scores, cfg)
+        for pid in before:
+            self.assertEqual(before[pid].raw, after[pid].raw)
+            self.assertEqual(before[pid].restash_score, after[pid].restash_score)
 
 
 class RefreshTest(TempPathsMixin, unittest.TestCase):

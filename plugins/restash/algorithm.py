@@ -467,23 +467,30 @@ def _last_engagement(scene: models.SceneData) -> datetime | None:
 
 def _apply_wildcards(scores: dict[str, models.SceneScore], cfg: Settings,
                      date_seed: str) -> None:
-    """D4: date-seeded override of a few low-confidence mid-pack scenes into 85–95.
-    Only the chosen scenes change; everyone else keeps their percentile rank."""
-    lo_b, hi_b = cfg.wildcard_band_low, cfg.wildcard_band_high
+    """D4: date-seeded override of a few low-confidence mid-pack scenes so they
+    surface near the top of a descending sort. Placement is by RANK, not a fixed
+    score band: wildcard i takes the score of the real scene at rank
+    wildcard_top_rank + i, so it lands just under the top N real scenes whatever
+    the library size. Only the chosen scenes change (their percentile is kept);
+    everyone else keeps their percentile rank."""
     lo_p, hi_p = cfg.wildcard_pool_low, cfg.wildcard_pool_high
     pool = [s for s in scores.values()
             if lo_p <= s.percentile <= hi_p
             and s.n_events <= cfg.wildcard_low_conf_max_events]
-    if not pool:
-        return
-    target = int(len(scores) * cfg.wildcard_percent / 100.0)
-    target = min(target, len(pool))
+    target = min(int(cfg.wildcard_count), len(pool))
     if target <= 0:
         return
     pool.sort(key=lambda s: daily_jitter(s.id, date_seed + ":wild", 1.0))
-    for s in pool[:target]:
-        spread = (daily_jitter(s.id, date_seed + ":band", 1.0) + 0.5)  # [0,1)
-        s.restash_score = int(round(lo_b + spread * (hi_b - lo_b)))
+    chosen = pool[:target]
+    chosen_ids = {s.id for s in chosen}
+    real = sorted((s.restash_score for s in scores.values() if s.id not in chosen_ids),
+                  reverse=True)
+    if not real:
+        return
+    top = max(1, int(cfg.wildcard_top_rank))
+    for i, s in enumerate(chosen):
+        rank = min(top + i, len(real))          # 1-based rank among real scenes
+        s.restash_score = real[rank - 1]
         s.wildcard = True
         s.components["wildcard"] = 1.0
 
@@ -507,16 +514,19 @@ def score_performers(performers: list[models.PerformerData],
     # shrunk toward the population mean in pass 2 (D12) once that mean is known.
     for p in performers:
         their = by_perf.get(p.id, [])
-        # term: best material (mean top-5 restash_score / 100) → [0,1], pre-shrinkage
-        scene_vals = [scene_scores[s.id].restash_score for s in their
+        # term: best material (mean top-5 scene percentile) → [0,1], pre-shrinkage.
+        # Percentile, not restash_score: the score carries the date-seeded wildcard
+        # override, which must not inflate a performer for a day.
+        scene_vals = [scene_scores[s.id].percentile for s in their
                       if s.id in scene_scores]
-        term_scenes_raw = (_mean_top_n([float(v) for v in scene_vals], 5) / 100.0)
+        term_scenes_raw = _mean_top_n(scene_vals, 5)
         # term: taste affinity, remapped [-1,1] → [0,1]
         term_affinity = (aff["performers"].get(p.id, 0.0) + 1.0) / 2.0
         # term: freshness on performer's own last engagement → [0,1]
         last = _perf_last_engagement(their)
         d = age_days(last, now) if last else cfg.rediscovery_max_days
-        term_fresh = (freshness(d, cfg) + 0.9) / 1.15
+        # freshness() spans [-0.9, +rediscovery_bonus]; map that range onto [0,1]
+        term_fresh = (freshness(d, cfg) + 0.9) / (0.9 + cfg.rediscovery_bonus)
         # term: unwatched supply × affinity → [0,1]
         if their:
             unwatched = sum(1 for s in their if s.play_count == 0) / len(their)

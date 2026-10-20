@@ -124,8 +124,9 @@ def warmup_sweep():
 def scale_test():
     cfg = Settings()
     print("\n=== SCALE: scoring time + score distribution at large N (5% watched) ===")
-    print(f"{'N scenes':>9} {'time':>8} {'span':>10} {'distinct':>9} {'median':>7}")
-    for n in (5000, 20000, 50000):
+    print(f"{'N scenes':>9} {'time':>8} {'span':>10} {'distinct':>9} {'median':>7} "
+          f"{'wild#':>6} {'wildscore':>10} {'wildrank':>9}")
+    for n in (5000, 20000, 50000, 144500):
         rng = random.Random(7)
         scenes, _, _, _ = make_library(n, 0.05, rng)
         t0 = time.perf_counter()
@@ -133,9 +134,16 @@ def scale_test():
         ss = algorithm.score_scenes(scenes, cfg, NOW, "2026-06-05", aff=aff)
         dt = time.perf_counter() - t0
         sc = sorted(s.restash_score for s in ss.values())
+        wild = sorted(s.restash_score for s in ss.values() if s.wildcard)
+        # worst-case rank in a descending sort: every real scene tied or above
+        worst = max((sum(1 for s in ss.values() if not s.wildcard
+                         and s.restash_score >= w) for w in wild), default=0)
+        wild_span = f"{wild[0]}-{wild[-1]}" if wild else "-"
         print(f"{n:>9} {dt:>7.1f}s {f'{sc[0]}-{sc[-1]}':>10} "
-              f"{len(set(sc)):>9} {sc[len(sc)//2]:>7}")
+              f"{len(set(sc)):>9} {sc[len(sc)//2]:>7} "
+              f"{len(wild):>6} {wild_span:>10} {worst:>9}")
     print("\n  span/distinct = the 1–100 percentile spread stays smooth at scale")
+    print("  wildrank = worst-case descending-sort rank of a wildcard (ties lose)")
     print("  (scoring is in-memory CPU; the spec's <60s target is for the network read)")
 
 
