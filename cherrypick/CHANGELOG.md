@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- Bracket and Options are back beside the Performers and Scenes lists' toolbar, with the resume pill under it. 0.3.0 watched only the list's top levels for the toolbar, but Stash draws it several levels down, inside the sidebar pane, once the list has loaded, so the buttons never found their place. The whole list is watched again, checked at most once a frame.
+
 ## 0.3.1
 
 - "Not in your library" cards (on performer pages and in More like this) get a Whisparr button when the Whisparr Update plugin (0.10 or later) is installed and enabled. A click adds the scene to Whisparr, monitored, and starts a search; a scene already in Whisparr is set monitored and searched for again instead. The button also says what Whisparr has: Downloaded, Wanted (monitored, no file yet) or In Whisparr (not monitored). Cherry Pick asks Whisparr Update through Stash's runPluginOperation, so Whisparr's URL and API key stay in that plugin's settings on the server; a page's cards are looked up in one call.

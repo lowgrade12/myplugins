@@ -408,36 +408,25 @@ function useToolbarSlots(anchor, enabled) {
       ops.isConnected &&
       ops.parentElement.firstChild === ops &&
       pill.previousElementSibling?.classList.contains('filtered-list-toolbar')
-    // Watch only what can move the slots: the host's and the list root's
-    // own children (a list or toolbar re-rendered whole) and the toolbar's
-    // subtree. Not the list's cards: their previews and images change all
-    // the time, and the whole subtree would call this on every change.
-    let root = null
-    let toolbar = null
+    // Watch the whole list: Stash draws the toolbar several levels down
+    // (inside the sidebar pane) and only once the list has loaded, and can
+    // draw it again at any time. Changes come in batches, and the check is
+    // a few comparisons, done at most once a frame however many batches
+    // the cards' previews and images make.
+    let frame = 0
     const watch = new MutationObserver(() => {
-      if (!inPlace()) place()
-      observe()
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        if (!inPlace()) place()
+      })
     })
-    const observe = () => {
-      const r = findRoot(anchor.current)
-      const t = r?.querySelector('.filtered-list-toolbar') || null
-      if (r === root && t === toolbar) return
-      root = r
-      toolbar = t
-      watch.disconnect()
-      watch.observe(host, { childList: true })
-      if (root) watch.observe(root, { childList: true })
-      // the toolbar's own parent: the toolbar replaced, or the pill beside
-      // it removed
-      if (toolbar?.parentElement)
-        watch.observe(toolbar.parentElement, { childList: true })
-      if (toolbar) watch.observe(toolbar, { childList: true, subtree: true })
-    }
     place()
-    observe()
+    watch.observe(host, { childList: true, subtree: true })
     setSlots({ ops, pill })
     return () => {
       watch.disconnect()
+      cancelAnimationFrame(frame)
       ops.remove()
       pill.remove()
     }
