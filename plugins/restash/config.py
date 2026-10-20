@@ -7,11 +7,10 @@ _PLUGIN_KEY_MAP = {
     "cooldownDays": "cooldown_days",
     "freshWeight": "fresh_weight",
     "rediscoveryMaxDays": "rediscovery_max_days",
-    "wildcardPercent": "wildcard_percent",
+    "wildcardCount": "wildcard_count",
+    "wildcardTopRank": "wildcard_top_rank",
     "wildcardPoolLow": "wildcard_pool_low",
     "wildcardPoolHigh": "wildcard_pool_high",
-    "wildcardBandLow": "wildcard_band_low",
-    "wildcardBandHigh": "wildcard_band_high",
     "respectManualRatings": "respect_manual_ratings",
     "mirrorToRating100": "mirror_to_rating100",
     "excludeTagName": "exclude_tag_name",
@@ -34,7 +33,10 @@ class Settings:
     taste_half_life_days: float = 120.0
     cooldown_days: float = 14.0
     fresh_weight: float = 0.8
-    wildcard_percent: float = 1.0
+    # Wildcards: a fixed handful per day (not a library share), placed by rank just
+    # under the top `wildcard_top_rank` real scenes so they surface at any scale.
+    wildcard_count: int = 20
+    wildcard_top_rank: int = 50
     respect_manual_ratings: bool = False
     mirror_to_rating100: bool = False
     exclude_tag_name: str = "[Restash: Exclude]"
@@ -59,8 +61,6 @@ class Settings:
     # only reshuffles on period boundaries; 1 restores the old daily re-roll.
     jitter_period_days: float = 7.0
     wildcard_low_conf_max_events: int = 1
-    wildcard_band_low: float = 85.0
-    wildcard_band_high: float = 95.0
     wildcard_pool_low: float = 0.40
     wildcard_pool_high: float = 0.70
     favorite_affinity_bonus: float = 1.0

@@ -1,6 +1,6 @@
 name: Restash
 description: Computes a freshness score for scenes and performers into custom fields.
-version: 0.5.0
+version: 0.6.0
 url: https://github.com/lowgrade12/myplugins
 exec:
   - python
@@ -12,11 +12,10 @@ settings:
   freshWeight:          { displayName: Freshness strength, type: NUMBER, description: "Multiplier on the cooldown/rediscovery effect. Leave blank for the default (0.8)." }
   rediscoveryMaxDays:   { displayName: Rediscovery max days, type: NUMBER, description: "Days after cooldown where rediscovery bonus reaches its cap. Leave blank for the default (180)." }
   directHalfLifeDays:   { displayName: Direct-evidence half-life (days), type: NUMBER, description: "How long per-scene direct watch evidence lasts. Leave blank for the default (540)." }
-  wildcardPercent:      { displayName: Wildcard %, type: NUMBER, description: "Share of the library promoted as low-confidence wildcards each day. Leave blank for the default (1.0)." }
+  wildcardCount:        { displayName: Wildcard count, type: NUMBER, description: "How many low-confidence scenes are promoted as wildcards each day. 0 turns wildcards off. Leave blank for the default (20)." }
+  wildcardTopRank:      { displayName: Wildcard placement rank, type: NUMBER, description: "Wildcards take the scores of the real scenes ranked just below this many, so they surface near the top at any library size. Leave blank for the default (50)." }
   wildcardPoolLow:      { displayName: Wildcard pool low percentile, type: NUMBER, description: "Lower percentile bound for wildcard candidates. Leave blank for the default (0.40)." }
   wildcardPoolHigh:     { displayName: Wildcard pool high percentile, type: NUMBER, description: "Upper percentile bound for wildcard candidates. Leave blank for the default (0.70)." }
-  wildcardBandLow:      { displayName: Wildcard score band low, type: NUMBER, description: "Low score edge used when wildcard scenes are promoted. Leave blank for the default (85)." }
-  wildcardBandHigh:     { displayName: Wildcard score band high, type: NUMBER, description: "High score edge used when wildcard scenes are promoted. Leave blank for the default (95)." }
   perfScenesShrinkageK: { displayName: Performer scene shrinkage K, type: NUMBER, description: "Smoothing strength toward population prior for performers with sparse scene history. Leave blank for the default (5)." }
   perfWeightScenes:     { displayName: "Performer weight: scenes", type: NUMBER, description: "Weight of top scored scenes in performer rank blend. Leave blank for the default (0.40)." }
   perfWeightAffinity:   { displayName: "Performer weight: affinity", type: NUMBER, description: "Weight of performer affinity term in performer rank blend. Leave blank for the default (0.20)." }

@@ -10,6 +10,7 @@ Restash reads the behavioural log Stash keeps for every Scene and Performer — 
 - **Hook on scene creation** — scores each new scene immediately against the cached taste model
 - **"Disable Other Plugins" task** — can disable all other plugins before running to prevent interference, then re-enable them after
 - **Low write churn** — jitter re-rolls weekly and small score changes are not written, so a daily refresh touches a small fraction of the library
+- **Scale-aware wildcards** — a fixed handful of wildcards per day is placed by rank just under the top real scenes, so they surface in a descending sort even in very large libraries
 
 ## Install
 
@@ -41,7 +42,8 @@ Add this repository as a Stash plugin source:
 | Freshness strength | 0.8 | Multiplier on cooldown/rediscovery effect |
 | Rediscovery max days | 180 | Days after cooldown where rediscovery reaches cap |
 | Direct-evidence half-life (days) | 540 | Fade speed for per-scene direct watch evidence |
-| Wildcard % | 1.0 | Library share promoted as wildcards daily |
+| Wildcard count | 20 | Low-confidence scenes promoted as wildcards each day (0 = off) |
+| Wildcard placement rank | 50 | Wildcards take the scores of the real scenes ranked just below this many |
 | Performer scene shrinkage K | 5.0 | Smoothing strength for sparse performer histories |
 | Blend manual ratings | off | Nudge taste model from manual ratings |
 | Exclusion tag name | [Restash: Exclude] | Tag to exclude entities from scoring |
@@ -71,7 +73,7 @@ Add this repository as a Stash plugin source:
 2. Tune in passes:
    - freshness curve: cooldown/freshness/rediscovery window
    - taste memory: taste half-life + direct-evidence half-life
-   - exploration: wildcard share and pool/band ranges
+   - exploration: wildcard count, placement rank and pool range
    - performer blend: performer term weights + shrinkage
 3. Keep only changes that improve top-30 relevance while preserving rediscovery.
 4. Run **Recompute All** to lock in a new baseline, then use **Quick Refresh** daily.
