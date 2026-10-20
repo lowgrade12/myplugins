@@ -988,11 +988,10 @@ async function fetchAndApplyDeceasedStyling(queue) {
   const ids = queue.map((item) => item.id);
   try {
     const result = await graphqlQuery(
+      // findPerformers' own ids argument: PerformerFilterType has no id
+      // field, so filtering on one fails validation (HTTP 400).
       `query FindPerformersDeathDates($ids: [ID!]) {
-        findPerformers(
-          performer_filter: { id: { value: $ids, modifier: INCLUDES } }
-          filter: { per_page: -1 }
-        ) {
+        findPerformers(ids: $ids, filter: { per_page: -1 }) {
           performers { id death_date }
         }
       }`,
