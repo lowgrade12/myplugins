@@ -1,4 +1,5 @@
 from __future__ import annotations
+import bisect
 import hashlib
 import math
 import statistics
@@ -89,6 +90,17 @@ def novelty(library_age_days: float, cfg: Settings) -> float:
     return cfg.novelty_strength * (0.5 ** (library_age_days / cfg.novelty_half_life_days))
 
 
+def jitter_seed(now: datetime, date_seed: str, cfg: Settings) -> str:
+    """Seed for the per-entity jitter. With jitter_period_days > 1 the seed only
+    changes on period boundaries (epoch-day buckets), so most scores hold still
+    between them instead of re-rolling every day; <= 1 keeps the daily seed."""
+    period = int(cfg.jitter_period_days)
+    if period <= 1:
+        return date_seed
+    epoch_day = int(now.timestamp() // 86400)
+    return f"p{period}:{epoch_day // period}"
+
+
 def daily_jitter(entity_id: str, date_seed: str, amplitude: float) -> float:
     digest = hashlib.sha256(f"{entity_id}:{date_seed}".encode()).digest()
     unit = int.from_bytes(digest[:8], "big") / 2 ** 64   # [0, 1)
@@ -120,6 +132,27 @@ def percentiles(values: list[float]) -> list[float]:
 
 def to_restash_score(percentile: float) -> int:
     return max(1, round(100 * percentile))
+
+
+def raw_quantiles(values: list[float], n: int = 1001) -> list[float]:
+    """n evenly spaced quantiles of `values` (sorted), cached so a single new scene
+    can be placed in the library distribution without re-reading the library."""
+    if not values:
+        return []
+    ordered = sorted(values)
+    last = len(ordered) - 1
+    return [ordered[round(i * last / (n - 1))] for i in range(n)]
+
+
+def percentile_from_quantiles(raw: float, quantiles: list[float]) -> float:
+    """Approximate percentile in [0,1] of `raw` against cached quantiles."""
+    if not quantiles:
+        return 0.5
+    if len(quantiles) == 1:
+        return 1.0 if raw >= quantiles[0] else 0.0
+    lo = bisect.bisect_left(quantiles, raw)
+    hi = bisect.bisect_right(quantiles, raw)
+    return clamp(((lo + hi) / 2.0) / len(quantiles), 0.0, 1.0)
 
 
 def affinity_raw(value_sums: dict[str, float],
@@ -336,25 +369,15 @@ def scene_base(scene: models.SceneData, aff: dict[str, dict],
             "n_events": ne}
 
 
-def _max_dt(a: datetime | None, b: datetime | None) -> datetime | None:
-    cands = [x for x in (a, b) if x is not None]
-    return max(cands) if cands else None
-
-
 def finalize_from_base(scene_id: str, base: float, n_events: int,
                        last_engagement: datetime | None,
                        created_at: datetime, now: datetime, date_seed: str,
-                       cfg: Settings, watched_since: bool = False) -> tuple[float, dict]:
-    """Apply the wall-clock tail (freshness/novelty + daily jitter) to a
-    pre-freshness `base`. Single source of truth shared by the full path
-    (score_scenes) and the refresh path (refresh_scene_scores).
-
-    `watched_since` forces the freshness branch even when n_events==0 — used by
-    refresh when a scene cached as never-watched has been played since the full run.
-    Returns (final_raw, extra_components) where extra holds fresh/fresh_d/novelty/
-    jitter/raw to merge into the caller's components dict."""
+                       cfg: Settings) -> tuple[float, dict]:
+    """Apply the wall-clock tail (freshness/novelty + jitter) to a pre-freshness
+    `base`. Returns (final_raw, extra_components) where extra holds fresh/fresh_d/
+    novelty/jitter/raw to merge into the caller's components dict."""
     extra: dict = {}
-    if n_events == 0 and not watched_since:
+    if n_events == 0:
         nov = novelty(age_days(created_at, now), cfg)
         final = base + nov
         extra["fresh"] = 0.0
@@ -367,66 +390,31 @@ def finalize_from_base(scene_id: str, base: float, n_events: int,
         extra["fresh"] = f
         extra["fresh_d"] = d
         extra["novelty"] = 0.0
-    jit = daily_jitter(scene_id, date_seed, cfg.jitter_amplitude)
+    jit = daily_jitter(scene_id, jitter_seed(now, date_seed, cfg), cfg.jitter_amplitude)
     extra["jitter"] = jit
     final += jit
     extra["raw"] = final
     return final, extra
 
 
-def refresh_scene_scores(cached_scenes: dict, current_light: dict, cfg: Settings,
-                         now: datetime, date_seed: str) -> dict[str, models.SceneScore]:
-    """Replay the wall-clock tail from cached per-scene `base`. Scores only ids
-    present in BOTH the cache and the current (lightweight) library read.
-
-    cached_scenes: {id: {base, n_events, created_at(dt), last_engagement(dt|None),
-                         perf_ids}}
-    current_light: {id: {last_played_at(dt|None), play_count, o_counter, custom_fields}}
-    """
-    pre: dict[str, dict] = {}
-    raw_values: list[float] = []
-    ids: list[str] = []
-    for sid, c in cached_scenes.items():
-        cur = current_light.get(sid)
-        if cur is None:
-            continue   # dropped from the library since the full run
-        last_eng = _max_dt(c.get("last_engagement"), cur.get("last_played_at"))
-        watched_since = (cur.get("play_count", 0) > 0 or cur.get("o_counter", 0) > 0)
-        final, extra = finalize_from_base(
-            sid, c["base"], c["n_events"], last_eng, c["created_at"],
-            now, date_seed, cfg, watched_since=watched_since)
-        comp = {"base": c["base"], "n_events": c["n_events"]}
-        comp.update(extra)
-        pre[sid] = comp
-        raw_values.append(final)
-        ids.append(sid)
-
-    pcts = percentiles(raw_values)
-    scores: dict[str, models.SceneScore] = {}
-    for idx, sid in enumerate(ids):
-        comp = pre[sid]
-        scores[sid] = models.SceneScore(
-            id=sid, raw=comp["raw"], restash_score=to_restash_score(pcts[idx]),
-            percentile=pcts[idx], n_events=comp["n_events"], wildcard=False,
-            components=comp)
-    _apply_wildcards(scores, cfg, date_seed)
-    return scores
-
-
 def score_scenes(scenes: list[models.SceneData], cfg: Settings, now: datetime,
                  date_seed: str, favorites: set[str] | None = None,
                  ratings: dict[str, int] | None = None,
                  aff: dict[str, dict] | None = None,
-                 scene_ratings: dict[str, int] | None = None) -> dict[str, models.SceneScore]:
+                 scene_ratings: dict[str, int] | None = None,
+                 context: dict | None = None,
+                 wildcards: bool = True) -> dict[str, models.SceneScore]:
+    """Score `scenes`. `context` (from library_context) supplies library-wide tag
+    counts and the duration sweet spot when `scenes` is not the whole library (the
+    new-scene hook); `wildcards=False` skips the date-seeded promotion."""
     favorites = favorites or set()
     ratings = ratings or {}
     if aff is None:
         aff = build_affinities(scenes, now, cfg, favorites, ratings)
-    tag_counts: dict[str, int] = {}
-    for s in scenes:
-        for t in s.tag_ids:
-            tag_counts[t] = tag_counts.get(t, 0) + 1
-    dur_median, dur_scale = duration_sweet_spot(scenes)
+    if context is None:
+        context = library_context(scenes)
+    tag_counts = context["tag_counts"]
+    dur_median, dur_scale = context["dur_median"], context["dur_scale"]
 
     pre: dict[str, dict] = {}
     raw_values: list[float] = []
@@ -451,8 +439,19 @@ def score_scenes(scenes: list[models.SceneData], cfg: Settings, now: datetime,
             id=sid, raw=comp["raw"], restash_score=to_restash_score(pcts[idx]),
             percentile=pcts[idx], n_events=comp["n_events"], wildcard=False,
             components=comp)
-    _apply_wildcards(scores, cfg, date_seed)
+    if wildcards:
+        _apply_wildcards(scores, cfg, date_seed)
     return scores
+
+
+def library_context(scenes: list[models.SceneData]) -> dict:
+    """Library-wide inputs to scene_base that a single scene cannot supply."""
+    tag_counts: dict[str, int] = {}
+    for s in scenes:
+        for t in s.tag_ids:
+            tag_counts[t] = tag_counts.get(t, 0) + 1
+    dur_median, dur_scale = duration_sweet_spot(scenes)
+    return {"tag_counts": tag_counts, "dur_median": dur_median, "dur_scale": dur_scale}
 
 
 def _last_engagement(scene: models.SceneData) -> datetime | None:
@@ -464,11 +463,6 @@ def _last_engagement(scene: models.SceneData) -> datetime | None:
     if scene.o_history:
         candidates.append(max(scene.o_history))
     return max(candidates) if candidates else None
-
-
-def scene_last_engagement(scene: models.SceneData) -> datetime | None:
-    """Public accessor for a scene's latest engagement timestamp."""
-    return _last_engagement(scene)
 
 
 def _apply_wildcards(scores: dict[str, models.SceneScore], cfg: Settings,
@@ -492,23 +486,6 @@ def _apply_wildcards(scores: dict[str, models.SceneScore], cfg: Settings,
         s.restash_score = int(round(lo_b + spread * (hi_b - lo_b)))
         s.wildcard = True
         s.components["wildcard"] = 1.0
-
-
-def rerank_scene_scores(scores: dict[str, models.SceneScore], cfg: Settings,
-                        date_seed: str) -> dict[str, models.SceneScore]:
-    """Recompute percentile/rating from raw across the provided score set, then
-    re-apply the date-seeded wildcard promotion."""
-    ids = list(scores.keys())
-    raws = [scores[sid].raw for sid in ids]
-    pcts = percentiles(raws)
-    for idx, sid in enumerate(ids):
-        sc = scores[sid]
-        sc.percentile = pcts[idx]
-        sc.restash_score = to_restash_score(pcts[idx])
-        sc.wildcard = False
-        sc.components.pop("wildcard", None)
-    _apply_wildcards(scores, cfg, date_seed)
-    return scores
 
 
 def score_performers(performers: list[models.PerformerData],

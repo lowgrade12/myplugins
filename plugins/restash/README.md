@@ -7,8 +7,9 @@ Restash reads the behavioural log Stash keeps for every Scene and Performer — 
 ## Modifications from upstream
 
 - **Available from this repo** — install via this plugin source URL
-- **Hooks on Scene/Performer creation** — automatically scores new entities when they're added
+- **Hook on scene creation** — scores each new scene immediately against the cached taste model
 - **"Disable Other Plugins" task** — can disable all other plugins before running to prevent interference, then re-enable them after
+- **Low write churn** — jitter re-rolls weekly and small score changes are not written, so a daily refresh touches a small fraction of the library
 
 ## Install
 
@@ -46,6 +47,8 @@ Add this repository as a Stash plugin source:
 | Exclusion tag name | [Restash: Exclude] | Tag to exclude entities from scoring |
 | Mirror to rating100 | off | Also write score to native rating (destructive) |
 | Disable other plugins before run | off | Disable all other plugins during scoring tasks |
+| Jitter period (days) | 7 | How often the ordering jitter is re-rolled (1 = daily) |
+| Minimum score change to write | 3 | Skip writes for smaller score moves; wildcard changes always write (1 = write every change) |
 
 ## Tasks
 
@@ -53,11 +56,11 @@ Add this repository as a Stash plugin source:
 |---|---|
 | **Dry Run Report** | Scores everything, writes nothing, logs top-30 breakdown + tuning checks |
 | **Recompute All** | Full rebuild + write scores to custom_fields |
-| **Quick Refresh** | Fast daily re-score from cached taste model; also scores newly added scenes immediately |
+| **Quick Refresh** | Daily re-score of everything from live watch data against the cached taste model (affinities not rebuilt) |
 | **Clear Restash Data** | Remove all restash_* custom fields |
 | **Backup Ratings** | Snapshot native rating100 values |
 | **Restore Ratings** | Revert rating100 from backup |
-| **Disable Other Plugins** | Manually disable all other plugins |
+| **Disable Other Plugins** | Manually disable all other plugins; the next Dry Run / Recompute All / Quick Refresh re-enables them |
 
 ## Tuning workflow
 
@@ -75,8 +78,13 @@ Add this repository as a Stash plugin source:
 
 ## Hooks (automatic triggers)
 
-- **Scene.Create.Post** — runs a refresh when a new scene is created
-- **Performer.Create.Post** — runs a refresh when a new performer is created
+- **Scene.Create.Post** — scores just the new scene: its raw score is computed from the cached taste model and placed against the library score distribution saved by the last Recompute All / Quick Refresh. Nothing else is re-read or rewritten, so large scans stay cheap. If no valid cache exists yet, the scene is left for the next Quick Refresh.
+
+New performers have no scenes yet, so they're scored by the next Quick Refresh.
+
+## Disabled-plugin recovery
+
+Plugins that Restash disables are recorded in `.restash_disabled_plugins.json` before they are switched off. Every Dry Run / Recompute All / Quick Refresh re-enables everything in that file when it finishes, so plugins come back even after a cancelled or crashed run, or after the standalone **Disable Other Plugins** task.
 
 ## License
 

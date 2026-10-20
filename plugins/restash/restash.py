@@ -5,7 +5,6 @@ import sys
 
 import algorithm
 import config
-import models
 import ratings_backup
 import report
 import state
@@ -29,6 +28,10 @@ DORMANT_FAVORITE_DAYS = 90.0
 
 
 # --- Plugin management (disable/re-enable other plugins) ---
+#
+# Plugins Restash disables are recorded in a file BEFORE the mutation, so a run
+# that is cancelled or crashes mid-way still leaves a record; the next scoring task
+# (Dry Run / Recompute All / Quick Refresh) re-enables everything listed there.
 
 _PLUGINS_WITH_STATUS_QUERY = """
 query { plugins { id enabled } }
@@ -40,21 +43,38 @@ mutation SetPluginsEnabled($enabledMap: BoolMap!) {
 }
 """
 
+SCORING_MODES = ("dry", "full", "refresh")
+
+
+def _disabled_plugins_path() -> pathlib.Path:
+    return pathlib.Path(__file__).parent / ".restash_disabled_plugins.json"
+
+
+def _load_disabled_record() -> list[str]:
+    try:
+        data = json.loads(_disabled_plugins_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [str(pid) for pid in data] if isinstance(data, list) else []
+
+
+def _save_disabled_record(plugin_ids: list[str]) -> None:
+    path = _disabled_plugins_path()
+    if plugin_ids:
+        path.write_text(json.dumps(sorted(set(plugin_ids))), encoding="utf-8")
+    else:
+        path.unlink(missing_ok=True)
+
 
 def _get_plugins_status(stash) -> dict[str, bool]:
-    """Retrieve a map of plugin ID → enabled status."""
+    """Retrieve a map of plugin ID → enabled status ({} if the query fails)."""
     try:
         result = stash.call_GQL(_PLUGINS_WITH_STATUS_QUERY)
         plugins = (result or {}).get("plugins") or []
         return {p["id"]: p.get("enabled", True) for p in plugins if p.get("id")}
-    except Exception:
+    except Exception as exc:   # noqa: BLE001
+        log.warning(f"[Restash] Could not read the plugin list: {exc}")
         return {}
-
-
-def _get_disabled_plugins(stash) -> list[str]:
-    """Get the current list of disabled plugin IDs."""
-    status = _get_plugins_status(stash)
-    return [pid for pid, enabled in status.items() if not enabled]
 
 
 def _set_plugins_enabled(stash, enabled_map: dict[str, bool]) -> bool:
@@ -67,31 +87,41 @@ def _set_plugins_enabled(stash, enabled_map: dict[str, bool]) -> bool:
         return False
 
 
-def _disable_other_plugins(stash) -> list[str]:
-    """Disable all plugins except this one. Returns the list of plugins that were
-    previously enabled (so they can be re-enabled later)."""
+def _disable_other_plugins(stash) -> None:
+    """Disable all enabled plugins except this one, recording them for re-enable."""
     status = _get_plugins_status(stash)
-    # Plugins that are currently enabled and not us
     to_disable = [pid for pid, enabled in status.items()
                   if pid != PLUGIN_ID and enabled]
     if not to_disable:
         log.info("[Restash] No other plugins to disable.")
-        return []
-    enabled_map = {pid: False for pid in to_disable}
-    if _set_plugins_enabled(stash, enabled_map):
-        log.info(f"[Restash] Disabled {len(to_disable)} other plugin(s): "
-                 f"{', '.join(to_disable)}")
-    return to_disable
-
-
-def _reenable_plugins(stash, plugin_ids: list[str]) -> None:
-    """Re-enable the given plugins."""
-    if not plugin_ids:
         return
-    enabled_map = {pid: True for pid in plugin_ids}
-    if _set_plugins_enabled(stash, enabled_map):
-        log.info(f"[Restash] Re-enabled {len(plugin_ids)} plugin(s): "
-                 f"{', '.join(plugin_ids)}")
+    _save_disabled_record(_load_disabled_record() + to_disable)
+    if _set_plugins_enabled(stash, {pid: False for pid in to_disable}):
+        log.info(f"[Restash] Disabled {len(to_disable)} other plugin(s): "
+                 f"{', '.join(to_disable)}. They are re-enabled when the next "
+                 f"Dry Run / Recompute All / Quick Refresh finishes.")
+
+
+def _restore_disabled_plugins(stash) -> None:
+    """Re-enable every plugin Restash recorded as disabled — by this run, by the
+    standalone Disable Other Plugins task, or by an earlier run that died before
+    cleaning up. Plugins since re-enabled by hand or uninstalled are skipped; the
+    record is kept if re-enabling fails so the next run retries."""
+    recorded = _load_disabled_record()
+    if not recorded:
+        return
+    status = _get_plugins_status(stash)
+    if not status:
+        log.warning(f"[Restash] Could not re-enable {len(recorded)} plugin(s) "
+                    f"({', '.join(recorded)}); will retry on the next scoring run.")
+        return
+    to_enable = [pid for pid in recorded if status.get(pid) is False]
+    if to_enable and not _set_plugins_enabled(stash, {pid: True for pid in to_enable}):
+        return
+    _save_disabled_record([])
+    if to_enable:
+        log.info(f"[Restash] Re-enabled {len(to_enable)} plugin(s): "
+                 f"{', '.join(to_enable)}")
 
 
 # --- Input parsing ---
@@ -121,24 +151,59 @@ def build_settings(plugin_cfg: dict | None, args: dict) -> config.Settings:
 # --- Hook handling ---
 
 def _handle_hook(payload: dict) -> int:
-    """Handle hook triggers (Scene.Create.Post, Performer.Create.Post).
-    Runs a quick refresh to score the new entity."""
-    conn = payload.get("server_connection") or {}
-    stash = stash_io.connect(conn)
-    caps = stash_io.ensure_schema(stash)
-    plugin_cfg = stash_io.fetch_plugin_settings(stash, PLUGIN_ID)
-    settings = build_settings(plugin_cfg, {})
-
-    hook_context = payload.get("args", {}).get("hookContext", {})
+    """Scene.Create.Post: score just the new scene against the cached taste model
+    and cached library score distribution — one scene read and one write, never a
+    library re-read, so a scan importing thousands of scenes stays cheap. Without a
+    valid cache the scene is left for the next Quick Refresh / Recompute All."""
+    hook_context = (payload.get("args") or {}).get("hookContext") or {}
     hook_type = hook_context.get("type", "")
-    entity_id = str(hook_context.get("id", ""))
+    scene_id = str(hook_context.get("id") or "")
+    if hook_type != "Scene.Create.Post" or not scene_id:
+        log.debug(f"[Restash] hook: ignoring {hook_type or 'unknown'} event.")
+        return 0
 
-    log.info(f"[Restash] Hook fired: {hook_type} for entity {entity_id}")
+    stash = stash_io.connect(payload.get("server_connection") or {})
+    settings = build_settings(stash_io.fetch_plugin_settings(stash, PLUGIN_ID), {})
+    st = state.load_state(state.default_state_path())
+    ok, reason = state.is_valid(st, settings)
+    if not ok:
+        log.info(f"[Restash] hook: scene {scene_id} not scored ({reason}); the next "
+                 f"Quick Refresh / Recompute All will include it.")
+        return 0
 
-    # For hooks, run a refresh (the cache will make it fast if available)
-    # This ensures the new entity gets scored in context of the full library
-    settings.dry_run = False
-    return _run_refresh(stash, settings)
+    scene = stash_io.fetch_scene(stash, scene_id)
+    if scene is None or not scene.has_file:
+        log.info(f"[Restash] hook: scene {scene_id} missing or has no file; skipped.")
+        return 0
+    exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
+    if exclude_id is not None and exclude_id in scene.tag_ids:
+        return 0
+
+    now = stash_io.utcnow()
+    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    scene_ratings, _ = _manual_ratings(
+        settings,
+        live_scene={scene.id: scene.rating100} if scene.rating100 is not None else {},
+        live_perf={})
+    sc = algorithm.score_scenes([scene], settings, now, now.strftime("%Y-%m-%d"),
+                                aff=st["affinities"], scene_ratings=scene_ratings,
+                                context=st["context"], wildcards=False)[scene.id]
+    sc.percentile = algorithm.percentile_from_quantiles(sc.raw, st["raw_quantiles"])
+    sc.restash_score = algorithm.to_restash_score(sc.percentile)
+
+    scene_kw = {}
+    if settings.mirror_to_rating100:
+        if ratings_backup.backup_exists(ratings_backup.default_backup_path()):
+            scene_kw = {"current_ratings": {scene.id: scene.rating100}}
+        else:
+            # Never overwrite rating100 without a backup; the next scoring run
+            # creates one and mirrors this scene then.
+            settings.mirror_to_rating100 = False
+    stats = writer.write_scores(stash, "scene", {scene.id: sc},
+                                {scene.id: scene.custom_fields}, settings, now_iso,
+                                **scene_kw)
+    log.info(f"[Restash] hook: scored new scene {scene.id} → {sc.restash_score}.")
+    return 1 if stats["failed"] else 0
 
 
 # --- Main run logic ---
@@ -167,9 +232,9 @@ def run(payload: dict) -> int:
         return 0
 
     # Optionally disable other plugins before scoring tasks
-    previously_enabled = []
-    if settings.disable_plugins_before_run and mode in ("full", "refresh", "dry"):
-        previously_enabled = _disable_other_plugins(stash)
+    scoring = mode in SCORING_MODES
+    if scoring and settings.disable_plugins_before_run:
+        _disable_other_plugins(stash)
 
     try:
         if mode == "dry":
@@ -187,9 +252,14 @@ def run(payload: dict) -> int:
         log.error(f"[Restash] unknown mode '{mode}'.")
         return 1
     finally:
-        # Re-enable plugins after the run completes
-        if previously_enabled:
-            _reenable_plugins(stash, previously_enabled)
+        # Re-enable whatever Restash disabled, whether by this run's setting, a
+        # standalone Disable Other Plugins task, or an earlier interrupted run.
+        if scoring:
+            _restore_disabled_plugins(stash)
+
+
+def _dry_run_report_path() -> pathlib.Path:
+    return pathlib.Path(__file__).parent / "restash_dry_run.txt"
 
 
 def _run_dry(stash, settings: config.Settings) -> int:
@@ -232,7 +302,7 @@ def _run_dry(stash, settings: config.Settings) -> int:
                                     would_write=len(scene_scores) + len(performer_scores),
                                     skipped=0)
 
-    report_path = pathlib.Path(__file__).parent / "restash_dry_run.txt"
+    report_path = _dry_run_report_path()
     report_path.write_text(
         "\n\n".join([
             report.format_scene_report(scene_scores, titles, top_n=30),
@@ -252,6 +322,24 @@ def _run_dry(stash, settings: config.Settings) -> int:
 
 
 def _run_full(stash, settings: config.Settings) -> int:
+    return _score_and_write(stash, settings, cached_aff=None)
+
+
+def _run_refresh(stash, settings: config.Settings) -> int:
+    """Re-score every scene and performer from live data against the CACHED taste
+    model: plays/o-events since the last Recompute All count immediately and new
+    scenes are included, while affinities stay stable until the next Recompute
+    All. Falls back to a full recompute if the cache is missing or stale."""
+    st = state.load_state(state.default_state_path())
+    ok, reason = state.is_valid(st, settings)
+    if not ok:
+        log.info(f"[Restash] refresh: cache unusable ({reason}); running full recompute.")
+        return _run_full(stash, settings)
+    return _score_and_write(stash, settings, cached_aff=st["affinities"])
+
+
+def _score_and_write(stash, settings: config.Settings, cached_aff: dict | None) -> int:
+    label = "full" if cached_aff is None else "refresh"
     now = stash_io.utcnow()
     now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     date_seed = now.strftime("%Y-%m-%d")
@@ -275,19 +363,25 @@ def _run_full(stash, settings: config.Settings) -> int:
         live_scene={s.id: s.rating100 for s in kept_scenes if s.rating100 is not None},
         live_perf={p.id: p.rating100 for p in kept_performers if p.rating100 is not None})
 
-    aff = algorithm.build_affinities(kept_scenes, now, settings, favorites, perf_ratings)
+    if cached_aff is None:
+        aff = algorithm.build_affinities(kept_scenes, now, settings, favorites, perf_ratings)
+    else:
+        aff = cached_aff
+    context = algorithm.library_context(kept_scenes)
     scene_scores = algorithm.score_scenes(kept_scenes, settings, now, date_seed,
                                           favorites, perf_ratings, aff,
-                                          scene_ratings=scene_ratings)
+                                          scene_ratings=scene_ratings, context=context)
     performer_scores = algorithm.score_performers(kept_performers, kept_scenes,
                                                   scene_scores, aff, settings, now)
     log.progress(0.70)
 
-    scenes_cache = _build_scene_cache(kept_scenes, scene_scores)
     state.save_state(state.default_state_path(), settings=settings, affinities=aff,
-                     scenes=scenes_cache, written_at=now_iso)
-    log.info(f"[Restash] wrote taste-model cache ({len(scenes_cache)} scenes) "
-             f"to restash_state.json.")
+                     context=context,
+                     raw_quantiles=algorithm.raw_quantiles(
+                         [sc.raw for sc in scene_scores.values()]),
+                     written_at=now_iso)
+    log.info("[Restash] wrote taste-model cache to restash_state.json." if label == "full"
+             else "[Restash] updated library distribution in restash_state.json.")
 
     targeted = bool(settings.write_only_scene_ids)
     if targeted:
@@ -323,7 +417,7 @@ def _run_full(stash, settings: config.Settings) -> int:
     cleared = (writer.clear_scores(stash, "scene", drop_scene_ids, settings)
                + writer.clear_scores(stash, "performer", drop_perf_ids, settings))
 
-    log.info(f"[Restash] full: scenes written={s_stats['written']} "
+    log.info(f"[Restash] {label}: scenes written={s_stats['written']} "
              f"skipped={s_stats['skipped']}; performers written={p_stats['written']} "
              f"skipped={p_stats['skipped']}; excluded cleared={cleared}.")
     s_failed, p_failed = s_stats.get("failed", 0), p_stats.get("failed", 0)
@@ -361,227 +455,6 @@ def _run_clear(stash, settings: config.Settings) -> int:
     return 1 if failed else 0
 
 
-def _parse_cached_scenes(raw_scenes: dict) -> dict:
-    """ISO strings → datetimes for the cached per-scene replay data."""
-    out = {}
-    for sid, c in raw_scenes.items():
-        out[sid] = {
-            "base": c["base"],
-            "n_events": c["n_events"],
-            "created_at": stash_io._parse_dt(c.get("created_at")) or stash_io.utcnow(),
-            "last_engagement": stash_io._parse_dt(c.get("last_engagement")),
-            "perf_ids": [str(x) for x in c.get("perf_ids", [])],
-        }
-    return out
-
-
-def _scene_standins(corpus: dict, light_by_id: dict) -> list:
-    """Lightweight SceneData stand-ins so score_performers can run unchanged."""
-    out = []
-    for sid, c in corpus.items():
-        cur = light_by_id[sid]
-        last_eng = algorithm._max_dt(c.get("last_engagement"), cur.get("last_played_at"))
-        out.append(models.SceneData(
-            id=sid, title="", play_history=[], o_history=[],
-            play_count=cur.get("play_count", 0), o_counter=cur.get("o_counter", 0),
-            play_duration=0.0, resume_time=None, last_played_at=last_eng,
-            file_duration=None, height=None, marker_count=0, organized=False,
-            date=None, created_at=c["created_at"], rating100=None,
-            tag_ids=[], performer_ids=c["perf_ids"], studio_id=None,
-            custom_fields={}, has_file=True))
-    return out
-
-
-def _stable_created_at(light: dict):
-    created_at = light.get("created_at")
-    if created_at is not None:
-        return created_at
-    candidates = []
-    if light.get("last_played_at") is not None:
-        candidates.append(light["last_played_at"])
-    candidates.extend(light.get("play_history") or [])
-    candidates.extend(light.get("o_history") or [])
-    return min(candidates) if candidates else None
-
-
-def _light_scene_to_data(light: dict) -> models.SceneData | None:
-    created_at = _stable_created_at(light)
-    if created_at is None:
-        return None
-    return models.SceneData(
-        id=light["id"],
-        title="",
-        play_history=light.get("play_history") or [],
-        o_history=light.get("o_history") or [],
-        play_count=light.get("play_count", 0),
-        o_counter=light.get("o_counter", 0),
-        play_duration=float(light.get("play_duration") or 0.0),
-        resume_time=light.get("resume_time"),
-        last_played_at=light.get("last_played_at"),
-        file_duration=light.get("file_duration"),
-        height=light.get("height"),
-        marker_count=light.get("marker_count", 0),
-        organized=bool(light.get("organized")),
-        date=None,
-        created_at=created_at,
-        rating100=light.get("rating100"),
-        tag_ids=light.get("tag_ids") or [],
-        performer_ids=light.get("performer_ids") or [],
-        studio_id=light.get("studio_id"),
-        custom_fields=light.get("custom_fields") or {},
-        has_file=bool(light.get("has_file")),
-    )
-
-
-def _run_refresh(stash, settings: config.Settings) -> int:
-    now = stash_io.utcnow()
-    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    date_seed = now.strftime("%Y-%m-%d")
-
-    st = state.load_state(state.default_state_path())
-    ok, reason = state.is_valid(st, settings)
-    if not ok:
-        log.info(f"[Restash] refresh: cache unusable ({reason}); running full recompute.")
-        return _run_full(stash, settings)
-
-    log.progress(0.10)
-    light = stash_io.fetch_scenes_light(stash)
-    light_by_id = {s["id"]: s for s in light}
-    cached_scenes = _parse_cached_scenes(st["scenes"])
-
-    exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
-
-    def _scene_excluded(sid):
-        return (exclude_id is not None
-                and exclude_id in light_by_id.get(sid, {}).get("tag_ids", []))
-
-    corpus = {sid: c for sid, c in cached_scenes.items()
-              if sid in light_by_id and not _scene_excluded(sid)
-              and light_by_id[sid].get("has_file")}
-    added = [sid for sid, s in light_by_id.items()
-             if sid not in cached_scenes
-             and not _scene_excluded(sid)
-             and s.get("has_file")
-             and _stable_created_at(s) is not None]
-    dropped = [sid for sid in cached_scenes if sid not in light_by_id]
-    log.info(f"[Restash] refresh: light-read {len(light)} scenes; cache has "
-             f"{len(cached_scenes)}; scoring {len(corpus)} "
-             f"(exclude tag id={exclude_id}).")
-    if added:
-        log.info(f"[Restash] refresh: {len(added)} new scene(s) detected — "
-                 "including them in this refresh run.")
-    if dropped:
-        log.info(f"[Restash] refresh: {len(dropped)} cached scene(s) no longer in library.")
-    log.progress(0.45)
-
-    aff = st["affinities"]
-    scene_scores = algorithm.refresh_scene_scores(corpus, light_by_id, settings,
-                                                  now, date_seed)
-    if added:
-        added_scenes = []
-        for sid in added:
-            scene = _light_scene_to_data(light_by_id[sid])
-            if scene is not None:
-                added_scenes.append(scene)
-        scene_ratings, _ = _manual_ratings(
-            settings,
-            live_scene={sid: light_by_id[sid].get("rating100")
-                        for sid in added if light_by_id[sid].get("rating100") is not None},
-            live_perf={})
-        if added_scenes:
-            added_scores = algorithm.score_scenes(added_scenes, settings, now, date_seed,
-                                                  aff=aff, scene_ratings=scene_ratings)
-            scene_scores.update(added_scores)
-            scene_scores = algorithm.rerank_scene_scores(scene_scores, settings, date_seed)
-
-        merged_cache = {sid: c for sid, c in cached_scenes.items()
-                        if sid in light_by_id and not _scene_excluded(sid)
-                        and light_by_id[sid].get("has_file")}
-        for s in added_scenes:
-            sc = scene_scores.get(s.id)
-            if sc is None:
-                continue
-            merged_cache[s.id] = {
-                "base": sc.components.get("base"),
-                "n_events": sc.n_events,
-                "created_at": s.created_at,
-                "last_engagement": algorithm.scene_last_engagement(s),
-                "perf_ids": s.performer_ids,
-            }
-        state.save_state(
-            state.default_state_path(),
-            settings=settings,
-            affinities=aff,
-            scenes={sid: {
-                "base": c["base"],
-                "n_events": c["n_events"],
-                "created_at": _iso(c["created_at"]),
-                "last_engagement": _iso(c["last_engagement"]),
-                "perf_ids": c["perf_ids"],
-            } for sid, c in merged_cache.items()},
-            written_at=now_iso,
-        )
-        corpus = merged_cache
-        log.info(f"[Restash] refresh: merged {len(added_scenes)} new scene(s) into cache "
-                 f"(cache now {len(merged_cache)} scenes).")
-    stand_ins = _scene_standins(corpus, light_by_id)
-    log.progress(0.65)
-
-    all_performers = stash_io.fetch_performers(stash)
-    if exclude_id is not None:
-        performers = [p for p in all_performers if exclude_id not in p.tag_ids]
-    else:
-        performers = all_performers
-    perf_aff = {"performers": aff.get("performers", {})}
-    performer_scores = algorithm.score_performers(performers, stand_ins, scene_scores,
-                                                  perf_aff, settings, now)
-    log.progress(0.80)
-
-    existing_scene_cf = {sid: light_by_id[sid]["custom_fields"] for sid in scene_scores}
-    existing_perf_cf = {p.id: p.custom_fields for p in performers}
-    if settings.mirror_to_rating100:
-        _ensure_rating_backup(
-            {sid: light_by_id[sid].get("rating100") for sid in light_by_id
-             if light_by_id[sid].get("rating100") is not None},
-            {p.id: p.rating100 for p in performers if p.rating100 is not None})
-        scene_kw = {"current_ratings": {sid: light_by_id[sid].get("rating100")
-                                        for sid in scene_scores}}
-        perf_kw = {"current_ratings": {p.id: p.rating100 for p in performers}}
-    else:
-        scene_kw = perf_kw = {}
-    s_stats = writer.write_scores(stash, "scene", scene_scores, existing_scene_cf,
-                                  settings, now_iso, **scene_kw)
-    p_stats = writer.write_scores(stash, "performer", performer_scores, existing_perf_cf,
-                                  settings, now_iso, **perf_kw)
-    log.progress(0.90)
-
-    # Clear restash data from entities that now carry the exclude tag but still
-    # have restash custom fields (mirrors the drop logic in _run_full).
-    kept_scene_ids = set(scene_scores)
-    kept_perf_ids = {p.id for p in performers}
-    drop_scene_ids = [sid for sid, s in light_by_id.items()
-                      if sid not in kept_scene_ids
-                      and _has_restash(s.get("custom_fields", {}))]
-    drop_perf_ids = [p.id for p in all_performers
-                     if p.id not in kept_perf_ids and _has_restash(p.custom_fields)]
-    cleared = (writer.clear_scores(stash, "scene", drop_scene_ids, settings)
-               + writer.clear_scores(stash, "performer", drop_perf_ids, settings))
-
-    log.info(f"[Restash] refresh: scenes written={s_stats['written']} "
-             f"skipped={s_stats['skipped']}; performers written={p_stats['written']} "
-             f"skipped={p_stats['skipped']}; excluded cleared={cleared}.")
-    s_failed, p_failed = s_stats.get("failed", 0), p_stats.get("failed", 0)
-    if s_failed or p_failed:
-        log.error(f"[Restash] {s_failed} scene + {p_failed} performer update(s) were "
-                  f"rejected by the server (those IDs were NOT written); re-run to retry.")
-    clear_failed = (len(drop_scene_ids) + len(drop_perf_ids)) - cleared
-    if clear_failed:
-        log.error(f"[Restash] {clear_failed} excluded-entity clear(s) were rejected by "
-                  f"the server (restash_* keys remain on those IDs); re-run to retry.")
-    log.progress(1.0)
-    return 1 if (s_failed or p_failed or clear_failed) else 0
-
-
 def _has_restash(custom_fields: dict) -> bool:
     return any(k in (custom_fields or {}) for k in writer.RESTASH_KEYS)
 
@@ -609,27 +482,6 @@ def _manual_ratings(settings, *, live_scene: dict, live_perf: dict):
         if backup is not None:
             return dict(backup.get("scenes", {})), dict(backup.get("performers", {}))
     return live_scene, live_perf
-
-
-def _iso(dt) -> str | None:
-    return dt.strftime("%Y-%m-%dT%H:%M:%SZ") if dt else None
-
-
-def _build_scene_cache(kept_scenes, scene_scores) -> dict:
-    """Per-scene replay cache: pre-freshness base + the bits refresh needs."""
-    out = {}
-    for s in kept_scenes:
-        sc = scene_scores.get(s.id)
-        if sc is None:
-            continue
-        out[s.id] = {
-            "base": sc.components.get("base"),
-            "n_events": sc.n_events,
-            "created_at": _iso(s.created_at),
-            "last_engagement": _iso(algorithm.scene_last_engagement(s)),
-            "perf_ids": s.performer_ids,
-        }
-    return out
 
 
 def _watched_diagnostic(scenes, scene_scores, settings, top_n: int = 20):

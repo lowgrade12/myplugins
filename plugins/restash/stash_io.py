@@ -176,16 +176,7 @@ def _paginate(stash, query: str, root: str, sub: str, per_page: int, mapper,
     return out
 
 
-SCENE_LIGHT_FRAGMENT = """
-id created_at organized resume_time play_duration
-last_played_at play_count o_counter play_history o_history
-rating100 custom_fields
-files { duration height }
-performers { id }
-studio { id }
-scene_markers { id }
-tags { id }
-"""
+SCENE_LIGHT_FRAGMENT = "id rating100"
 
 _FIND_SCENES_LIGHT = """
 query($filter: FindFilterType) {
@@ -195,32 +186,8 @@ query($filter: FindFilterType) {
 
 
 def map_scene_light(raw: dict) -> dict:
-    """Refresh-only projection with enough data to score newly added scenes."""
-    files = raw.get("files") or []
-    first = files[0] if files else {}
-    studio = raw.get("studio") or {}
-    return {
-        "id": str(raw["id"]),
-        "created_at": _parse_dt(raw.get("created_at")),
-        "organized": bool(raw.get("organized")),
-        "resume_time": raw.get("resume_time"),
-        "play_duration": float(raw.get("play_duration") or 0.0),
-        "last_played_at": _parse_dt(raw.get("last_played_at")),
-        "play_count": raw.get("play_count") or 0,
-        "o_counter": raw.get("o_counter") or 0,
-        "play_history": _parse_dt_list(raw.get("play_history")),
-        "o_history": _parse_dt_list(raw.get("o_history")),
-        "rating100": raw.get("rating100"),
-        "custom_fields": raw.get("custom_fields") or {},
-        "file_duration": (float(first["duration"])
-                          if first.get("duration") is not None else None),
-        "height": first.get("height"),
-        "marker_count": len(raw.get("scene_markers") or []),
-        "tag_ids": [str(t["id"]) for t in (raw.get("tags") or [])],
-        "performer_ids": [str(p["id"]) for p in (raw.get("performers") or [])],
-        "studio_id": str(studio["id"]) if studio.get("id") else None,
-        "has_file": bool(files),
-    }
+    """Ratings-only projection used by Backup/Restore Ratings."""
+    return {"id": str(raw["id"]), "rating100": raw.get("rating100")}
 
 
 def fetch_scenes_light(stash, per_page: int = 500, progress=None):
@@ -231,6 +198,18 @@ def fetch_scenes_light(stash, per_page: int = 500, progress=None):
 def fetch_scenes(stash, per_page: int = 500, progress=None):
     return _paginate(stash, _FIND_SCENES, "findScenes", "scenes", per_page,
                      map_scene, progress)
+
+
+_FIND_SCENE = """
+query($id: ID!) { findScene(id: $id) { %s } }
+""" % SCENE_FRAGMENT
+
+
+def fetch_scene(stash, scene_id: str):
+    """One scene as SceneData, or None if it does not exist."""
+    result = stash.call_GQL(_FIND_SCENE, {"id": str(scene_id)})
+    raw = (result or {}).get("findScene")
+    return map_scene(raw) if raw else None
 
 
 def fetch_performers(stash, per_page: int = 500, progress=None):
