@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4
+
+- A new setting, Learn from ratings other plugins set (off until you turn it on), makes Cherry Pick treat every rating in Stash as yours, including the ones Restash's mirror, HotOrNot, Ascension or Xenith wrote. Restash's mirror writes its score over every rating, so with it on, Cherry Pick had no rating of yours to learn from and Your score never switched on. With the setting on, the model learns from them; Your score then shows only on scenes with no rating at all, since a rated scene shows its rating. Brackets still leave those records' ratings to the plugin that wrote them.
+- Learning from a library where every scene is rated stays quick. The fit trains on at most 6,000 rated scenes (every one you played, then a seeded random share of the rest), and each scene's Your score is worked out when something first asks for it. On 144,500 rated scenes: the first fit about 0.7 s instead of 12 s, cross-validation about 50 ms a step instead of 3 s, and each recompute (a bracket pick, Not interested) about 10 ms instead of 0.7 s.
+
 ## 0.3.3
 
 - Cherry Pick runs once per page. Stash resets its data store each time a scan finishes, and its plugin loader then drops and re-adds the plugins' scripts, so the browser ran Cherry Pick again on top of the copy already running: every reset during a batch of updates added another navbar icon (and another set of everything else), each copy with its own library and model.

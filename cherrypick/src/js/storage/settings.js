@@ -18,6 +18,7 @@ export const MANIFEST_SETTINGS = [
   { key: 'relativeBadges', type: 'BOOLEAN', def: false },
   { key: 'excludedTags', type: 'STRING', def: '' },
   { key: 'learnFromMatches', type: 'BOOLEAN', def: true },
+  { key: 'learnFromRankings', type: 'BOOLEAN', def: false },
   // written at first load by autoApplyToWrite, which can make it false
   { key: 'autoApply', type: 'BOOLEAN', def: true },
 ]

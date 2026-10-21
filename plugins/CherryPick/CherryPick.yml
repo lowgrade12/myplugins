@@ -1,6 +1,6 @@
 name: Cherry Pick
 description: Learns what you like from your ratings and plays. A For you row, Your score on scenes you haven't rated, More like this and performer brackets.
-version: 0.3.3
+version: 0.3.4
 url: https://github.com/lowgrade12/myplugins/tree/main/cherrypick
 ui:
   javascript:
@@ -66,6 +66,10 @@ settings:
   learnFromMatches:
     displayName: Learn from Ascension, HotOrNot and Xenith matches
     description: Each match those plugins recorded counts as half a bracket pick, leaving out skips, draws and anything not in your library. Off, only your own ratings, plays and brackets teach Cherry Pick.
+    type: BOOLEAN
+  learnFromRankings:
+    displayName: Learn from ratings other plugins set
+    description: "Treat every rating in Stash as yours, including the ones Restash's mirror, HotOrNot, Ascension or Xenith wrote. On, Cherry Pick learns your taste from them; Your score then shows only on scenes with no rating at all. Off, only ratings you set yourself teach it."
     type: BOOLEAN
   autoApply:
     displayName: Apply bracket ratings automatically

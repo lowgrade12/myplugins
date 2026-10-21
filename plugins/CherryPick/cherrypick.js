@@ -620,6 +620,7 @@ if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
     { key: "relativeBadges", type: "BOOLEAN", def: false },
     { key: "excludedTags", type: "STRING", def: "" },
     { key: "learnFromMatches", type: "BOOLEAN", def: true },
+    { key: "learnFromRankings", type: "BOOLEAN", def: false },
     // written at first load by autoApplyToWrite, which can make it false
     { key: "autoApply", type: "BOOLEAN", def: true }
   ];
@@ -1289,6 +1290,17 @@ if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
       [out[i], out[j]] = [out[j], out[i]];
     }
     return out;
+  }
+  var MAX_TRAIN = 6e3;
+  function trainingSample(rated, max = MAX_TRAIN, seed = PARAMS.seed) {
+    if (rated.length <= max) return rated;
+    const played = rated.filter((x) => x.b != null);
+    if (played.length >= max) return shuffled(played, seed).slice(0, max);
+    const rest = shuffled(
+      rated.filter((x) => x.b == null),
+      seed
+    ).slice(0, max - played.length);
+    return [...played, ...rest];
   }
   function crossValidate(rated, watchedUnrated, params = PARAMS) {
     const steps = crossValidateSteps(rated, watchedUnrated, params);
@@ -2852,13 +2864,15 @@ if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
       const key = JSON.stringify(overrides || {}) + "|" + [...skip2].sort().join(",") + "|" + (rate === ownRating ? "own" : "all");
       if (cache4.key === key) return cache4.fits;
       const { rated, watchedUnrated } = buildSamples(db2, overrides, skip2, rate);
+      const train = trainingSample(rated);
       const f = {
         rated,
+        train,
         watchedUnrated,
-        full: fit(rated, watchedUnrated, { ...PARAMS, useBehaviour: true }),
-        content: fit(rated, watchedUnrated, { ...PARAMS, useBehaviour: false }),
-        cv: deferCv ? rated.length >= MIN_RATED ? shared.provisionalCv || null : null : crossValidate(rated, watchedUnrated, PARAMS),
-        cvPending: deferCv && rated.length >= MIN_RATED,
+        full: fit(train, watchedUnrated, { ...PARAMS, useBehaviour: true }),
+        content: fit(train, watchedUnrated, { ...PARAMS, useBehaviour: false }),
+        cv: deferCv ? train.length >= MIN_RATED ? shared.provisionalCv || null : null : crossValidate(train, watchedUnrated, PARAMS),
+        cvPending: deferCv && train.length >= MIN_RATED,
         stats: featureStats(db2, overrides, skip2, rate)
       };
       cache4.key = key;
@@ -2868,7 +2882,7 @@ if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
     function* finishCv() {
       const f = cache4.fits;
       if (!f?.cvPending) return null;
-      const cv = yield* crossValidateSteps(f.rated, f.watchedUnrated, PARAMS);
+      const cv = yield* crossValidateSteps(f.train, f.watchedUnrated, PARAMS);
       if (cache4.fits !== f) return null;
       cache4.fits = { ...f, cv, cvPending: false };
       return cv;
@@ -2935,9 +2949,20 @@ if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
         performerOffset: bt.performerOffset,
         sceneOffset: bt.sceneOffset.get(scene.id) || 0
       });
-      const predictions = /* @__PURE__ */ new Map();
-      for (const s of db2.scenes.values())
-        predictions.set(s.id, predict(modelFor(s), s, extraFor(s)));
+      const predicted = /* @__PURE__ */ new Map();
+      const predictions = {
+        get(id) {
+          let p = predicted.get(id);
+          if (p === void 0) {
+            const s = db2.scenes.get(id);
+            if (!s) return void 0;
+            p = predict(modelFor(s), s, extraFor(s));
+            predicted.set(id, p);
+          }
+          return p;
+        },
+        has: (id) => db2.scenes.has(id)
+      };
       const ratingsToGo = Math.max(0, MIN_RATED - F.rated.length);
       const ratedStars = F.rated.map((x) => x.y);
       const ratedSum = ratedStars.reduce((a, b) => a + b, 0);
@@ -2945,11 +2970,12 @@ if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
       const userMean = ratingsToGo ? (ratedSum + ratingsToGo * (F.content.pseudoMean ?? ratedMean)) / MIN_RATED : ratedMean;
       const highShare = ratedStars.length ? ratedStars.filter((y) => y >= 4).length / ratedStars.length : 0;
       const inflated = ratedMean >= 3.6 && highShare >= 0.5;
-      const dist = db2.owned.filter((s) => rating(s) == null).map((s) => predictions.get(s.id).value);
       let sorted = null;
       const topShareOf = (v) => {
-        if (!dist.length) return 0.5;
-        sorted || (sorted = Float64Array.from(dist).sort());
+        sorted || (sorted = Float64Array.from(
+          db2.owned.filter((s) => rating(s) == null).map((s) => predictions.get(s.id).value)
+        ).sort());
+        if (!sorted.length) return 0.5;
         let lo = 0;
         let hi = sorted.length;
         while (lo < hi) {
@@ -4035,7 +4061,8 @@ if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
       decisions: allDecisions(s),
       notInterested: s.notInterested,
       dontLearn: s.dontLearn.map((d) => d.sceneId),
-      learnFromMatches: !!s.settings.learnFromMatches
+      learnFromMatches: !!s.settings.learnFromMatches,
+      learnFromRankings: !!s.settings.learnFromRankings
     });
     store.set({
       db: built.db,
@@ -4056,7 +4083,8 @@ if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
       decisions,
       notInterested: s.notInterested,
       dontLearn: s.dontLearn.map((d) => d.sceneId),
-      learnFromMatches: !!s.settings.learnFromMatches
+      learnFromMatches: !!s.settings.learnFromMatches,
+      learnFromRankings: !!s.settings.learnFromRankings
     });
   }
   var INPUTS = [
@@ -4065,7 +4093,7 @@ if (!window.__CherryPickLoaded__) { window.__CherryPickLoaded__ = true;
     "notInterested",
     "dontLearn"
   ];
-  var SETTINGS = ["learnFromMatches"];
+  var SETTINGS = ["learnFromMatches", "learnFromRankings"];
   function keepModelCurrent() {
     store.subscribe((next, prev) => {
       if ((next.library === prev.library || sameLists(listsOf(next.library), listsOf(prev.library))) && !INPUTS.some((k) => next[k] !== prev[k]) && !SETTINGS.some((k) => next.settings?.[k] !== prev.settings?.[k]))
