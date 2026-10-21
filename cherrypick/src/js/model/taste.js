@@ -253,6 +253,27 @@ function shuffled(arr, seed) {
   return out
 }
 
+// Most rated scenes the fit trains on. A library whose every scene carries a
+// rating (another plugin's, learned from on purpose) has 100,000 or more,
+// and the fit's time grows with them: 144,000 took 12 s at once and a
+// further 15 s of cross-validation. A few thousand, chosen across the
+// library, give nearly the same weights.
+export const MAX_TRAIN = 6000
+
+// The rated scenes the fit trains on: all of them up to MAX_TRAIN; past it,
+// every one the user played first (their plays are the strongest signal),
+// then a seeded random share of the rest, the same on every load.
+export function trainingSample(rated, max = MAX_TRAIN, seed = PARAMS.seed) {
+  if (rated.length <= max) return rated
+  const played = rated.filter((x) => x.b != null)
+  if (played.length >= max) return shuffled(played, seed).slice(0, max)
+  const rest = shuffled(
+    rated.filter((x) => x.b == null),
+    seed,
+  ).slice(0, max - played.length)
+  return [...played, ...rest]
+}
+
 export function crossValidate(rated, watchedUnrated, params = PARAMS) {
   const steps = crossValidateSteps(rated, watchedUnrated, params)
   for (;;) {

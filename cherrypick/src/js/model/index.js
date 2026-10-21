@@ -7,6 +7,7 @@ import {
   fit,
   crossValidate,
   crossValidateSteps,
+  trainingSample,
   predict,
   MIN_RATED,
   PARAMS,
@@ -112,17 +113,21 @@ export function createEngine(db, shared = {}) {
       (rate === ownRating ? 'own' : 'all')
     if (cache.key === key) return cache.fits
     const { rated, watchedUnrated } = buildSamples(db, overrides, skip, rate)
+    // The fit and its check train on at most MAX_TRAIN of them; `rated`
+    // stays whole for the counts and averages that read every rating.
+    const train = trainingSample(rated)
     const f = {
       rated,
+      train,
       watchedUnrated,
-      full: fit(rated, watchedUnrated, { ...PARAMS, useBehaviour: true }),
-      content: fit(rated, watchedUnrated, { ...PARAMS, useBehaviour: false }),
+      full: fit(train, watchedUnrated, { ...PARAMS, useBehaviour: true }),
+      content: fit(train, watchedUnrated, { ...PARAMS, useBehaviour: false }),
       cv: deferCv
-        ? rated.length >= MIN_RATED
+        ? train.length >= MIN_RATED
           ? shared.provisionalCv || null
           : null
-        : crossValidate(rated, watchedUnrated, PARAMS),
-      cvPending: deferCv && rated.length >= MIN_RATED,
+        : crossValidate(train, watchedUnrated, PARAMS),
+      cvPending: deferCv && train.length >= MIN_RATED,
       stats: featureStats(db, overrides, skip, rate),
     }
     cache.key = key
@@ -136,7 +141,7 @@ export function createEngine(db, shared = {}) {
   function* finishCv() {
     const f = cache.fits
     if (!f?.cvPending) return null
-    const cv = yield* crossValidateSteps(f.rated, f.watchedUnrated, PARAMS)
+    const cv = yield* crossValidateSteps(f.train, f.watchedUnrated, PARAMS)
     // A refit while this ran replaced the fits: its cv is not this one.
     if (cache.fits !== f) return null
     cache.fits = { ...f, cv, cvPending: false }
@@ -238,9 +243,24 @@ export function createEngine(db, shared = {}) {
       sceneOffset: bt.sceneOffset.get(scene.id) || 0,
     })
 
-    const predictions = new Map()
-    for (const s of db.scenes.values())
-      predictions.set(s.id, predict(modelFor(s), s, extraFor(s)))
+    // Each scene's Your score, worked out when first asked for and kept for
+    // this model. Working out all of them up front cost 0.7 s per compute
+    // on a library of 144,000, most of them never read: a scene with a
+    // rating the model reads shows that rating, not a guess.
+    const predicted = new Map()
+    const predictions = {
+      get(id) {
+        let p = predicted.get(id)
+        if (p === undefined) {
+          const s = db.scenes.get(id)
+          if (!s) return undefined
+          p = predict(modelFor(s), s, extraFor(s))
+          predicted.set(id, p)
+        }
+        return p
+      },
+      has: (id) => db.scenes.has(id),
+    }
 
     // Ratings Your score still needs before it can check itself (0 once it can)
     const ratingsToGo = Math.max(0, MIN_RATED - F.rated.length)
@@ -267,15 +287,17 @@ export function createEngine(db, shared = {}) {
 
     // Relative labels rank a score among your Your scores: every owned scene
     // you haven't rated ("Top 10% for you" = top tenth of what's left to rate)
-    const dist = db.owned
-      .filter((s) => rating(s) == null)
-      .map((s) => predictions.get(s.id).value)
-    // Sorted once, on first use, then a binary search per card: a scan of
-    // every unrated scene per card is slow on a library of 100,000.
+    // Gathered and sorted once, on first use (only relative badges ask),
+    // then a binary search per card: a scan of every unrated scene per card
+    // is slow on a library of 100,000.
     let sorted = null
     const topShareOf = (v) => {
-      if (!dist.length) return 0.5
-      sorted ||= Float64Array.from(dist).sort()
+      sorted ||= Float64Array.from(
+        db.owned
+          .filter((s) => rating(s) == null)
+          .map((s) => predictions.get(s.id).value),
+      ).sort()
+      if (!sorted.length) return 0.5
       // the first index whose value is above v (+ the same tolerance)
       let lo = 0
       let hi = sorted.length

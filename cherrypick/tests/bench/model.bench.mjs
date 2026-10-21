@@ -39,6 +39,8 @@ const input = {
   notInterested: [],
   dontLearn: [],
   learnFromMatches: false,
+  // LEARN_ALL=1: learn from ratings other plugins set (Restash's mirror)
+  learnFromRankings: process.env.LEARN_ALL === '1',
 }
 const time = (label, fn) => {
   const t0 = performance.now()

@@ -97,6 +97,7 @@ function recompute() {
     notInterested: s.notInterested,
     dontLearn: s.dontLearn.map((d) => d.sceneId),
     learnFromMatches: !!s.settings.learnFromMatches,
+    learnFromRankings: !!s.settings.learnFromRankings,
   })
   store.set({
     db: built.db,
@@ -121,6 +122,7 @@ export function computeWithDecisions(decisions) {
     notInterested: s.notInterested,
     dontLearn: s.dontLearn.map((d) => d.sceneId),
     learnFromMatches: !!s.settings.learnFromMatches,
+    learnFromRankings: !!s.settings.learnFromRankings,
   })
 }
 
@@ -134,7 +136,7 @@ const INPUTS = [
 
 // Settings the model reads. The settings object is new on every reload from
 // Stash, so these are compared one by one.
-const SETTINGS = ['learnFromMatches']
+const SETTINGS = ['learnFromMatches', 'learnFromRankings']
 
 export function keepModelCurrent() {
   store.subscribe((next, prev) => {
