@@ -3569,6 +3569,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         <div class="hon-stats-tabs">
           <button class="hon-stats-tab active" data-tab="graph">📊 Distribution</button>
           <button class="hon-stats-tab" data-tab="leaderboard">📋 Leaderboard</button>
+          <button class="hon-stats-tab" data-tab="halloffame">🏆 Hall of Fame</button>
         </div>
 
         <div class="hon-stats-tab-content">
@@ -3607,12 +3608,269 @@ async function fetchPerformerCount(performerFilter = {}) {
               </div>
             </div>
           </div>
+
+          <div class="hon-stats-tab-panel" data-panel="halloffame">
+            <div class="hon-stats-loading">Loading Hall of Fame...</div>
+          </div>
         </div>
       </div>
     `,
       performersWithStats,
       leaderboardColgroup
     };
+  }
+
+  // ============================================
+  // HALL OF FAME
+  // (Tournament champions: a row on Stash's front page and a tab in the stats modal)
+  // ============================================
+
+  // Performers with at least one tournament win. hotornot_stats is a JSON string,
+  // so match it as text: it has the tournament_wins key, and the value isn't 0
+  // ("tournament_wins":0 never matches 10, 20, ... since there are no leading zeros).
+  const CHAMPION_FILTER = {
+    custom_fields: [
+      { field: "hotornot_stats", modifier: "INCLUDES", value: ['"tournament_wins":'] },
+      { field: "hotornot_stats", modifier: "EXCLUDES", value: ['"tournament_wins":0'] }
+    ]
+  };
+
+  /**
+   * Returns true if the Hall of Fame row on the front page is enabled.
+   * Defaults to true when not explicitly set to false.
+   * @returns {Promise<boolean>}
+   */
+  async function isHallOfFameEnabled() {
+    const config = await getHotOrNotConfig();
+    return config.showHallOfFame !== false;
+  }
+
+  /**
+   * Fetch every tournament champion, most titles first, then most recently active.
+   * Ignores the performers page filter: the Hall of Fame is always the whole library.
+   * @returns {Promise<Array<{performer: Object, stats: Object}>>}
+   */
+  async function fetchChampions() {
+    const result = await graphqlQuery(FIND_PERFORMERS_QUERY, {
+      performer_filter: CHAMPION_FILTER,
+      filter: { per_page: -1 }
+    });
+    return (result.findPerformers.performers || [])
+      .map(performer => ({ performer, stats: parsePerformerEloData(performer) }))
+      .filter(c => c.stats.tournament_wins > 0)
+      .sort((a, b) =>
+        b.stats.tournament_wins - a.stats.tournament_wins ||
+        (b.stats.last_match || "").localeCompare(a.stats.last_match || "")
+      );
+  }
+
+  /**
+   * Build the Hall of Fame tab: champions grouped by gender, each a tile with
+   * picture, name, titles and rating.
+   * @param {Array<{performer: Object, stats: Object}>} champions - From fetchChampions()
+   * @returns {string} HTML
+   */
+  function buildHallOfFameHTML(champions) {
+    if (!champions.length) {
+      return '<div class="hon-stats-empty">No champions yet. Win a tournament to enter the Hall of Fame.</div>';
+    }
+    const genders = [...ALL_GENDERS, { value: "", label: "Unknown" }];
+    return genders.map(({ value, label }) => {
+      const group = champions.filter(c => (c.performer.gender || "") === value);
+      if (!group.length) return "";
+      const titles = group.reduce((sum, c) => sum + c.stats.tournament_wins, 0);
+      const tiles = group.map(({ performer: p, stats }) => {
+        const name = escapeHtml(p.name || `Performer #${p.id}`);
+        const rating = ((p.rating100 || 50) / 10).toFixed(1);
+        const last = stats.last_match
+          ? new Date(stats.last_match).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+          : "";
+        return `
+          <a class="hon-hof-tile" href="/performers/${escapeHtml(p.id)}" target="_blank" title="${name}">
+            <img class="hon-hof-img" src="${escapeHtml(p.image_path || "")}" alt="" loading="lazy" />
+            <span class="hon-hof-name">${name}</span>
+            <span class="hon-hof-meta">
+              <span class="hon-hof-titles">🏆 ${stats.tournament_wins}</span>
+              <span class="hon-hof-rating">★ ${rating}</span>
+            </span>
+            ${last ? `<span class="hon-hof-last">Last battle ${last}</span>` : ""}
+          </a>
+        `;
+      }).join("");
+      return `
+        <div class="hon-hof-group" data-gender="${escapeHtml(value)}">
+          <h3 class="hon-hof-group-title">
+            ${label}
+            <span class="hon-hof-count">${group.length} ${group.length === 1 ? "champion" : "champions"} · ${titles} ${titles === 1 ? "title" : "titles"}</span>
+          </h3>
+          <div class="hon-hof-grid">${tiles}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  /**
+   * Fill the stats modal's Hall of Fame tab panel.
+   * @param {HTMLElement} panel
+   */
+  async function loadHallOfFamePanel(panel) {
+    try {
+      panel.innerHTML = buildHallOfFameHTML(await fetchChampions());
+    } catch (e) {
+      console.error("[HotOrNot] Failed to load Hall of Fame:", e);
+      panel.innerHTML = '<div class="hon-stats-error">Failed to load the Hall of Fame.</div>';
+    }
+  }
+
+  /**
+   * Open the Hall of Fame on its own, in the stats modal's frame. Lighter than
+   * the stats modal, which loads every performer first.
+   */
+  function openHallOfFameModal() {
+    const existing = document.getElementById("hon-stats-modal");
+    if (existing) {
+      existing.remove();
+    }
+    const modal = document.createElement("div");
+    modal.id = "hon-stats-modal";
+    modal.className = "hon-stats-modal";
+    modal.innerHTML = `
+      <div class="hon-modal-backdrop"></div>
+      <div class="hon-stats-modal-dialog">
+        <button class="hon-modal-close">✕</button>
+        <div class="hon-stats-modal-content">
+          <h2 class="hon-stats-title">🏆 Hall of Fame</h2>
+          <div class="hon-hof-panel">
+            <div class="hon-stats-loading">Loading Hall of Fame...</div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const close = () => {
+      modal.remove();
+      document.removeEventListener("keydown", escHandler);
+    };
+    const escHandler = e => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("keydown", escHandler);
+    modal.querySelector(".hon-modal-backdrop").addEventListener("click", close);
+    modal.querySelector(".hon-modal-close").addEventListener("click", close);
+    loadHallOfFamePanel(modal.querySelector(".hon-hof-panel"));
+  }
+
+  /**
+   * Add the Hall of Fame row to Stash's front page: Stash's own row, slider and
+   * performer cards (like its built-in rows), so themes style it with no extra work.
+   * The row sits above Stash's rows; "View all" opens the full Hall of Fame.
+   */
+  function registerHallOfFameRow() {
+    const api = window.PluginApi;
+    if (!api || !api.React || !api.patch || !api.patch.after || !api.components || !api.hooks) {
+      return;
+    }
+    const React = api.React;
+    const h = React.createElement;
+    // Stash registers RecommendationRow and PerformerCard only once their lazy
+    // modules load, so load them first
+    const lc = api.loadableComponents || {};
+    const needed = [lc.FrontPage, lc.PerformerCard].filter(Boolean);
+    const Slider = api.libraries && api.libraries.ReactSlick && api.libraries.ReactSlick.default;
+    const isTouch = () => window.matchMedia("(pointer: coarse)").matches;
+
+    // Stash's own front-page slider settings (src/core/recommendations.ts)
+    function sliderSettings(cards, touch) {
+      const at = show => ({
+        infinite: !touch && cards > show,
+        slidesToShow: cards > show ? show : cards,
+        slidesToScroll: touch ? 1 : (cards > show ? show : cards)
+      });
+      return {
+        dots: !touch,
+        arrows: !touch,
+        speed: 300,
+        variableWidth: true,
+        swipeToSlide: true,
+        ...at(5),
+        responsive: [
+          { breakpoint: 1909, settings: at(4) },
+          { breakpoint: 1542, settings: at(3) },
+          { breakpoint: 1170, settings: at(2) },
+          { breakpoint: 801, settings: at(1) }
+        ]
+      };
+    }
+
+    function HallOfFameRow() {
+      const loading = api.hooks.useLoadComponents(needed);
+      // records: null while loading; false when the row is turned off or failed
+      const [records, setRecords] = React.useState(null);
+
+      React.useEffect(() => {
+        let live = true;
+        (async () => {
+          if (!(await isHallOfFameEnabled())) return false;
+          const ids = (await fetchChampions()).map(c => c.performer.id);
+          if (!ids.length) return [];
+          // PerformerCard takes Stash's PerformerData fragment: fetch it through
+          // Stash's own query, sharing its cache
+          const res = await api.utils.StashService.queryFindPerformersByID(ids.map(Number));
+          const byId = new Map(res.data.findPerformers.performers.map(r => [r.id, r]));
+          return ids.map(id => byId.get(id)).filter(Boolean);
+        })()
+          .then(rows => { if (live) setRecords(rows); })
+          .catch(e => {
+            console.error("[HotOrNot] Failed to load Hall of Fame row:", e);
+            if (live) setRecords(false);
+          });
+        return () => { live = false; };
+      }, []);
+
+      const { RecommendationRow, PerformerCard } = api.components;
+      if (loading || !RecommendationRow || !PerformerCard) return null;
+      if (records === false || (records && !records.length)) return null;
+
+      const cards = records
+        ? records.map(p => h(PerformerCard, { key: p.id, performer: p }))
+        : [...Array(12)].map((_, i) => h("div", { key: i, className: "performer-skeleton skeleton-card" }));
+      const body = Slider
+        ? h(Slider, sliderSettings(cards.length, isTouch()), cards)
+        : h("div", { className: "hon-hof-row-cards" }, cards);
+
+      return h(
+        "div",
+        { className: "recommendations-container hon-hof-front" },
+        h(
+          RecommendationRow,
+          {
+            className: "hon-hof-row",
+            header: "HotOrNot Hall of Fame",
+            link: h(
+              "div",
+              { className: "recommendation-row-extra" },
+              h("a", {
+                href: "#",
+                onClick: e => {
+                  e.preventDefault();
+                  openHallOfFameModal();
+                }
+              }, "View All")
+            )
+          },
+          body
+        )
+      );
+    }
+
+    // Stash's FrontPage renders a loading indicator, the Customise editor or the
+    // rows' .recommendations-container; the row joins only the last, so Stash's
+    // rows and other plugins' patches stay as they are
+    api.patch.after("FrontPage", function (...args) {
+      const result = args[args.length - 1];
+      const isRows = String((result && result.props && result.props.className) || "").includes("recommendations-container");
+      return isRows ? h(React.Fragment, null, h(HallOfFameRow), result) : result;
+    });
   }
 
   /**
@@ -3682,6 +3940,13 @@ async function fetchPerformerCount(performerFilter = {}) {
           });
         });
       });
+
+      // The Hall of Fame tab is every champion in the library, whatever the
+      // modal's filter, so it loads on its own
+      const hofPanel = dialog.querySelector('.hon-stats-tab-panel[data-panel="halloffame"]');
+      if (hofPanel) {
+        loadHallOfFamePanel(hofPanel);
+      }
 
       // Helper function to attach expand/collapse handlers to collapsible groups
       const attachCollapseHandlers = (headerSelector, contentSelector) => {
@@ -6402,6 +6667,9 @@ function addFloatingButton() {
       });
     }
   }
+
+  // Patch Stash's FrontPage before it first renders
+  registerHallOfFameRow();
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
