@@ -130,6 +130,7 @@ When viewing a single performer's page, a badge displays their battle rank:
 
 Tournament champions get a **HotOrNot Hall of Fame** row on Stash's front page, above Stash's own rows:
 - Uses Stash's own performer cards and slider, so it matches your theme
+- Each card has a 🏆 trophy on its photo, with the title count from two titles
 - Most titles first, then the most recently active champion
 - **View All** opens the full Hall of Fame, grouped by gender (also a tab in the Stats Modal)
 - Toggle on/off via **Settings → Plugins → HotOrNot → Show Hall of Fame Row** (enabled by default)
