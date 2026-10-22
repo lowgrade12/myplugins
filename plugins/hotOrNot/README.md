@@ -60,6 +60,7 @@ The plugin offers five distinct comparison modes:
 - Visual bracket display shows all matches and progression
 - Round naming: Round 1, Round 2, ..., Quarterfinal, Semifinal, Final
 - Best for engagement and determining a clear champion through bracket competition
+- Each champion's win is counted in `tournament_wins` and earns a place in the Hall of Fame
 
 ### ELO Rating System
 
@@ -83,6 +84,7 @@ Access the **Stats Modal** to view:
 - Rating distribution bar chart (grouped by rating ranges)
 - Full leaderboard with all performers
 - Win rates and streak information
+- Hall of Fame: every tournament champion, grouped by gender, with their title count
 
 ### URL Filter Support
 
@@ -123,6 +125,14 @@ When viewing a single performer's page, a badge displays their battle rank:
 - Tier-based styling: 👑 Legendary (top 5%), 🥇 Gold (top 20%), 🥈 Silver (top 40%), 🥉 Bronze (top 60%), 🔥 Default
 - Hover for tooltip showing exact rating
 - Toggle on/off via **Settings → Plugins → HotOrNot → Show Battle Rank Badge** (enabled by default)
+
+### Hall of Fame
+
+Tournament champions get a **HotOrNot Hall of Fame** row on Stash's front page, above Stash's own rows:
+- Uses Stash's own performer cards and slider, so it matches your theme
+- Most titles first, then the most recently active champion
+- **View All** opens the full Hall of Fame, grouped by gender (also a tab in the Stats Modal)
+- Toggle on/off via **Settings → Plugins → HotOrNot → Show Hall of Fame Row** (enabled by default)
 
 ## Installation
 

@@ -1,6 +1,6 @@
 name: HotOrNot
 description: Adds an ELO based ranking system for performers and images
-version: 2.2.0
+version: 2.3.0
 url: https://github.com/lowgrade12/hot-or-not
 ui:
   javascript:
@@ -21,4 +21,8 @@ settings:
   showStarRatingWidget:
     displayName: Show Star Rating Widget
     description: Show a star rating widget on performer cards. Enabled by default.
+    type: BOOLEAN
+  showHallOfFame:
+    displayName: Show Hall of Fame Row
+    description: Show tournament champions in a row on the front page. Enabled by default.
     type: BOOLEAN

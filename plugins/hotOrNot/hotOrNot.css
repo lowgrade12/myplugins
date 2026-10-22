@@ -2603,3 +2603,103 @@
   60%  { transform: scale(0.95) translateY(5px); opacity: 1; }
   100% { transform: scale(1) translateY(0); opacity: 1; }
 }
+
+/* ============================================
+   HALL OF FAME
+   ============================================ */
+
+/* Front page row: Stash's own RecommendationRow and cards; only the
+   fallback without Stash's slider needs layout */
+.hon-hof-row-cards {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+}
+
+/* Stats modal tab and the standalone Hall of Fame modal */
+.hon-hof-group {
+  margin-bottom: 1.5rem;
+}
+
+.hon-hof-group-title {
+  align-items: baseline;
+  color: var(--hon-white);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 1.1rem;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+}
+
+.hon-hof-count {
+  color: var(--hon-gray-light);
+  font-size: 0.85rem;
+  font-weight: normal;
+}
+
+.hon-hof-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.hon-hof-tile {
+  background: var(--hon-bg-card);
+  border: 1px solid var(--hon-gray-darker);
+  border-radius: 6px;
+  color: var(--hon-white);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-decoration: none;
+  transition: border-color 0.2s ease;
+}
+
+.hon-hof-tile:hover {
+  border-color: var(--hon-warning);
+  color: var(--hon-white);
+  text-decoration: none;
+}
+
+.hon-hof-img {
+  aspect-ratio: 2 / 3;
+  background: var(--hon-bg-input);
+  object-fit: cover;
+  width: 100%;
+}
+
+.hon-hof-name {
+  font-weight: 600;
+  overflow: hidden;
+  padding: 0.4rem 0.5rem 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hon-hof-meta {
+  display: flex;
+  font-size: 0.85rem;
+  justify-content: space-between;
+  padding: 0.15rem 0.5rem 0;
+}
+
+.hon-hof-titles {
+  color: var(--hon-warning);
+  font-weight: 600;
+}
+
+.hon-hof-rating {
+  color: var(--hon-gray-light);
+}
+
+.hon-hof-last {
+  color: var(--hon-gray);
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem 0.5rem;
+}
+
+@media (max-width: 575.98px) {
+  .hon-hof-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
