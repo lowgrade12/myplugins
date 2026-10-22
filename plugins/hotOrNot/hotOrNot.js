@@ -3802,16 +3802,42 @@ async function fetchPerformerCount(performerFilter = {}) {
       };
     }
 
+    // Titles by performer id for the cards in the row, so the trophy shows on
+    // the row's cards only, not on the same performer's cards elsewhere
+    const TitlesContext = React.createContext(null);
+
+    // A trophy at the bottom left of a champion's photo (with the count from two
+    // titles), with the drop shadow Stash gives its favourite heart
+    function TrophyMark({ performer }) {
+      const titles = React.useContext(TitlesContext);
+      const count = titles && performer ? titles.get(performer.id) : 0;
+      if (!count) return null;
+      const { Icon } = api.components;
+      const faTrophy = api.libraries && api.libraries.FontAwesomeSolid && api.libraries.FontAwesomeSolid.faTrophy;
+      return h(
+        "div",
+        {
+          className: "hon-hof-trophy text-warning",
+          title: count > 1 ? `Tournament champion ×${count}` : "Tournament champion"
+        },
+        Icon && faTrophy ? h(Icon, { icon: faTrophy }) : "🏆",
+        count > 1 ? h("small", null, count) : null
+      );
+    }
+
     function HallOfFameRow() {
       const loading = api.hooks.useLoadComponents(needed);
       // records: null while loading; false when the row is turned off or failed
       const [records, setRecords] = React.useState(null);
+      const [titles, setTitles] = React.useState(null);
 
       React.useEffect(() => {
         let live = true;
         (async () => {
           if (!(await isHallOfFameEnabled())) return false;
-          const ids = (await fetchChampions()).map(c => c.performer.id);
+          const champions = await fetchChampions();
+          if (live) setTitles(new Map(champions.map(c => [c.performer.id, c.stats.tournament_wins])));
+          const ids = champions.map(c => c.performer.id);
           if (!ids.length) return [];
           // PerformerCard takes Stash's PerformerData fragment: fetch it through
           // Stash's own query, sharing its cache
@@ -3834,9 +3860,13 @@ async function fetchPerformerCount(performerFilter = {}) {
       const cards = records
         ? records.map(p => h(PerformerCard, { key: p.id, performer: p }))
         : [...Array(12)].map((_, i) => h("div", { key: i, className: "performer-skeleton skeleton-card" }));
-      const body = Slider
-        ? h(Slider, sliderSettings(cards.length, isTouch()), cards)
-        : h("div", { className: "hon-hof-row-cards" }, cards);
+      const body = h(
+        TitlesContext.Provider,
+        { value: titles },
+        Slider
+          ? h(Slider, sliderSettings(cards.length, isTouch()), cards)
+          : h("div", { className: "hon-hof-row-cards" }, cards)
+      );
 
       return h(
         "div",
@@ -3870,6 +3900,14 @@ async function fetchPerformerCount(performerFilter = {}) {
       const result = args[args.length - 1];
       const isRows = String((result && result.props && result.props.className) || "").includes("recommendations-container");
       return isRows ? h(React.Fragment, null, h(HallOfFameRow), result) : result;
+    });
+
+    // PerformerCard.Overlays holds the card's favourite heart, rating banner,
+    // country flag and (optionally) links; the trophy joins them
+    api.patch.after("PerformerCard.Overlays", function (...args) {
+      const props = args[0] || {};
+      const result = args[args.length - 1];
+      return h(React.Fragment, null, result, h(TrophyMark, { performer: props.performer }));
     });
   }
 

@@ -2616,6 +2616,30 @@
   overflow-x: auto;
 }
 
+/* Trophy, bottom left of a champion's photo in the row, with the drop shadow
+   Stash gives its favourite heart. The colour is the theme's (text-warning). */
+.hon-hof-trophy {
+  bottom: 0.5rem;
+  filter: drop-shadow(0 0 2px rgb(0 0 0 / 90%));
+  font-size: 1.35rem;
+  left: 0.5rem;
+  line-height: 1;
+  position: absolute;
+}
+
+.hon-hof-trophy small {
+  font-size: 0.6em;
+  font-weight: 700;
+  margin-left: 0.1em;
+}
+
+/* Stash's card links (an option in Interface settings) and CherryPick's crown
+   also take the bottom left corner: sit beside them */
+.performer-card__links ~ .hon-hof-trophy,
+.cherrypick-honours ~ .hon-hof-trophy {
+  left: 3rem;
+}
+
 /* Stats modal tab and the standalone Hall of Fame modal */
 .hon-hof-group {
   margin-bottom: 1.5rem;
