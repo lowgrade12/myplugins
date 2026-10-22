@@ -1,7 +1,7 @@
 from __future__ import annotations
 import models
 
-_SCENE_TERMS = ["base", "ingredients", "perf", "tag", "studio", "quality",
+_SCENE_TERMS = ["base", "ingredients", "rating_pred", "perf", "tag", "studio", "quality",
                 "direct", "confidence", "fresh", "fresh_d", "novelty", "jitter"]
 _PERF_TERMS = ["scenes", "affinity", "fresh", "supply", "novelty"]
 
@@ -82,6 +82,31 @@ def format_top30_tuning_checks(checks: dict, dormant_days: float = 90.0) -> str:
                  f"{checks['dormant_favorites_top30']}/30")
     lines.append(f"total misses in top-30 (unwatched and no favorite performer): "
                  f"{checks['total_misses_top30']}/30")
+    return "\n".join(lines)
+
+
+def format_rating_model(fitted: dict | None, weight: float) -> str:
+    """How well the model fitted to the user's ratings predicts held-out ones."""
+    lines = ["=== RATING MODEL (fitted to your own scene ratings) ==="]
+    if not fitted:
+        lines.append("not fitted (rating model weight is 0)")
+        return "\n".join(lines)
+    lines.append(f"ratings learned from: {fitted['n_rated']} "
+                 f"(+ {fitted['n_pseudo']} watched-unrated scenes at 0.3 weight); "
+                 f"weights: {len(fitted['weights'])}")
+    cv = fitted.get("cv")
+    if not cv:
+        lines.append(f"holdout: needs {fitted['min_rated']} own scene ratings; "
+                     f"not used until then")
+        return "\n".join(lines)
+    lines.append(f"holdout ({cv['folds']} folds, {cv['n']} ratings): "
+                 f"MAE {cv['mae_model']:.3f}★ vs {cv['mae_base']:.3f}★ for your average "
+                 f"({fitted['rated_mean']:.2f}★)")
+    lines.append(f"within half a star: {cv['within_model']:.0%} vs {cv['within_base']:.0%}")
+    if fitted["usable"]:
+        lines.append(f"used: takes {weight:.0%} of each scene's ingredients term")
+    else:
+        lines.append("NOT used: it does not beat your average on held-out ratings")
     return "\n".join(lines)
 
 

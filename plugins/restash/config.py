@@ -25,6 +25,7 @@ _PLUGIN_KEY_MAP = {
     "perfWeightNovelty": "perf_w_novelty",
     "jitterPeriodDays": "jitter_period_days",
     "minScoreChange": "min_score_change",
+    "ratingModelWeight": "rating_model_weight",
 }
 
 
@@ -79,6 +80,10 @@ class Settings:
     perf_scenes_shrinkage_k: float = 5.0
     direct_half_life_days: float = 540.0
     rediscovery_bonus: float = 0.40
+    # Share of the ingredients term taken from the model fitted to the user's own
+    # ratings (rating_model.py), when it beats their average on held-out ratings.
+    # 0 scores from the hand-weighted ingredients alone.
+    rating_model_weight: float = 1.0
     # --- write-layer / operational settings (Phase 5) ---
     write_chunk_size: int = 100
     write_max_retries: int = 3

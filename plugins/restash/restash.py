@@ -6,6 +6,7 @@ import sys
 import algorithm
 import config
 import models
+import rating_model
 import ratings_backup
 import report
 import state
@@ -214,7 +215,9 @@ def _hook_score_scene(stash, settings, st, scene_id, exclude_id, now) -> tuple[i
         live_perf={})
     sc = algorithm.score_scenes([scene], settings, now, now.strftime("%Y-%m-%d"),
                                 aff=st["affinities"], scene_ratings=scene_ratings,
-                                context=st["context"], wildcards=False)[scene.id]
+                                context=st["context"], wildcards=False,
+                                ratings_fit=rating_model.usable(st.get("rating_model"))
+                                )[scene.id]
     sc.percentile = algorithm.percentile_from_quantiles(sc.raw, st["raw_quantiles"])
     sc.restash_score = algorithm.to_restash_score(sc.percentile)
 
@@ -367,9 +370,12 @@ def _run_dry(stash, settings: config.Settings) -> int:
         live_perf={p.id: p.rating100 for p in performers if p.rating100 is not None})
 
     aff = algorithm.build_affinities(scenes, now, settings, favorites, perf_ratings)
+    fitted = _fit_rating_model(scenes, settings)
+    log.progress(0.75)
     scene_scores = algorithm.score_scenes(scenes, settings, now, date_seed,
                                           favorites, perf_ratings, aff,
-                                          scene_ratings=scene_ratings)
+                                          scene_ratings=scene_ratings,
+                                          ratings_fit=rating_model.usable(fitted))
     log.progress(0.85)
     performer_scores = algorithm.score_performers(performers, scenes, scene_scores,
                                                  aff, settings, now)
@@ -388,6 +394,7 @@ def _run_dry(stash, settings: config.Settings) -> int:
         "\n\n".join([
             report.format_scene_report(scene_scores, titles, top_n=30),
             report.format_performer_report(performer_scores, names, top_n=30),
+            report.format_rating_model(fitted, settings.rating_model_weight),
             report.format_top30_tuning_checks(tuning_checks, DORMANT_FAVORITE_DAYS),
             report.format_watched_diagnostic(diag_rows, diag_summary, top_n=20),
             summary,
@@ -403,7 +410,7 @@ def _run_dry(stash, settings: config.Settings) -> int:
 
 
 def _run_full(stash, settings: config.Settings) -> int:
-    return _score_and_write(stash, settings, cached_aff=None)
+    return _score_and_write(stash, settings, cached_aff=None, cached_fit=None)
 
 
 def _run_refresh(stash, settings: config.Settings) -> int:
@@ -416,10 +423,12 @@ def _run_refresh(stash, settings: config.Settings) -> int:
     if not ok:
         log.info(f"[Restash] refresh: cache unusable ({reason}); running full recompute.")
         return _run_full(stash, settings)
-    return _score_and_write(stash, settings, cached_aff=st["affinities"])
+    return _score_and_write(stash, settings, cached_aff=st["affinities"],
+                            cached_fit=st.get("rating_model"))
 
 
-def _score_and_write(stash, settings: config.Settings, cached_aff: dict | None) -> int:
+def _score_and_write(stash, settings: config.Settings, cached_aff: dict | None,
+                     cached_fit: dict | None) -> int:
     label = "full" if cached_aff is None else "refresh"
     now = stash_io.utcnow()
     now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -446,12 +455,15 @@ def _score_and_write(stash, settings: config.Settings, cached_aff: dict | None) 
 
     if cached_aff is None:
         aff = algorithm.build_affinities(kept_scenes, now, settings, favorites, perf_ratings)
+        fitted = _fit_rating_model(kept_scenes, settings)
     else:
         aff = cached_aff
+        fitted = cached_fit
     context = algorithm.library_context(kept_scenes)
     scene_scores = algorithm.score_scenes(kept_scenes, settings, now, date_seed,
                                           favorites, perf_ratings, aff,
-                                          scene_ratings=scene_ratings, context=context)
+                                          scene_ratings=scene_ratings, context=context,
+                                          ratings_fit=rating_model.usable(fitted))
     performer_scores = algorithm.score_performers(kept_performers, kept_scenes,
                                                   scene_scores, aff, settings, now)
     log.progress(0.70)
@@ -465,7 +477,7 @@ def _score_and_write(stash, settings: config.Settings, cached_aff: dict | None) 
                      perf_scenes_prior=next(
                          (ps.components["scenes_prior"]
                           for ps in performer_scores.values()), None),
-                     written_at=now_iso)
+                     ratings_fit=fitted, written_at=now_iso)
     log.info("[Restash] wrote taste-model cache to restash_state.json." if label == "full"
              else "[Restash] updated library distribution in restash_state.json.")
 
@@ -568,6 +580,30 @@ def _manual_ratings(settings, *, live_scene: dict, live_perf: dict):
         if backup is not None:
             return dict(backup.get("scenes", {})), dict(backup.get("performers", {}))
     return live_scene, live_perf
+
+
+def _fit_rating_model(scenes, settings) -> dict | None:
+    """Fit the rating model on the user's own scene ratings (None when its weight
+    is 0). With the rating100 mirror on, live ratings are Restash's, so the rating
+    backup supplies the user's; a rating equal to a scene's stored restash_score
+    is left out either way."""
+    if settings.rating_model_weight <= 0:
+        return None
+    backup = None
+    if settings.mirror_to_rating100:
+        loaded = ratings_backup.load_backup(ratings_backup.default_backup_path())
+        if loaded is not None:
+            backup = {str(k): v for k, v in (loaded.get("scenes") or {}).items()}
+    fitted = rating_model.fit_library(scenes, backup)
+    cv = fitted["cv"]
+    if cv:
+        log.info(f"[Restash] rating model: {fitted['n_rated']} own ratings, holdout MAE "
+                 f"{cv['mae_model']:.3f} vs {cv['mae_base']:.3f} for your average — "
+                 f"{'used' if fitted['usable'] else 'not used'}.")
+    else:
+        log.info(f"[Restash] rating model: {fitted['n_rated']} own ratings; needs "
+                 f"{rating_model.MIN_RATED} before it is used.")
+    return fitted
 
 
 def _watched_diagnostic(scenes, scene_scores, settings, top_n: int = 20):

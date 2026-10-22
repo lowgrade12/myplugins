@@ -26,6 +26,7 @@ class SceneData:
     studio_id: str | None
     custom_fields: dict
     has_file: bool
+    studio_parent_id: str | None = None
 
 
 @dataclass
