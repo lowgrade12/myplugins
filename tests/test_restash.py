@@ -30,6 +30,7 @@ except ImportError:
 import algorithm  # noqa: E402
 import config  # noqa: E402
 import models  # noqa: E402
+import rating_model  # noqa: E402
 import ratings_backup  # noqa: E402
 import restash  # noqa: E402
 import state  # noqa: E402
@@ -446,6 +447,136 @@ class HookTest(TempPathsMixin, unittest.TestCase):
         stash = FakeStash()
         self.assertEqual(self.run_hook(stash, "1", "Tag.Create.Post"), 0)
         self.assertEqual(stash.calls, [])
+
+
+def _scene(sid, performers=(), tags=(), studio=None, rating100=None, **kw):
+    fields = dict(id=sid, title=sid, play_history=[], o_history=[], play_count=0,
+                  o_counter=0, play_duration=0.0, resume_time=None, last_played_at=None,
+                  file_duration=1800.0, height=1080, marker_count=0, organized=False,
+                  date=None, created_at=datetime.now(timezone.utc), rating100=rating100,
+                  tag_ids=list(tags), performer_ids=list(performers), studio_id=studio,
+                  custom_fields={}, has_file=True)
+    fields.update(kw)
+    return models.SceneData(**fields)
+
+
+def _rate_by_performer(stash):
+    """Rate every scene by its performer (P1 1★ ... P5 5★), so there is taste to learn."""
+    for sc in stash.scenes.values():
+        pid = int(sc["performers"][0]["id"])
+        sc["rating100"] = 20 * (1 + (pid - 1) % 5)
+
+
+class RatingModelTest(unittest.TestCase):
+    def test_own_ratings_skip_restash_mirror_and_read_backup(self):
+        mine = _scene("1", rating100=80, custom_fields={"restash_score": 63})
+        mirrored = _scene("2", rating100=63, custom_fields={"restash_score": 63})
+        unrated = _scene("3")
+        self.assertEqual(rating_model.own_scene_ratings([mine, mirrored, unrated]),
+                         {"1": 80})
+        # mirror on: the backup holds the user's ratings, even one equal to the score
+        backup = {"1": 90, "2": 63}
+        self.assertEqual(rating_model.own_scene_ratings([mine, mirrored, unrated], backup),
+                         {"1": 90, "2": 63})
+
+    def test_swipes_teach_nothing(self):
+        now = datetime.now(timezone.utc)
+        swipe = _scene("1", play_count=1, play_history=[now], play_duration=60.0)
+        watched = _scene("2", play_count=1, play_history=[now], play_duration=1700.0)
+        self.assertIsNone(rating_model.behaviour_score(swipe))
+        self.assertGreater(rating_model.behaviour_score(watched), 0.4)
+
+    def test_learns_performer_and_tag_taste_and_beats_average(self):
+        rng = random.Random(5)
+        scenes = []
+        for i in range(300):
+            p = rng.randrange(10)
+            t = rng.randrange(6)
+            stars = 1 + p * 0.4 + (0.5 if t == 0 else 0.0) + rng.gauss(0, 0.2)
+            scenes.append(_scene(str(i), [f"p{p}"], [f"t{t}", "common"], "s1",
+                                 rating100=int(20 * min(5, max(1, stars)))))
+        fitted = rating_model.fit_library(scenes)
+        self.assertTrue(fitted["usable"])
+        cv = fitted["cv"]
+        self.assertEqual(cv["n"], 300)
+        self.assertLess(cv["mae_model"], 0.5 * cv["mae_base"])
+        new_fav = _scene("n1", ["p9"], ["t0"], "s1")
+        new_meh = _scene("n2", ["p0"], ["t3"], "s1")
+        self.assertGreater(rating_model.predict(fitted, new_fav), 4.0)
+        self.assertLess(rating_model.predict(fitted, new_meh), 2.0)
+        # "common" is on every scene: above maxTagShare, so it gets no weight
+        self.assertNotIn("t:common", fitted["weights"])
+
+    def test_parent_studio_is_a_feature(self):
+        scene = _scene("1", studio="s1", studio_parent_id="net")
+        keys = [k for k, _ in rating_model.scene_features(scene)]
+        self.assertEqual(keys, ["s:s1", "s:net"])
+
+    def test_too_few_ratings_is_not_used(self):
+        scenes = [_scene(str(i), ["p1"], rating100=80) for i in range(rating_model.MIN_RATED - 1)]
+        fitted = rating_model.fit_library(scenes)
+        self.assertIsNone(fitted["cv"])
+        self.assertIsNone(rating_model.usable(fitted))
+
+
+class RatingModelPipelineTest(TempPathsMixin, unittest.TestCase):
+    def test_full_run_caches_model_and_hook_scores_with_it(self):
+        stash = FakeStash(n_scenes=200, n_performers=10)
+        _rate_by_performer(stash)
+        self.assertEqual(self.run_task(stash, "full"), 0)
+        fitted = state.load_state(self.state_path)["rating_model"]
+        self.assertTrue(fitted["usable"])
+        self.assertLess(fitted["cv"]["mae_model"], fitted["cv"]["mae_base"])
+
+        loved = stash.add_scene("500", random.Random(3), datetime.now(timezone.utc))
+        loved["performers"] = [{"id": "5"}]
+        disliked = stash.add_scene("501", random.Random(3), datetime.now(timezone.utc))
+        disliked["performers"] = [{"id": "6"}]
+        self.run_hook(stash, "500")
+        self.run_hook(stash, "501")
+        comp = {sid: json.loads(stash.scenes[sid]["custom_fields"]["restash_components"])
+                for sid in ("500", "501")}
+        self.assertGreater(comp["500"]["rating_pred"], 4.0)
+        self.assertLess(comp["501"]["rating_pred"], 2.0)
+        self.assertGreater(int(stash.scenes["500"]["custom_fields"]["restash_score"]),
+                           int(stash.scenes["501"]["custom_fields"]["restash_score"]))
+
+    def test_mirrored_ratings_are_not_learned_from(self):
+        stash = FakeStash(n_scenes=200, n_performers=10)
+        self.run_task(stash, "full")
+        for sc in stash.scenes.values():   # what the rating100 mirror leaves behind
+            sc["rating100"] = int(sc["custom_fields"]["restash_score"])
+        self.run_task(stash, "full")
+        self.assertEqual(state.load_state(self.state_path)["rating_model"]["n_rated"], 0)
+
+    def test_refresh_reuses_cached_model(self):
+        stash = FakeStash(n_scenes=200, n_performers=10)
+        _rate_by_performer(stash)
+        self.run_task(stash, "full")
+        cached = state.load_state(self.state_path)["rating_model"]
+        for sc in stash.scenes.values():
+            sc["rating100"] = None
+        self.run_task(stash, "refresh")
+        self.assertEqual(state.load_state(self.state_path)["rating_model"], cached)
+
+    def test_dry_run_reports_holdout_mae(self):
+        stash = FakeStash(n_scenes=200, n_performers=10)
+        _rate_by_performer(stash)
+        self.assertEqual(self.run_task(stash, "dry"), 0)
+        text = restash._dry_run_report_path().read_text()
+        self.assertIn("=== RATING MODEL", text)
+        self.assertRegex(text, r"MAE \d\.\d{3}★ vs \d\.\d{3}★ for your average")
+        self.assertIn("used: takes 100%", text)
+
+    def test_weight_zero_skips_the_model(self):
+        stash = FakeStash(n_scenes=200, n_performers=10)
+        _rate_by_performer(stash)
+        with mock.patch.object(stash_io, "connect", lambda conn: stash):
+            restash.run({"args": {"mode": "full"}, "server_connection": {},
+                         "plugin_config": {"ratingModelWeight": 0}})
+        self.assertIsNone(state.load_state(self.state_path)["rating_model"])
+        comp = json.loads(stash.scenes["1"]["custom_fields"]["restash_components"])
+        self.assertIsNone(comp["rating_pred"])
 
 
 class DisablePluginsTest(TempPathsMixin, unittest.TestCase):

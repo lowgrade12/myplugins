@@ -71,7 +71,7 @@ SCENE_FRAGMENT = """
 id title organized rating100 date created_at resume_time play_duration
 play_count o_counter last_played_at play_history o_history
 files { duration height }
-tags { id } performers { id } studio { id } scene_markers { id }
+tags { id } performers { id } studio { id parent_studio { id } } scene_markers { id }
 custom_fields
 """
 
@@ -140,6 +140,8 @@ def map_scene(raw: dict):
         studio_id=str(studio["id"]) if studio.get("id") else None,
         custom_fields=raw.get("custom_fields") or {},
         has_file=bool(files),
+        studio_parent_id=(str(studio["parent_studio"]["id"])
+                          if (studio.get("parent_studio") or {}).get("id") else None),
     )
 
 

@@ -11,6 +11,7 @@ Restash reads the behavioural log Stash keeps for every Scene and Performer — 
 - **"Disable Other Plugins" task** — can disable all other plugins before running to prevent interference, then re-enable them after
 - **Low write churn** — jitter re-rolls weekly and small score changes are not written, so a daily refresh touches a small fraction of the library
 - **Scale-aware wildcards** — a fixed handful of wildcards per day is placed by rank just under the top real scenes, so they surface in a descending sort even in very large libraries
+- **Rating model** — learns performer, studio and tag weights from your own scene ratings (ported from Cherry Pick's Your score) and uses them for each scene's taste term, so a scene you haven't watched — or one just created — is scored by how you rate scenes like it
 
 ## Install
 
@@ -45,6 +46,7 @@ Add this repository as a Stash plugin source:
 | Wildcard count | 20 | Low-confidence scenes promoted as wildcards each day (0 = off) |
 | Wildcard placement rank | 50 | Wildcards take the scores of the real scenes ranked just below this many |
 | Performer scene shrinkage K | 5.0 | Smoothing strength for sparse performer histories |
+| Rating model weight | 1 | Share of each scene's taste term taken from the model fitted to your ratings (0 = off) |
 | Blend manual ratings | off | Nudge taste model from manual ratings |
 | Exclusion tag name | [Restash: Exclude] | Tag to exclude entities from scoring |
 | Mirror to rating100 | off | Also write score to native rating (destructive) |
@@ -78,9 +80,19 @@ Add this repository as a Stash plugin source:
 3. Keep only changes that improve top-30 relevance while preserving rediscovery.
 4. Run **Recompute All** to lock in a new baseline, then use **Quick Refresh** daily.
 
+## Rating model
+
+Recompute All fits an additive model to your own scene ratings: your average, plus a weight for each performer, studio (and parent studio) and tag, held back from extremes (ridge regression) so a performer with one rated scene doesn't swing far. Scenes you watched but never rated count at 0.3 weight, from how you watched them; a scene played for less than a tenth of its length counts as not watched. The model is then checked on ratings it didn't see — five 80/20 splits, each rating held out once — and is used only if its error beats guessing your average rating for every scene.
+
+When used, its prediction takes **Rating model weight** of each scene's taste ("ingredients") term; the hand-weighted performer/tag/studio/quality blend takes the rest. Watch evidence, freshness, novelty, jitter and wildcards apply on top as before. Each scene's predicted stars are stored as `rating_pred` in `restash_components`.
+
+Only ratings you set count. A rating equal to the scene's `restash_score` is Restash's mirror and is skipped; with **Mirror to rating100** on, the rating backup supplies your ratings instead. The model is cached with the taste model, so Quick Refresh and the new-scene hook reuse it; rate more scenes and run Recompute All to refit. On a 144k-scene library the fit and its check take about half a minute.
+
+The Dry Run Report's **RATING MODEL** section shows how many ratings it learned from, its holdout mean absolute error against your average's, the share of predictions within half a star, and whether it is used.
+
 ## Hooks (automatic triggers)
 
-- **Scene.Create.Post** — scores just the new scene: its raw score is computed from the cached taste model and placed against the library score distribution saved by the last Recompute All / Quick Refresh. The library is never re-read, so large scans stay cheap. If no valid cache exists yet, the scene is left for the next Quick Refresh.
+- **Scene.Create.Post** — scores just the new scene: its raw score is computed from the cached taste model (rating model included) and placed against the library score distribution saved by the last Recompute All / Quick Refresh. The library is never re-read, so large scans stay cheap. If no valid cache exists yet, the scene is left for the next Quick Refresh.
 
   It then re-scores that scene's performers, so a performer created by the same scrape gets a score that reflects the scene.
 - **Performer.Create.Post** — scores just the new performer from their own scenes' stored scores (usually none yet), the cached taste model, and the performer score distribution saved by the last Recompute All / Quick Refresh. A brand-new performer with no scenes lands mid-pack (favorites get the usual floor); their scene-based score arrives when a scene featuring them is created or on the next Quick Refresh.

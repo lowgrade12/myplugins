@@ -19,7 +19,7 @@ BASE_AFFECTING_FIELDS = (
     "ingredient_w_perf", "ingredient_w_tag", "ingredient_w_studio",
     "ingredient_w_quality", "satiation_threshold", "satiation_floor",
     "satiation_window_days", "respect_manual_ratings", "favorite_affinity_bonus",
-    "perf_scenes_shrinkage_k", "scene_rating_weight",
+    "perf_scenes_shrinkage_k", "scene_rating_weight", "rating_model_weight",
 )
 
 
@@ -37,7 +37,8 @@ def default_state_path() -> str:
 def save_state(path: str, *, settings, affinities: dict, context: dict,
                raw_quantiles: list, written_at: str,
                perf_quantiles: list | None = None,
-               perf_scenes_prior: float | None = None) -> None:
+               perf_scenes_prior: float | None = None,
+               ratings_fit: dict | None = None) -> None:
     """Write the cache atomically (temp file in the same dir + os.replace) so a
     run dying mid-write cannot corrupt it."""
     state = {
@@ -50,6 +51,8 @@ def save_state(path: str, *, settings, affinities: dict, context: dict,
         # performer-hook inputs; absent in caches written before 0.7.0
         "perf_quantiles": perf_quantiles or [],
         "perf_scenes_prior": perf_scenes_prior,
+        # the rating model with its holdout result; absent before 0.8.0
+        "rating_model": ratings_fit,
     }
     directory = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=directory, prefix=".restash_state.", suffix=".tmp")

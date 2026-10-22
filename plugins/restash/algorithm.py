@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import models
+import rating_model
 from config import Settings
 
 
@@ -322,9 +323,12 @@ def _mean_top_n(values: list[float], n: int) -> float:
 def scene_base(scene: models.SceneData, aff: dict[str, dict],
                tag_scene_counts: dict[str, int], dur_median: float | None,
                dur_scale: float | None, cfg: Settings, now: datetime,
-               scene_ratings: dict[str, int] | None = None) -> dict:
+               scene_ratings: dict[str, int] | None = None,
+               ratings_fit: dict | None = None) -> dict:
     """Returns a components dict including 'ingredients', 'direct', 'confidence',
-    'base' and the sub-parts, all on the [-1,1] scale (quality centered, D1)."""
+    'base' and the sub-parts, all on the [-1,1] scale (quality centered, D1).
+    `ratings_fit` is a usable rating model (rating_model.py): its prediction takes
+    cfg.rating_model_weight of the ingredients term."""
     perf_affs = [aff["performers"].get(p, 0.0) for p in scene.performer_ids]
     perf_term = _mean_top_n(perf_affs, 3)
 
@@ -346,6 +350,12 @@ def scene_base(scene: models.SceneData, aff: dict[str, dict],
                    + cfg.ingredient_w_tag * tag_term
                    + cfg.ingredient_w_studio * studio_term
                    + cfg.ingredient_w_quality * quality_term)
+    rating_pred = None
+    if ratings_fit is not None and cfg.rating_model_weight > 0:
+        rating_pred = rating_model.predict(ratings_fit, scene)
+        w = clamp(cfg.rating_model_weight, 0.0, 1.0)
+        ingredients = ((1.0 - w) * ingredients
+                       + w * rating_model.content_term(ratings_fit, scene))
 
     events = extract_events(scene, cfg)
     ne = n_events(events)
@@ -366,7 +376,7 @@ def scene_base(scene: models.SceneData, aff: dict[str, dict],
     return {"perf": perf_term, "tag": tag_term, "studio": studio_term,
             "quality": quality_term, "ingredients": ingredients, "direct": direct,
             "confidence": confidence, "base": base, "rating_prior": rating_prior,
-            "n_events": ne}
+            "rating_pred": rating_pred, "n_events": ne}
 
 
 def finalize_from_base(scene_id: str, base: float, n_events: int,
@@ -403,10 +413,12 @@ def score_scenes(scenes: list[models.SceneData], cfg: Settings, now: datetime,
                  aff: dict[str, dict] | None = None,
                  scene_ratings: dict[str, int] | None = None,
                  context: dict | None = None,
-                 wildcards: bool = True) -> dict[str, models.SceneScore]:
+                 wildcards: bool = True,
+                 ratings_fit: dict | None = None) -> dict[str, models.SceneScore]:
     """Score `scenes`. `context` (from library_context) supplies library-wide tag
     counts and the duration sweet spot when `scenes` is not the whole library (the
-    new-scene hook); `wildcards=False` skips the date-seeded promotion."""
+    new-scene hook); `wildcards=False` skips the date-seeded promotion.
+    `ratings_fit` is the rating model, or None to score without it."""
     favorites = favorites or set()
     ratings = ratings or {}
     if aff is None:
@@ -421,7 +433,7 @@ def score_scenes(scenes: list[models.SceneData], cfg: Settings, now: datetime,
     ids: list[str] = []
     for s in scenes:
         comp = scene_base(s, aff, tag_counts, dur_median, dur_scale, cfg, now,
-                          scene_ratings=scene_ratings)
+                          scene_ratings=scene_ratings, ratings_fit=ratings_fit)
         ne = comp["n_events"]
         last = None if ne == 0 else _last_engagement(s)
         final, extra = finalize_from_base(
