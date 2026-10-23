@@ -262,6 +262,12 @@
 
   const EXTERNAL = { target: '_blank', rel: 'noopener noreferrer' }
 
+  // The store link's label: the store's name (ManyVids, Clips4Sale, ...),
+  // or for a studio's own site, which StashDB names "Studio", the studio's
+  const studioSite = (scene) => /^studio$/i.test((scene.store && scene.store.site) || '')
+  const storeLabel = (scene) =>
+    studioSite(scene) && scene.studio ? scene.studio : scene.store.site
+
   function MissingCard({ scene, site }) {
     const url = `${site}/scenes/${encodeURIComponent(scene.id)}`
     const duration = fmtDuration(scene.duration)
@@ -328,11 +334,14 @@
               {
                 className: 'minimal btn btn-primary restash-store-link',
                 href: scene.store.url,
-                title: /^studio$/i.test(scene.store.site) ? "The scene on its studio's site" : `The scene on ${scene.store.site}`,
+                title: studioSite(scene)
+                  ? `The scene on ${scene.studio || "its studio"}'s site`
+                  : `The scene on ${scene.store.site}`,
                 ...EXTERNAL,
               },
               h(Icon, { icon: icons.faExternalLinkAlt }),
-              h('span', null, scene.store.site),
+              // StashDB calls every studio's own site "Studio": name the studio
+              h('span', { className: 'restash-store-name' }, storeLabel(scene)),
             )
           : null,
         h(

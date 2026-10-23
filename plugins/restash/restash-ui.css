@@ -59,6 +59,21 @@
   flex-wrap: wrap;
 }
 
+/* a long studio name on the store link is cut short, not wrapped */
+.restash-store-link {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.restash-store-name {
+  display: inline-block;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
 /* "Downloaded" is an answer, not an unavailable action: keep it legible */
 .restash-whisparr-have:disabled {
   opacity: 1;
