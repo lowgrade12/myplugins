@@ -1,6 +1,6 @@
 name: HotOrNot
 description: Adds an ELO based ranking system for performers and images
-version: 2.3.1
+version: 2.3.2
 url: https://github.com/lowgrade12/hot-or-not
 ui:
   javascript:

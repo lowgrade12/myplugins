@@ -1183,7 +1183,8 @@
       last_match: null,
       recent_results: 0,
       last_rating_change: 0,
-      tournament_wins: 0
+      tournament_wins: 0,
+      last_title: null
     };
   }
 
@@ -1212,7 +1213,8 @@
           last_match: stats.last_match || null,
           recent_results: stats.recent_results || 0,
           last_rating_change: stats.last_rating_change || 0,
-          tournament_wins: stats.tournament_wins || 0
+          tournament_wins: stats.tournament_wins || 0,
+          last_title: stats.last_title || null
         };
       } catch (e) {
         console.warn(`[HotOrNot] Failed to parse hotornot_stats for performer ${performer.id}:`, e);
@@ -1242,7 +1244,8 @@
       total_matches: currentStats.total_matches + 1,
       last_match: new Date().toISOString(),
       last_rating_change: ratingChange,
-      tournament_wins: currentStats.tournament_wins
+      tournament_wins: currentStats.tournament_wins,
+      last_title: currentStats.last_title
     };
     
     // If won is null, this is participation-only tracking
@@ -1350,7 +1353,8 @@
         last_match: currentStats.last_match,
         recent_results: currentStats.recent_results,
         last_rating_change: currentStats.last_rating_change,
-        tournament_wins: (currentStats.tournament_wins || 0) + 1
+        tournament_wins: (currentStats.tournament_wins || 0) + 1,
+        last_title: new Date().toISOString()
       };
 
       const mutation = `
@@ -3707,7 +3711,10 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   /**
-   * Fetch every tournament champion, most titles first, then most recently active.
+   * Fetch every tournament champion: most titles first, then the most recent title.
+   * Sorting by last_title rather than last_match keeps a champion from jumping
+   * to the front just for playing regular matches. Titles won before
+   * last_title was recorded have no date, so they follow, by name.
    * Ignores the performers page filter: the Hall of Fame is always the whole library.
    * @returns {Promise<Array<{performer: Object, stats: Object}>>}
    */
@@ -3721,7 +3728,8 @@ async function fetchPerformerCount(performerFilter = {}) {
       .filter(c => c.stats.tournament_wins > 0)
       .sort((a, b) =>
         b.stats.tournament_wins - a.stats.tournament_wins ||
-        (b.stats.last_match || "").localeCompare(a.stats.last_match || "")
+        (b.stats.last_title || "").localeCompare(a.stats.last_title || "") ||
+        (a.performer.name || "").localeCompare(b.performer.name || "")
       );
   }
 
@@ -3743,9 +3751,10 @@ async function fetchPerformerCount(performerFilter = {}) {
       const tiles = group.map(({ performer: p, stats }) => {
         const name = escapeHtml(p.name || `Performer #${p.id}`);
         const rating = ((p.rating100 || 50) / 10).toFixed(1);
-        const last = stats.last_match
-          ? new Date(stats.last_match).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-          : "";
+        const formatDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+        const last = stats.last_title
+          ? `Last title ${formatDate(stats.last_title)}`
+          : stats.last_match ? `Last battle ${formatDate(stats.last_match)}` : "";
         return `
           <a class="hon-hof-tile" href="/performers/${escapeHtml(p.id)}" target="_blank" title="${name}">
             <img class="hon-hof-img" src="${escapeHtml(p.image_path || "")}" alt="" loading="lazy" />
@@ -3754,7 +3763,7 @@ async function fetchPerformerCount(performerFilter = {}) {
               <span class="hon-hof-titles">🏆 ${stats.tournament_wins}</span>
               <span class="hon-hof-rating">★ ${rating}</span>
             </span>
-            ${last ? `<span class="hon-hof-last">Last battle ${last}</span>` : ""}
+            ${last ? `<span class="hon-hof-last">${last}</span>` : ""}
           </a>
         `;
       }).join("");
