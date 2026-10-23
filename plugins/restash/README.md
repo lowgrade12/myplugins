@@ -11,6 +11,7 @@ Restash reads the behavioural log Stash keeps for every Scene and Performer — 
 - **"Disable Other Plugins" task** — can disable all other plugins before running to prevent interference, then re-enable them after
 - **Low write churn** — jitter re-rolls weekly and small score changes are not written, so a daily refresh touches a small fraction of the library
 - **Scale-aware wildcards** — a fixed handful of wildcards per day is placed by rank just under the top real scenes, so they surface in a descending sort even in very large libraries
+- **"Not in your library" on performer pages** — the performer's StashDB scenes you don't have, ranked by the score Restash would give each one, with a link to where to get it, a link to StashDB and, when the Whisparr Update plugin is enabled, a Whisparr button (add monitored and search; shows Downloaded / Wanted / In Whisparr). StashDB is asked on the server with the stash-box key from Stash's settings, so the key never reaches the browser. Turn it off with *Hide 'Not in your library' on performer pages*.
 - **Rating model** — learns performer, studio and tag weights from your own scene ratings (ported from Cherry Pick's Your score) and uses them for each scene's taste term, so a scene you haven't watched — or one just created — is scored by how you rate scenes like it
 
 ## Install

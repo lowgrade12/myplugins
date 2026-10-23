@@ -5,6 +5,7 @@ import sys
 
 import algorithm
 import config
+import missing
 import models
 import rating_model
 import ratings_backup
@@ -297,6 +298,12 @@ def run(payload: dict) -> int:
     args = payload.get("args") or {}
     if "hookContext" in args:
         return _handle_hook(payload)
+    # The UI's "Not in your library" row (restash-ui.js), via runPluginOperation:
+    # reads only, and answers on stdout, so none of the task setup below runs.
+    if args.get("mode") == "missing":
+        stash = stash_io.connect(payload.get("server_connection") or {})
+        settings = build_settings(stash_io.fetch_plugin_settings(stash, PLUGIN_ID), {})
+        return missing.run_op(stash, settings, args)
 
     mode, conn, args = parse_input(payload)
     stash = stash_io.connect(conn)

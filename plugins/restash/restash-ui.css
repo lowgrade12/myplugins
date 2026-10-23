@@ -1,0 +1,70 @@
+/* Restash's "Not in your library" on performer pages. Layout only: colours,
+   fonts and backgrounds come from Stash's own card, badge and button classes,
+   so any theme restyles it. */
+
+.restash-missing {
+  margin-top: 1.5rem;
+}
+
+.restash-missing-head {
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+.restash-missing-title {
+  margin: 0;
+}
+
+.restash-missing-note {
+  text-align: center;
+}
+
+.restash-missing-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.restash-missing-card {
+  width: 320px;
+  max-width: 100%;
+}
+
+/* the cover fills the card's thumbnail like a scene screenshot */
+.restash-missing-card .scene-card-preview-image {
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  width: 100%;
+}
+
+/* the badge on the cover, bottom left */
+.restash-missing-badge {
+  bottom: 0.5rem;
+  left: 0.5rem;
+  position: absolute;
+  z-index: 3;
+}
+
+/* the score Restash would give the scene, top left of the cover */
+.restash-score-badge {
+  left: 0.5rem;
+  position: absolute;
+  top: 0.5rem;
+  z-index: 3;
+}
+
+/* four buttons can share the row: wrap on narrow cards */
+.restash-missing-card .card-popovers {
+  flex-wrap: wrap;
+}
+
+/* "Downloaded" is an answer, not an unavailable action: keep it legible */
+.restash-whisparr-have:disabled {
+  opacity: 1;
+}
+
+.restash-missing-more {
+  margin-top: 0.75rem;
+  text-align: center;
+}

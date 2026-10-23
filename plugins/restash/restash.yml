@@ -1,11 +1,17 @@
 name: Restash
 description: Computes a freshness score for scenes and performers into custom fields.
-version: 0.8.0
+version: 0.9.0
 url: https://github.com/lowgrade12/myplugins
 exec:
   - python
   - "{pluginDir}/restash.py"
 interface: raw
+# "Not in your library" on performer pages (restash-ui.js, missing.py)
+ui:
+  javascript:
+    - restash-ui.js
+  css:
+    - restash-ui.css
 settings:
   tasteHalfLifeDays:    { displayName: Taste half-life (days), type: NUMBER, description: "How fast older watch events fade when building taste. Leave blank for the default (120)." }
   cooldownDays:         { displayName: Cooldown period (days), type: NUMBER, description: "Post-watch suppression window before rediscovery begins. Leave blank for the default (14)." }
@@ -28,6 +34,7 @@ settings:
   mirrorToRating100:    { displayName: "Also mirror score to rating100 (destructive)", type: BOOLEAN, description: "If on, each entity's Restash score is ALSO written to native rating100 (enables the in-app 'Rating, descending' sort). OVERWRITES manual ratings; a backup is auto-created first and can be reverted with 'Restore Ratings'. Default off." }
   disablePluginsBeforeRun: { displayName: "Disable other plugins before run", type: BOOLEAN, description: "If on, all other enabled plugins will be disabled before Restash runs, then re-enabled after. Prevents interference from other plugins during scoring. Default off." }
   jitterPeriodDays:     { displayName: Jitter period (days), type: NUMBER, description: "How often the small random ordering jitter is re-rolled. Longer periods mean far fewer score writes between re-rolls; 1 re-rolls daily. Leave blank for the default (7)." }
+  hideMissingRow:       { displayName: "Hide 'Not in your library' on performer pages", type: BOOLEAN, description: "Off (default): performer pages list the performer's StashDB scenes you don't have, ranked by the score Restash would give them, with a Whisparr button when Whisparr Update is enabled. Needs a StashDB stash-box with an API key." }
   minScoreChange:       { displayName: Minimum score change to write, type: NUMBER, description: "Skip writing a score unless it moved by at least this many points (wildcard changes always write). Cuts write volume and other plugins' update hooks; 1 writes every change. Leave blank for the default (3)." }
 tasks:
   - name: Dry Run Report
