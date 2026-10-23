@@ -36,10 +36,12 @@ The plugin offers five distinct comparison modes:
 - **Smart ranking via binary search** — Finds each performer's true rating with minimal comparisons
 - The system picks the performer whose rating it is **least confident** about (fewest matches) and focuses on them
 - It then uses a binary-search approach to zero in on their correct position:
+  - **Starting range**: Unrated performers start with the full 1–100 range. Rated performers start in a window around their current rating (±25 points after one match, narrowing to ±10 with more matches), so calibrating an established performer refines their rating instead of resetting it
   - The performer is compared against well-established "anchor" performers near the midpoint of their estimated rating range
   - If the target performer **wins**, the lower bound of their rating range moves up (they're at least this good)
   - If the target performer **loses**, the upper bound moves down (they're no better than this)
   - Each match narrows the range until the rating converges
+  - If the range closes against an edge of the starting window (e.g. the performer keeps winning), that edge widens by 20 points (up to 100 or down to 1) so a misrated performer can still move past it
 - **Step counter (e.g. "Step 3/10")**: Shows how many comparisons have been made for the current target performer, up to a maximum of 10
 - **Early convergence**: A performer can finish **before** reaching step 10 if their rating range narrows to within ±5 points — meaning the system has already found their position accurately. This is why you may see a performer finish at step 5 and a new one begin
 - **Confidence percentage**: Represents how reliable a performer's current rating is, based on how many matches they've played:
