@@ -1671,6 +1671,11 @@
       
       freshWinnerObj = fetchedWinner || winnerObj;
       freshLoserObj = fetchedLoser || loserObj;
+
+      // Undo restores this server state, not the pair objects: in tournament
+      // and KOTH those were loaded when the bracket or reign started and miss
+      // every match since.
+      rememberPreMatchState(fetchedWinner, fetchedLoser);
     }
     
     // Parse match counts from custom fields (only for performers)
@@ -4980,24 +4985,40 @@ async function fetchPerformerCount(performerFilter = {}) {
       kothBestStreak: kothBestStreak,
       kothBestKing: kothBestKing ? structuredClone(kothBestKing) : null,
       kothDethroned: structuredClone(kothDethroned),
+      // Filled by handleComparison with each performer's rating and stats as
+      // saved just before the match: { [id]: { rating100, stats } }
+      serverState: {},
     };
+  }
+
+  /**
+   * Record the server's pre-match rating and stats for undo.
+   * @param {...(Object|null)} performers - Performers freshly fetched before the match (null if the fetch failed)
+   */
+  function rememberPreMatchState(...performers) {
+    if (!previousBattle) return;
+    for (const p of performers) {
+      if (!p) continue;
+      previousBattle.serverState[String(p.id)] = {
+        rating100: p.rating100 ?? null,
+        stats: (p.custom_fields && p.custom_fields.hotornot_stats) || null
+      };
+    }
   }
 
   /**
    * Restore a performer's rating and stats to a pre-battle snapshot.
    * @param {string} performerId - The performer's ID
-   * @param {number} oldRating - The rating to restore
-   * @param {string|null} oldStats - Serialised hotornot_stats JSON string (or null if none)
+   * @param {number|null} oldRating - The rating to restore (null = unrated)
+   * @param {string|null} oldStats - Serialised hotornot_stats JSON string (null = had none, so remove it)
    */
   async function restorePerformerState(performerId, oldRating, oldStats) {
     const mutation = `
-      mutation RestorePerformerState($id: ID!, $rating: Int!, $fields: Map) {
+      mutation RestorePerformerState($id: ID!, $rating: Int, $customFields: CustomFieldsInput) {
         performerUpdate(input: {
           id: $id,
           rating100: $rating,
-          custom_fields: {
-            partial: $fields
-          }
+          custom_fields: $customFields
         }) {
           id
           rating100
@@ -5006,14 +5027,16 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
     `;
 
-    const fields = oldStats !== null && oldStats !== undefined
-      ? { hotornot_stats: oldStats }
-      : {};
+    const customFields = oldStats !== null && oldStats !== undefined
+      ? { partial: { hotornot_stats: oldStats } }
+      : { remove: ["hotornot_stats"] };
 
     const result = await graphqlQuery(mutation, {
       id: performerId,
-      rating: Math.max(1, Math.min(100, Math.round(oldRating))),
-      fields
+      rating: oldRating === null || oldRating === undefined
+        ? null
+        : Math.max(1, Math.min(100, Math.round(oldRating))),
+      customFields
     });
     applyPerformerUpdateToPool(result && result.performerUpdate);
     return result;
@@ -5037,14 +5060,26 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     try {
       if (battleType === "performers") {
-        const leftStats = undo.left.custom_fields && undo.left.custom_fields.hotornot_stats
-          ? undo.left.custom_fields.hotornot_stats : null;
-        const rightStats = undo.right.custom_fields && undo.right.custom_fields.hotornot_stats
-          ? undo.right.custom_fields.hotornot_stats : null;
+        // Prefer the server state captured just before the match; fall back to
+        // the pair objects only if that fetch failed.
+        const preMatch = (item) => undo.serverState[String(item.id)] || {
+          rating100: item.rating100 ?? null,
+          stats: (item.custom_fields && item.custom_fields.hotornot_stats) || null
+        };
+        const leftState = preMatch(undo.left);
+        const rightState = preMatch(undo.right);
         await Promise.all([
-          restorePerformerState(undo.left.id, undo.left.rating100 || 50, leftStats),
-          restorePerformerState(undo.right.id, undo.right.rating100 || 50, rightStats)
+          restorePerformerState(undo.left.id, leftState.rating100, leftState.stats),
+          restorePerformerState(undo.right.id, rightState.rating100, rightState.stats)
         ]);
+
+        // Show the restored values on the re-rendered cards
+        for (const [item, state] of [[undo.left, leftState], [undo.right, rightState]]) {
+          item.rating100 = state.rating100;
+          item.custom_fields = { ...(item.custom_fields || {}) };
+          if (state.stats) item.custom_fields.hotornot_stats = state.stats;
+          else delete item.custom_fields.hotornot_stats;
+        }
       } else if (battleType === "images") {
         await Promise.all([
           updateImageRating(undo.left.id, undo.left.rating100 || 50),
