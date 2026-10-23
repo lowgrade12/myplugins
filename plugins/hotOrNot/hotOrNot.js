@@ -10,6 +10,8 @@
   let calibrationTarget = null; // The performer being calibrated (least confident)
   let calibrationLow = 1; // Binary search lower bound rating
   let calibrationHigh = 100; // Binary search upper bound rating
+  let calibrationLowOpen = false; // True while calibrationLow is a guess from the current rating, not a match result
+  let calibrationHighOpen = false; // True while calibrationHigh is a guess from the current rating, not a match result
   let calibrationStep = 0; // Number of calibration matches for current target
   let calibrationLastResult = ""; // Reason why the previous target finished (for dashboard display)
   const CALIBRATION_MAX_STEPS = 10; // Max binary search steps before moving to next target
@@ -19,6 +21,9 @@
   const CALIBRATION_MIN_WEIGHT = 0.1; // Minimum weight to prevent zero weights for max-confidence performers
   const CALIBRATION_CONFIDENCE_WEIGHT = 10; // Weight of confidence vs rating proximity in anchor selection
   const CALIBRATION_TOP_CANDIDATES = 3; // Number of top anchor candidates to randomly select from
+  const CALIBRATION_MIN_HALF_WIDTH = 10; // Smallest starting search window (± points) around a rated performer's current rating
+  const CALIBRATION_BASE_HALF_WIDTH = 25; // Starting window (± points) for a rated performer with one match; shrinks with sqrt(matches)
+  const CALIBRATION_WIDEN_STEP = 20; // How far an open window edge moves when the target converges against it
 
   // Tournament mode state
   let tournamentBracket = null; // Array of rounds, each with match slots
@@ -55,8 +60,80 @@
     calibrationTarget = null;
     calibrationLow = 1;
     calibrationHigh = 100;
+    calibrationLowOpen = false;
+    calibrationHighOpen = false;
     calibrationStep = 0;
     calibrationLastResult = "";
+  }
+
+  /**
+   * Make a performer the calibration target and set the starting search window.
+   * Unrated performers search the full 1–100 range. Rated performers start in a
+   * window around their current rating that narrows as they play more matches,
+   * so one calibration result can't throw away an established rating. Those
+   * window edges are "open": if the target converges against one, the search
+   * widens past it instead of stopping (see handleChooseItem).
+   * @param {Object} performer - Performer object with rating100 and custom_fields
+   */
+  function startCalibrationTarget(performer) {
+    calibrationTarget = performer;
+    calibrationStep = 0;
+
+    const rating = performer.rating100;
+    if (!rating) {
+      calibrationLow = 1;
+      calibrationHigh = 100;
+      calibrationLowOpen = false;
+      calibrationHighOpen = false;
+      return;
+    }
+
+    const matches = parsePerformerEloData(performer).total_matches;
+    const halfWidth = Math.max(
+      CALIBRATION_MIN_HALF_WIDTH,
+      Math.round(CALIBRATION_BASE_HALF_WIDTH / Math.sqrt(Math.max(1, matches)))
+    );
+    calibrationLow = Math.max(1, rating - halfWidth);
+    calibrationHigh = Math.min(100, rating + halfWidth);
+    // An edge already at the end of the scale has nothing beyond it to explore
+    calibrationLowOpen = calibrationLow > 1;
+    calibrationHighOpen = calibrationHigh < 100;
+  }
+
+  /**
+   * Narrow the calibration search window after a match between the target and
+   * an anchor, and count the step.
+   * @param {boolean} targetIsWinner - Whether the calibration target won
+   * @param {number} anchorRating - The anchor's rating before the match
+   */
+  function applyCalibrationResult(targetIsWinner, anchorRating) {
+    if (targetIsWinner) {
+      // Target won — they're at least as good as the anchor, raise lower bound
+      calibrationLow = Math.max(calibrationLow, anchorRating);
+      calibrationLowOpen = false;
+      // The newest result wins if it contradicts an earlier bound
+      calibrationHigh = Math.max(calibrationHigh, calibrationLow);
+    } else {
+      // Target lost — they're below the anchor, lower upper bound
+      calibrationHigh = Math.min(calibrationHigh, anchorRating);
+      calibrationHighOpen = false;
+      calibrationLow = Math.min(calibrationLow, calibrationHigh);
+    }
+    calibrationStep++;
+
+    // Converging against an edge that came from the starting window (not from
+    // a match) means the target may belong beyond it, so widen the search past
+    // that edge instead of stopping there. The new edge is still a guess, so it
+    // stays open and can widen again until it reaches the end of the scale.
+    if ((calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
+      if (calibrationHighOpen) {
+        calibrationHigh = Math.min(100, calibrationHigh + CALIBRATION_WIDEN_STEP);
+        calibrationHighOpen = calibrationHigh < 100;
+      } else if (calibrationLowOpen) {
+        calibrationLow = Math.max(1, calibrationLow - CALIBRATION_WIDEN_STEP);
+        calibrationLowOpen = calibrationLow > 1;
+      }
+    }
   }
 
   /**
@@ -1650,24 +1727,11 @@
       loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
     }
     
-    let newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));
-    let newLoserRating = Math.min(100, Math.max(1, loserRating - loserLoss));
-    
-    // Ensure the winner moves to at least the same ranking as the loser (or higher)
-    // If the ELO movement alone doesn't achieve this, adjust the ratings to ensure
-    // the winner ranks above the loser after a direct head-to-head victory
-    if (newWinnerRating < newLoserRating) {
-      // The winner beat the loser head-to-head, so they should rank higher
-      // Set winner's rating to 1 point above loser's new rating
-      // If that would exceed 100, also reduce the loser's rating to make room
-      if (newLoserRating === 100) {
-        // Loser is at ceiling, so reduce loser by 1 to make room for winner
-        newLoserRating = 99;
-        newWinnerRating = 100;
-      } else {
-        newWinnerRating = newLoserRating + 1;
-      }
-    }
+    // No "winner must end up above loser" adjustment: forcing it turned single
+    // upsets into huge jumps (20 beating 80 became +45) and broke zero-sum.
+    // Repeated wins move the winner past the loser over a few matches instead.
+    const newWinnerRating = Math.min(100, Math.max(1, winnerRating + winnerGain));
+    const newLoserRating = Math.min(100, Math.max(1, loserRating - loserLoss));
     
     const winnerChange = newWinnerRating - winnerRating;
     const loserChange = newLoserRating - loserRating;
@@ -2427,10 +2491,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       target = withStats[Math.floor(Math.random() * withStats.length)];
     }
 
-    calibrationTarget = target.performer;
-    calibrationLow = 1;
-    calibrationHigh = 100;
-    calibrationStep = 0;
+    startCalibrationTarget(target.performer);
 
     // Find an anchor near the target's current rating (starting point of binary search)
     const midpoint = target.rating;
@@ -4167,6 +4228,7 @@ async function fetchPerformerCount(performerFilter = {}) {
             <div class="hon-loading">Loading...</div>
           </div>
           <div class="hon-actions">
+            <div id="hon-battle-error" class="hon-battle-error" role="alert" style="display: none;"></div>
             <button id="hon-skip-btn" class="btn btn-secondary">Skip (Get New Pair)</button>
             <button id="hon-undo-btn" class="btn btn-secondary hon-undo-btn" style="display: none;" disabled>↩ Undo Last Battle</button>
             <div class="hon-keyboard-hint">
@@ -4715,6 +4777,7 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   async function loadNewPair(retryCount = 0) {
     disableChoice = false;
+    hideBattleError();
     // Ensure tier config is loaded before rendering cards (cheap — cached after first call)
     await getTierConfig();
     const comparisonArea = document.getElementById("hon-comparison-area");
@@ -4895,6 +4958,8 @@ async function fetchPerformerCount(performerFilter = {}) {
       calibrationTarget: calibrationTarget ? structuredClone(calibrationTarget) : null,
       calibrationLow: calibrationLow,
       calibrationHigh: calibrationHigh,
+      calibrationLowOpen: calibrationLowOpen,
+      calibrationHighOpen: calibrationHighOpen,
       calibrationStep: calibrationStep,
       // Tournament state
       tournamentBracket: tournamentBracket ? structuredClone(tournamentBracket) : null,
@@ -4986,6 +5051,8 @@ async function fetchPerformerCount(performerFilter = {}) {
         calibrationTarget = undo.calibrationTarget;
         calibrationLow = undo.calibrationLow;
         calibrationHigh = undo.calibrationHigh;
+        calibrationLowOpen = undo.calibrationLowOpen;
+        calibrationHighOpen = undo.calibrationHighOpen;
         calibrationStep = undo.calibrationStep;
       }
 
@@ -5048,6 +5115,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
 
       disableChoice = false;
+      hideBattleError();
 
       // Hide undo button — user can only undo one battle at a time
       if (undoBtn) {
@@ -5191,12 +5259,55 @@ async function fetchPerformerCount(performerFilter = {}) {
     setTimeout(() => overlay.remove(), 1800);
   }
 
+  /**
+   * Show a battle error under the cards and re-enable choosing, so a failed
+   * save doesn't leave the modal unresponsive. The pair stays on screen.
+   * @param {string} message - What failed, shown to the user
+   * @param {Error} error - The underlying error
+   * @param {boolean} offerUndo - Show the undo button (some updates may have been saved)
+   */
+  function showBattleError(message, error, offerUndo) {
+    console.error(`[HotOrNot] ${message}:`, error);
+    const errorEl = document.getElementById("hon-battle-error");
+    if (errorEl) {
+      errorEl.textContent = `${message}: ${error?.message || error}. ` +
+        (offerUndo ? "Undo reverts anything that was saved before picking again." : "Try again.");
+      errorEl.style.display = "";
+    }
+    const undoBtn = document.getElementById("hon-undo-btn");
+    if (offerUndo && undoBtn && previousBattle) {
+      undoBtn.style.display = "";
+      undoBtn.disabled = false;
+    }
+    disableChoice = false;
+  }
+
+  function hideBattleError() {
+    const errorEl = document.getElementById("hon-battle-error");
+    if (errorEl) errorEl.style.display = "none";
+  }
+
   async function handleChooseItem(event) {
     if(disableChoice) return;
     disableChoice = true;
+    hideBattleError();
     // Save state BEFORE processing so the user can undo if they made a mistake
     saveBattleState();
+    // currentTarget is cleared once the event finishes dispatching, so grab it now
     const body = event.currentTarget;
+    try {
+      await recordChoice(body);
+    } catch (error) {
+      showBattleError("Couldn't save that choice", error, true);
+    }
+  }
+
+  /**
+   * Apply the user's pick for the current pair: update ratings and stats,
+   * advance the mode's state and show the result.
+   * @param {HTMLElement} body - The clicked card body (carries data-winner)
+   */
+  async function recordChoice(body) {
     const winnerId = body.dataset.winner;
     const winnerCard = body.closest(".hon-scene-card");
     const loserId = winnerId === currentPair.left.id ? currentPair.right.id : currentPair.left.id;
@@ -5220,14 +5331,7 @@ async function fetchPerformerCount(performerFilter = {}) {
         const preCalibrationRating = targetIsWinner ? winnerRating : loserRating;
         const anchorRating = Math.max(1, Math.min(100, targetIsWinner ? loserRating : winnerRating));
 
-        if (targetIsWinner) {
-          // Target won — they're at least as good as the anchor, raise lower bound
-          calibrationLow = Math.max(calibrationLow, anchorRating);
-        } else {
-          // Target lost — they're below the anchor, lower upper bound
-          calibrationHigh = Math.min(calibrationHigh, anchorRating);
-        }
-        calibrationStep++;
+        applyCalibrationResult(targetIsWinner, anchorRating);
 
         // Override the target's rating with the binary search midpoint after every step.
         // The ELO changes from handleComparison are for pairing guidance only;
@@ -5265,6 +5369,8 @@ async function fetchPerformerCount(performerFilter = {}) {
           calibrationStep = 0;
           calibrationLow = 1;
           calibrationHigh = 100;
+          calibrationLowOpen = false;
+          calibrationHighOpen = false;
         }
       }
 
@@ -5875,20 +5981,7 @@ function addFloatingButton() {
     // Skip button
     const skipBtn = modal.querySelector("#hon-skip-btn");
     if (skipBtn) {
-      skipBtn.addEventListener("click", async () => {
-        // In tournament mode, skip is disabled (must pick a winner)
-        if (currentMode === "tournament" && tournamentSetupDone) {
-          return;
-        }
-        if(disableChoice) return
-        disableChoice = true;
-        // Apply ELO draw rating changes for skips in Swiss and calibration modes
-        // KOTH skips just fetch a new challenger — no draw penalty (king stays)
-        if ((currentMode === "swiss" || currentMode === "calibration") && currentPair.left && currentPair.right) {
-          await handleSkip(currentPair.left, currentPair.right);
-        }
-        loadNewPair();
-      });
+      skipBtn.addEventListener("click", skipCurrentPair);
     }
 
     // Stats button (performers only)
@@ -5914,10 +6007,7 @@ function addFloatingButton() {
         console.log(`[HotOrNot] Fetched performer for calibration:`, performer.name);
         // Set the performer as the calibration target so calibration mode
         // focuses on rating this specific performer
-        calibrationTarget = performer;
-        calibrationStep = 0;
-        calibrationLow = 1;
-        calibrationHigh = 100;
+        startCalibrationTarget(performer);
       } else {
         console.error(`[HotOrNot] Could not fetch performer with ID: ${singlePerformerId}. Performer may have been deleted, access restricted, or ID is invalid.`);
       }
@@ -5959,21 +6049,31 @@ function addFloatingButton() {
         const activeElement = document.activeElement;
         if (activeElement.tagName !== "INPUT" && activeElement.tagName !== "TEXTAREA") {
           e.preventDefault();
-          // Don't skip during tournament (must pick a winner)
-          if (currentMode === "tournament" && tournamentSetupDone) {
-            return;
-          }
-          if(disableChoice) return;
-          disableChoice = true;
-          // Apply ELO draw rating changes for skips in Swiss and calibration modes
-          // KOTH skips just fetch a new challenger — no draw penalty (king stays)
-          if ((currentMode === "swiss" || currentMode === "calibration") && currentPair.left && currentPair.right) {
-            await handleSkip(currentPair.left, currentPair.right);
-          }
-          loadNewPair();
+          skipCurrentPair();
         }
       }
     });
+  }
+
+  /**
+   * Skip the current pair (Skip button or Space). Swiss and calibration record
+   * it as a draw; KOTH just fetches a new challenger (the king stays, no
+   * penalty). Tournaments can't skip — a winner must be picked.
+   */
+  async function skipCurrentPair() {
+    if (currentMode === "tournament" && tournamentSetupDone) return;
+    if (disableChoice) return;
+    disableChoice = true;
+    hideBattleError();
+    try {
+      if ((currentMode === "swiss" || currentMode === "calibration") && currentPair.left && currentPair.right) {
+        await handleSkip(currentPair.left, currentPair.right);
+      }
+    } catch (error) {
+      showBattleError("Couldn't save the skip", error, false);
+      return;
+    }
+    loadNewPair();
   }
 
   function closeRankingModal() {
