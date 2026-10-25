@@ -376,7 +376,9 @@ def _run_dry(stash, settings: config.Settings) -> int:
         live_scene={s.id: s.rating100 for s in scenes if s.rating100 is not None},
         live_perf={p.id: p.rating100 for p in performers if p.rating100 is not None})
 
-    aff = algorithm.build_affinities(scenes, now, settings, favorites, perf_ratings)
+    champions = algorithm.champion_bonuses(performers, now, settings)
+    aff = algorithm.build_affinities(scenes, now, settings, favorites, perf_ratings,
+                                     champions)
     fitted = _fit_rating_model(scenes, settings)
     log.progress(0.75)
     scene_scores = algorithm.score_scenes(scenes, settings, now, date_seed,
@@ -461,7 +463,10 @@ def _score_and_write(stash, settings: config.Settings, cached_aff: dict | None,
         live_perf={p.id: p.rating100 for p in kept_performers if p.rating100 is not None})
 
     if cached_aff is None:
-        aff = algorithm.build_affinities(kept_scenes, now, settings, favorites, perf_ratings)
+        champions = algorithm.champion_bonuses(kept_performers, now, settings)
+        log.info(f"[Restash] HotOrNot champions as a taste prior: {len(champions)}.")
+        aff = algorithm.build_affinities(kept_scenes, now, settings, favorites, perf_ratings,
+                                         champions)
         fitted = _fit_rating_model(kept_scenes, settings)
     else:
         aff = cached_aff

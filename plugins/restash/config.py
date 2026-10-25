@@ -26,6 +26,7 @@ _PLUGIN_KEY_MAP = {
     "jitterPeriodDays": "jitter_period_days",
     "minScoreChange": "min_score_change",
     "ratingModelWeight": "rating_model_weight",
+    "championAffinityBonus": "champion_affinity_bonus",
 }
 
 
@@ -66,6 +67,11 @@ class Settings:
     wildcard_pool_high: float = 0.70
     favorite_affinity_bonus: float = 1.0
     favorite_percentile_floor: float = 0.75
+    # HotOrNot tournament titles (its Hall of Fame) as a performer prior, like
+    # favorites: the full bonus is approached as titles add up, and it halves
+    # every champion_half_life_days since the last title. 0 turns it off.
+    champion_affinity_bonus: float = 0.75
+    champion_half_life_days: float = 180.0
     ingredient_w_perf: float = 0.45
     ingredient_w_tag: float = 0.35
     ingredient_w_studio: float = 0.10

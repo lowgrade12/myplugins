@@ -20,6 +20,7 @@ BASE_AFFECTING_FIELDS = (
     "ingredient_w_quality", "satiation_threshold", "satiation_floor",
     "satiation_window_days", "respect_manual_ratings", "favorite_affinity_bonus",
     "perf_scenes_shrinkage_k", "scene_rating_weight", "rating_model_weight",
+    "champion_affinity_bonus", "champion_half_life_days",
 )
 
 
