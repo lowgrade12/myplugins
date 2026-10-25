@@ -1,10 +1,11 @@
 from __future__ import annotations
 import bisect
 import hashlib
+import json
 import math
 import statistics
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 import models
 import rating_model
@@ -184,15 +185,58 @@ def normalize_affinities(raw: dict[str, float]) -> dict[str, float]:
     return {k: math.tanh(z) for k, z in _zscores(raw).items()}
 
 
+def champion_bonuses(performers: list[models.PerformerData], now: datetime,
+                     cfg: Settings) -> dict[str, float]:
+    """HotOrNot's Hall of Fame as a performer prior: {performer id: bonus} for
+    every performer with a tournament title, read from the hotornot_stats
+    custom field HotOrNot keeps. Each title closes half the gap to the full
+    cfg.champion_affinity_bonus (1 title ½, 2 ¾, 3 ⅞), and the bonus halves
+    every cfg.champion_half_life_days since the last title. Titles won before
+    HotOrNot recorded last_title date from the performer's last match."""
+    if cfg.champion_affinity_bonus <= 0:
+        return {}
+    out = {}
+    for p in performers:
+        raw = (p.custom_fields or {}).get("hotornot_stats")
+        if not raw:
+            continue
+        try:
+            stats = json.loads(raw) if isinstance(raw, str) else dict(raw)
+            titles = int(stats.get("tournament_wins") or 0)
+        except (ValueError, TypeError):
+            continue
+        if titles <= 0:
+            continue
+        when = _parse_iso(stats.get("last_title")) or _parse_iso(stats.get("last_match"))
+        fade = (0.5 ** (age_days(when, now) / cfg.champion_half_life_days)
+                if when else 0.5)
+        out[p.id] = cfg.champion_affinity_bonus * (1.0 - 0.5 ** titles) * fade
+    return out
+
+
+def _parse_iso(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 def apply_performer_priors(zscored: dict[str, float], favorites: set[str],
-                           ratings: dict[str, int], cfg: Settings) -> dict[str, float]:
-    """Take PRE-tanh z-scores, add favorite bonus + manual-rating blend, then squash
-    once with tanh. Used for the performer class (priors must precede the squash)."""
+                           ratings: dict[str, int], cfg: Settings,
+                           champions: dict[str, float] | None = None) -> dict[str, float]:
+    """Take PRE-tanh z-scores, add favorite bonus, HotOrNot champion bonus and
+    manual-rating blend, then squash once with tanh. Used for the performer class
+    (priors must precede the squash)."""
+    champions = champions or {}
     out = {}
     for key, z in zscored.items():
         adjusted = z
         if key in favorites:
             adjusted += cfg.favorite_affinity_bonus
+        adjusted += champions.get(key, 0.0)
         if key in ratings and ratings[key] is not None:
             adjusted += (ratings[key] - 50) / 50.0 * 0.5
         out[key] = math.tanh(adjusted)
@@ -284,7 +328,8 @@ def duration_sweet_spot(scenes: list[models.SceneData]) -> tuple[float | None, f
 
 
 def build_affinities(scenes: list[models.SceneData], now: datetime, cfg: Settings,
-                     favorites: set[str], ratings: dict[str, int]) -> dict[str, dict]:
+                     favorites: set[str], ratings: dict[str, int],
+                     champions: dict[str, float] | None = None) -> dict[str, dict]:
     """Returns {'performers':{id:aff}, 'tags':{...}, 'studios':{...}}, each in [-1,1],
     with satiation (D2) already applied to performers and tags."""
     classes = {"performers": ("performer_ids", True), "tags": ("tag_ids", True),
@@ -306,7 +351,8 @@ def build_affinities(scenes: list[models.SceneData], now: datetime, cfg: Setting
     for cls in classes:
         zscores = _zscores(affinity_raw(value_sums[cls], exposure[cls]))
         if cls == "performers":
-            result[cls] = apply_performer_priors(zscores, favorites, ratings, cfg)
+            result[cls] = apply_performer_priors(zscores, favorites, ratings, cfg,
+                                                 champions)
         else:
             result[cls] = {k: math.tanh(z) for k, z in zscores.items()}
 
