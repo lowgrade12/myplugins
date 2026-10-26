@@ -76,7 +76,7 @@ custom_fields
 """
 
 PERFORMER_FRAGMENT = """
-id name favorite rating100 o_counter scene_count created_at tags { id } custom_fields
+id name gender favorite rating100 o_counter scene_count created_at tags { id } custom_fields
 """
 
 _FIND_SCENES = """
@@ -157,6 +157,7 @@ def map_performer(raw: dict):
         tag_ids=[str(t["id"]) for t in (raw.get("tags") or [])],
         created_at=_parse_dt(raw.get("created_at")) or utcnow(),
         custom_fields=raw.get("custom_fields") or {},
+        gender=raw.get("gender"),
     )
 
 
@@ -264,15 +265,23 @@ def resolve_tag_id(stash, name: str) -> str | None:
     return None
 
 
-def filter_excluded(scenes, performers, exclude_tag_id: str | None):
-    """Drop entities carrying the exclude tag (D8 corpus). Also drop scenes with
-    no file. Returns (kept_scenes, kept_performers)."""
+def performer_excluded(performer, exclude_tag_id: str | None,
+                       ignored_genders: frozenset = frozenset()) -> bool:
+    """True if the performer carries the exclude tag or has an ignored gender."""
+    return ((exclude_tag_id is not None and exclude_tag_id in performer.tag_ids)
+            or (performer.gender or "") in ignored_genders)
+
+
+def filter_excluded(scenes, performers, exclude_tag_id: str | None,
+                    ignored_genders: frozenset = frozenset()):
+    """Drop entities carrying the exclude tag (D8 corpus) and performers of an
+    ignored gender. Also drop scenes with no file. Returns (kept_scenes,
+    kept_performers)."""
     if exclude_tag_id is None:
         kept_scenes = [s for s in scenes if s.has_file]
     else:
         kept_scenes = [s for s in scenes
                        if s.has_file and exclude_tag_id not in s.tag_ids]
-    kept_performers = performers
-    if exclude_tag_id is not None:
-        kept_performers = [p for p in performers if exclude_tag_id not in p.tag_ids]
+    kept_performers = [p for p in performers
+                       if not performer_excluded(p, exclude_tag_id, ignored_genders)]
     return kept_scenes, kept_performers

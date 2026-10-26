@@ -40,6 +40,7 @@ class PerformerData:
     tag_ids: list[str]
     created_at: datetime
     custom_fields: dict
+    gender: str | None = None
 
 
 @dataclass

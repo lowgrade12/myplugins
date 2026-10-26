@@ -14,6 +14,7 @@ _PLUGIN_KEY_MAP = {
     "respectManualRatings": "respect_manual_ratings",
     "mirrorToRating100": "mirror_to_rating100",
     "excludeTagName": "exclude_tag_name",
+    "ignoredGenders": "ignored_genders",
     "dryRun": "dry_run",
     "disablePluginsBeforeRun": "disable_plugins_before_run",
     "directHalfLifeDays": "direct_half_life_days",
@@ -42,6 +43,9 @@ class Settings:
     respect_manual_ratings: bool = False
     mirror_to_rating100: bool = False
     exclude_tag_name: str = "[Restash: Exclude]"
+    # Performers of these Stash genders are treated like the exclude tag
+    # (comma-separated GenderEnum values; NONE disables).
+    ignored_genders: str = "MALE"
     dry_run: bool = True
     disable_plugins_before_run: bool = False
     # --- algorithm constants (spec §4 defaults), exposed for tuning ---
@@ -100,6 +104,16 @@ class Settings:
     # (wildcard promotions/demotions always write). 1 = write every change.
     min_score_change: float = 3.0
 
+    def ignored_gender_set(self) -> frozenset[str]:
+        """ignored_genders as Stash GenderEnum values ("transgender female" →
+        TRANSGENDER_FEMALE); NONE or an empty list ignores no one."""
+        out = set()
+        for part in str(self.ignored_genders).split(","):
+            value = "_".join(part.replace("-", " ").upper().split())
+            if value and value != "NONE":
+                out.add(value)
+        return frozenset(out)
+
     @classmethod
     def from_plugin_settings(cls, plugin_cfg: dict | None) -> "Settings":
         s = cls()
@@ -114,7 +128,7 @@ class Settings:
                 continue
             if field_name in bool_fields:
                 value = bool(value)
-            elif field_name == "exclude_tag_name":
+            elif field_name in ("exclude_tag_name", "ignored_genders"):
                 value = str(value)
             else:
                 try:

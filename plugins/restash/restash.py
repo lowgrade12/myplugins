@@ -242,10 +242,11 @@ def _hook_score_performers(stash, settings, st, performer_ids, exclude_id, now) 
                  f"(cache predates performer scoring); run Quick Refresh once.")
         return 0
 
+    ignored = settings.ignored_gender_set()
     performers, scenes = [], {}
     for pid in performer_ids:
         p = stash_io.fetch_performer(stash, pid)
-        if p is None or (exclude_id is not None and exclude_id in p.tag_ids):
+        if p is None or stash_io.performer_excluded(p, exclude_id, ignored):
             continue
         performers.append(p)
         for s in stash_io.fetch_performer_scenes(stash, pid):
@@ -366,9 +367,10 @@ def _run_dry(stash, settings: config.Settings) -> int:
     log.progress(0.60)
 
     exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
-    scenes, performers = stash_io.filter_excluded(scenes, performers, exclude_id)
+    ignored = settings.ignored_gender_set()
+    scenes, performers = stash_io.filter_excluded(scenes, performers, exclude_id, ignored)
     log.info(f"[Restash] scoring {len(scenes)} scenes / {len(performers)} performers "
-             f"(exclude tag id={exclude_id}).")
+             f"(exclude tag id={exclude_id}; ignored genders={_genders_label(ignored)}).")
 
     favorites = {p.id for p in performers if p.favorite}
     scene_ratings, perf_ratings = _manual_ratings(
@@ -450,11 +452,14 @@ def _score_and_write(stash, settings: config.Settings, cached_aff: dict | None,
     log.progress(0.45)
 
     exclude_id = stash_io.resolve_tag_id(stash, settings.exclude_tag_name)
-    kept_scenes, kept_performers = stash_io.filter_excluded(scenes, performers, exclude_id)
+    ignored = settings.ignored_gender_set()
+    kept_scenes, kept_performers = stash_io.filter_excluded(scenes, performers, exclude_id,
+                                                            ignored)
     kept_scene_ids = {s.id for s in kept_scenes}
     kept_perf_ids = {p.id for p in kept_performers}
     log.info(f"[Restash] scoring {len(kept_scenes)} scenes / {len(kept_performers)} "
-             f"performers (exclude tag id={exclude_id}).")
+             f"performers (exclude tag id={exclude_id}; "
+             f"ignored genders={_genders_label(ignored)}).")
 
     favorites = {p.id for p in kept_performers if p.favorite}
     scene_ratings, perf_ratings = _manual_ratings(
@@ -563,6 +568,10 @@ def _run_clear(stash, settings: config.Settings) -> int:
                   f"(restash_* keys remain on those IDs); re-run to retry.")
     log.progress(1.0)
     return 1 if failed else 0
+
+
+def _genders_label(genders: frozenset) -> str:
+    return ",".join(sorted(genders)) or "none"
 
 
 def _has_restash(custom_fields: dict) -> bool:
