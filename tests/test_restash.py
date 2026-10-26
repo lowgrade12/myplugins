@@ -62,9 +62,10 @@ class FakeStash:
         self.exclude_tag_id = None
         self.calls = []
 
-    def add_performer(self, pid, favorite=False, tag_ids=()):
+    def add_performer(self, pid, favorite=False, tag_ids=(), gender=None):
         self.performers[pid] = {
-            "id": pid, "name": f"P{pid}", "favorite": favorite, "rating100": None,
+            "id": pid, "name": f"P{pid}", "gender": gender,
+            "favorite": favorite, "rating100": None,
             "o_counter": 0, "scene_count": 0,
             "created_at": _iso(datetime.now(timezone.utc)),
             "tags": [{"id": t} for t in tag_ids], "custom_fields": {}}
@@ -577,6 +578,55 @@ class RatingModelPipelineTest(TempPathsMixin, unittest.TestCase):
         self.assertIsNone(state.load_state(self.state_path)["rating_model"])
         comp = json.loads(stash.scenes["1"]["custom_fields"]["restash_components"])
         self.assertIsNone(comp["rating_pred"])
+
+
+class IgnoredGendersTest(TempPathsMixin, unittest.TestCase):
+    def test_setting_parse(self):
+        self.assertEqual(config.Settings().ignored_gender_set(), {"MALE"})
+        cfg = config.Settings.from_plugin_settings(
+            {"ignoredGenders": "male, transgender-female"})
+        self.assertEqual(cfg.ignored_gender_set(), {"MALE", "TRANSGENDER_FEMALE"})
+        none = config.Settings.from_plugin_settings({"ignoredGenders": "NONE"})
+        self.assertEqual(none.ignored_gender_set(), frozenset())
+        blank = config.Settings.from_plugin_settings({"ignoredGenders": "  "})
+        self.assertEqual(blank.ignored_gender_set(), {"MALE"})
+
+    def test_full_and_refresh_skip_and_clear_ignored_gender(self):
+        stash = FakeStash()
+        self.run_task(stash, "full")
+        self.assertIn("restash_score", stash.performers["2"]["custom_fields"])
+        stash.performers["2"]["gender"] = "MALE"
+        stash.performers["3"]["gender"] = "FEMALE"
+
+        self.run_task(stash, "refresh")
+        self.assertNotIn("restash_score", stash.performers["2"]["custom_fields"])
+        self.assertIn("restash_score", stash.performers["3"]["custom_fields"])
+        self.assertEqual(stash.performers["2"]["tags"], [])   # no tag written
+
+    def test_hooks_skip_ignored_gender(self):
+        stash = FakeStash()
+        self.run_task(stash, "full")
+        stash.add_performer("77", gender="MALE")
+        stash.add_performer("78", gender="FEMALE")
+        self.run_hook(stash, "77", "Performer.Create.Post")
+        self.run_hook(stash, "78", "Performer.Create.Post")
+        self.assertEqual(stash.performers["77"]["custom_fields"], {})
+        self.assertIn("restash_score", stash.performers["78"]["custom_fields"])
+
+        scene = stash.add_scene("500", random.Random(3), datetime.now(timezone.utc))
+        scene["performers"] = [{"id": "77"}, {"id": "78"}]
+        stash.performers["78"]["custom_fields"].clear()
+        self.run_hook(stash, "500")
+        self.assertEqual(stash.performers["77"]["custom_fields"], {})
+        self.assertIn("restash_score", stash.performers["78"]["custom_fields"])
+
+    def test_none_scores_everyone(self):
+        stash = FakeStash()
+        stash.performers["2"]["gender"] = "MALE"
+        with mock.patch.object(stash_io, "fetch_plugin_settings",
+                               lambda s, pid: {"ignoredGenders": "NONE"}):
+            self.run_task(stash, "full")
+        self.assertIn("restash_score", stash.performers["2"]["custom_fields"])
 
 
 class DisablePluginsTest(TempPathsMixin, unittest.TestCase):

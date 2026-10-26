@@ -51,6 +51,7 @@ Add this repository as a Stash plugin source:
 | Rating model weight | 1 | Share of each scene's taste term taken from the model fitted to your ratings (0 = off) |
 | Blend manual ratings | off | Nudge taste model from manual ratings |
 | Exclusion tag name | [Restash: Exclude] | Tag to exclude entities from scoring |
+| Ignored performer genders | MALE | Performers with these Stash genders are treated like the exclusion tag, without tagging them (`NONE` = ignore no one) |
 | Mirror to rating100 | off | Also write score to native rating (destructive) |
 | Disable other plugins before run | off | Disable all other plugins during scoring tasks |
 | Jitter period (days) | 7 | How often the ordering jitter is re-rolled (1 = daily) |

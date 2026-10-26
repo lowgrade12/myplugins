@@ -1,6 +1,6 @@
 name: Restash
 description: Computes a freshness score for scenes and performers into custom fields.
-version: 0.10.0
+version: 0.11.0
 url: https://github.com/lowgrade12/myplugins
 exec:
   - python
@@ -32,6 +32,7 @@ settings:
   championAffinityBonus: { displayName: Hall of Fame strength, type: NUMBER, description: "How much a HotOrNot tournament champion lifts their scenes, like the favourite bonus (1.0). Each title closes half the gap to this (1 title ½, 2 ¾, 3 ⅞), halving every 180 days since their last title. Applied at the next Recompute All. 0 turns it off. Leave blank for the default (0.75)." }
   respectManualRatings: { displayName: Blend manual ratings as a taste prior, type: BOOLEAN, description: "If on, a performer's manual rating100 nudges their affinity (read-only). Default off." }
   excludeTagName:       { displayName: Exclusion tag name, type: STRING, description: "Entities carrying this tag are dropped from scoring. Leave blank for the default ([Restash: Exclude])." }
+  ignoredGenders:       { displayName: Ignored performer genders, type: STRING, description: "Performers with these Stash genders are treated like the exclusion tag (not scored; existing Restash fields cleared), without adding any tag. Comma-separated: MALE, FEMALE, TRANSGENDER_MALE, TRANSGENDER_FEMALE, INTERSEX, NON_BINARY. NONE ignores no one. Leave blank for the default (MALE)." }
   mirrorToRating100:    { displayName: "Also mirror score to rating100 (destructive)", type: BOOLEAN, description: "If on, each entity's Restash score is ALSO written to native rating100 (enables the in-app 'Rating, descending' sort). OVERWRITES manual ratings; a backup is auto-created first and can be reverted with 'Restore Ratings'. Default off." }
   disablePluginsBeforeRun: { displayName: "Disable other plugins before run", type: BOOLEAN, description: "If on, all other enabled plugins will be disabled before Restash runs, then re-enabled after. Prevents interference from other plugins during scoring. Default off." }
   jitterPeriodDays:     { displayName: Jitter period (days), type: NUMBER, description: "How often the small random ordering jitter is re-rolled. Longer periods mean far fewer score writes between re-rolls; 1 re-rolls daily. Leave blank for the default (7)." }
