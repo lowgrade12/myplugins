@@ -2310,6 +2310,16 @@
   padding-top: 10px;
 }
 
+/* Items added to the Stash Right Click Performers menu */
+#performers-custom-menu a.hon-stashbox-link.hon-context-loading,
+#performers-custom-menu a.hon-stashbox-link.hon-context-disabled {
+  color: #999;
+  cursor: default;
+  font-style: italic;
+  max-width: 320px;
+  white-space: normal;
+}
+
 /* ============================================ */
 /* IMAGE SELECTION MODAL                        */
 /* ============================================ */
