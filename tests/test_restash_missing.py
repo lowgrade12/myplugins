@@ -33,14 +33,14 @@ import state  # noqa: E402
 ENDPOINT = "https://stashdb.org/graphql"
 
 
-def sdb_scene(i, performers=("sp-love",), studio="sst-1", tags=("Tag A",)):
+def sdb_scene(i, performers=("sp-love",), studio="sst-1", tags=("Tag A",), aliases=()):
     return {
         "id": f"sdb-{i}", "title": f"Scene {i}", "release_date": "2024-01-02",
         "duration": 1800,
         "images": [{"url": f"https://img/{i}.jpg", "width": 640, "height": 360}],
         "studio": {"id": studio, "name": f"Studio {studio}", "parent": None},
         "performers": [{"performer": {"id": p, "name": p}} for p in performers],
-        "tags": [{"id": t, "name": t} for t in tags],
+        "tags": [{"id": t, "name": t, "aliases": list(aliases)} for t in tags],
         "urls": [{"url": f"https://store/{i}", "site": {"name": "ManyVids",
                   "category": {"name": "Content distribution platforms"}}}],
     }
@@ -191,6 +191,51 @@ class MissingTest(unittest.TestCase):
         body = json.loads(out.getvalue())
         self.assertTrue(body["output"]["ok"])
         self.assertEqual(body["output"]["result"]["scenes"][0]["id"], "sdb-1")
+
+    # ---------- hidden tags (VR by default) ----------
+
+    def vr(self, i):
+        return sdb_scene(i, tags=("Tag A", "Virtual Reality"))
+
+    def test_vr_scenes_are_hidden_by_default(self):
+        page = [sdb_scene(0), self.vr(1), sdb_scene(2), self.vr(3)]
+        r, _ = self.run_missing(FakeStash(), [page])
+        self.assertEqual([s["id"] for s in r["scenes"]], ["sdb-0", "sdb-2"])
+        self.assertEqual((r["missing"], r["hidden"], r["looked_at"]), (2, 2, 4))
+
+    def test_hidden_scenes_are_not_looked_up_in_stash(self):
+        stash = FakeStash()
+        self.run_missing(stash, [[sdb_scene(0), self.vr(1)]])
+        local = [q for q in stash.calls if "RestashLocal" in q and "findScenes" in q][0]
+        self.assertIn("$i0", local)
+        self.assertNotIn("$i1", local)
+
+    def test_match_by_alias_and_case(self):
+        aliased = sdb_scene(1, tags=("VR Porn",), aliases=("virtual reality",))
+        r, _ = self.run_missing(FakeStash(), [[sdb_scene(0), aliased]])
+        self.assertEqual([s["id"] for s in r["scenes"]], ["sdb-0"])
+
+    def test_keeps_paging_when_hidden_scenes_fill_a_page(self):
+        pages = [[self.vr(i) for i in range(100)], [sdb_scene(i) for i in range(100, 200)]]
+        r, asked = self.run_missing(FakeStash(), pages, limit=24)
+        self.assertEqual(asked, [1, 2])
+        self.assertEqual(len(r["scenes"]), 24)
+        self.assertEqual(r["hidden"], 100)
+        self.assertEqual(r["looked_at"], 200)
+
+    def test_custom_list_and_none(self):
+        page = [sdb_scene(0, tags=("Anal",)), self.vr(1), sdb_scene(2)]
+        self.settings = config.Settings.from_plugin_settings(
+            {"missingHiddenTags": "anal, Virtual Reality"})
+        r, _ = self.run_missing(FakeStash(), [page])
+        self.assertEqual([s["id"] for s in r["scenes"]], ["sdb-2"])
+        self.settings = config.Settings.from_plugin_settings({"missingHiddenTags": "NONE"})
+        r, _ = self.run_missing(FakeStash(), [page])
+        self.assertEqual(len(r["scenes"]), 3)
+        self.assertEqual(r["hidden"], 0)
+
+    def test_stashdb_query_asks_for_tag_aliases(self):
+        self.assertRegex(missing.STASHDB_SCENES, r"tags \{ id name aliases \}")
 
     def test_a_missing_stashdb_key_is_an_answer_not_a_crash(self):
         stash = FakeStash()

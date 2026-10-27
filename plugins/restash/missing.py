@@ -7,7 +7,8 @@ browser makes no request to StashDB.
 
 Steps:
   1. the performer's StashDB id, and the StashDB stash-box (endpoint + key)
-  2. their scenes on StashDB, most popular first (one page)
+  2. their scenes on StashDB, most popular first (one page), minus scenes
+     carrying a hidden tag (settings: missingHiddenTags, VR by default)
   3. which of them the library already has (one aliased Stash query)
   4. each scene described as Restash sees a scene: local performer, studio and
      tag ids (aliased Stash queries for performers and studios, tags by name)
@@ -45,7 +46,7 @@ query RestashMissing($input: SceneQueryInput!) {
       images { url width height }
       studio { id name parent { id name } }
       performers { performer { id name } }
-      tags { id name }
+      tags { id name aliases }
       urls { url site { name category { name } } }
     }
   }
@@ -102,6 +103,18 @@ def site_of(endpoint: str) -> str:
     from urllib.parse import urlparse
     u = urlparse(endpoint or "")
     return f"{u.scheme}://{u.netloc}" if u.netloc else "https://stashdb.org"
+
+
+def is_hidden(row: dict, hidden: frozenset) -> bool:
+    """True if any of the scene's StashDB tags matches a hidden tag by name or
+    alias (case-insensitive)."""
+    if not hidden:
+        return False
+    for t in row.get("tags") or []:
+        for n in [t.get("name")] + list(t.get("aliases") or []):
+            if (n or "").strip().lower() in hidden:
+                return True
+    return False
 
 
 # ---------- Stash: what the library has ----------
@@ -292,18 +305,24 @@ def missing_for_performer(stash, settings, performer_id: str, limit: int = DEFAU
     # a time, most popular first, until there are enough to show
     # The performer's own scenes in the library answer most of it in one
     # request; only the rest are looked up one alias each
+    # Hidden scenes (VR by default) are dropped before anything else, so they
+    # never count toward the limit and the page keeps looking until it fills
     theirs = performer_stash_ids(stash, performer_id, endpoint)
-    rows, owned, total = [], {}, 0
+    hide = settings.missing_hidden_tag_set()
+    rows, owned, total, looked, hidden = [], {}, 0, 0, 0
     for page in range(1, MAX_PAGES + 1):
         page_rows, total = performer_scenes(box, pid, page)
-        for r in page_rows:
+        looked += len(page_rows)
+        shown = [r for r in page_rows if not is_hidden(r, hide)]
+        hidden += len(page_rows) - len(shown)
+        for r in shown:
             if r["id"] in theirs:
                 owned[r["id"]] = [True]
         owned.update(_aliased(stash, "scene", endpoint,
-                              [r["id"] for r in page_rows if r["id"] not in theirs]))
-        rows.extend(page_rows)
+                              [r["id"] for r in shown if r["id"] not in theirs]))
+        rows.extend(shown)
         have = sum(1 for r in rows if not owned.get(r["id"]))
-        if have >= limit or len(page_rows) < PER_PAGE or len(rows) >= total:
+        if have >= limit or len(page_rows) < PER_PAGE or looked >= total:
             break
     missing = [r for r in rows if not owned.get(r["id"])]
 
@@ -327,8 +346,9 @@ def missing_for_performer(stash, settings, performer_id: str, limit: int = DEFAU
     cards = [card(r, i, scored) for i, r in enumerate(rows) if not owned.get(r["id"])]
     # Restash's score first; popularity breaks ties and orders an unscored list
     cards.sort(key=lambda c: (-(c["score"] if c["score"] is not None else -1), c["popularity"]))
-    return {"linked": True, "site": site_of(endpoint), "total": total, "looked_at": len(rows),
-            "missing": len(missing), "scored": bool(ok), "scenes": cards[:limit]}
+    return {"linked": True, "site": site_of(endpoint), "total": total, "looked_at": looked,
+            "missing": len(missing), "hidden": hidden, "scored": bool(ok),
+            "scenes": cards[:limit]}
 
 
 def run_op(stash, settings, args: dict) -> int:
