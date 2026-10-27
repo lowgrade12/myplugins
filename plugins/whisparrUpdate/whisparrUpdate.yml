@@ -1,6 +1,6 @@
 name: Whisparr Update
 description: Add matched StashDB scene to Whisparr on update
-version: 0.10
+version: 0.11
 exec:
   - python
   - "{pluginDir}/whisparrUpdate.py"
@@ -25,4 +25,8 @@ settings:
   MONITORED:
     displayName: Monitor after add
     description: Mark the scene as monitored when synced. When off, scenes already in Whisparr are set to unmonitored too
+    type: BOOLEAN
+  REMOVE_ON_MATCH:
+    displayName: Remove from Whisparr once matched
+    description: When a scene is matched in Stash, remove it from Whisparr (files are kept) and add an import exclusion so lists don't re-add it. Overrides "Monitor after add"
     type: BOOLEAN

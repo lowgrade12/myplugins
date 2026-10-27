@@ -92,6 +92,20 @@ def http_put_json(url, body, api_key):
     except (urllib.error.URLError, TimeoutError) as e:
         return 0, str(e)
 
+def http_delete(url, api_key):
+    req = urllib.request.Request(
+        url,
+        headers={"X-Api-Key": api_key},
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
+            return r.status, r.read().decode("utf-8", "ignore")
+    except urllib.error.HTTPError as e:
+        return e.code, (e.read() or b"").decode("utf-8", "ignore")
+    except (urllib.error.URLError, TimeoutError) as e:
+        return 0, str(e)
+
 def is_already_exists_error(status, resp):
     """Check if the response indicates the item already exists.
     
@@ -193,6 +207,48 @@ def unmonitor_movie(whisparr_url, api_key, movie_id):
         log.error(f"Whisparr: failed to unmonitor movie id={movie_id}: {status} {resp}")
         return False
     return True
+
+def remove_movie(whisparr_url, api_key, movie_id):
+    """Remove a movie from Whisparr, keeping its files, and add an import
+    exclusion so import lists don't add it back.
+
+    deleteFiles is always false: the files are the user's Stash library.
+    """
+    status, resp = http_delete(
+        f"{whisparr_url}/api/v3/movie/{movie_id}?deleteFiles=false&addImportExclusion=true",
+        api_key,
+    )
+    if status not in (200, 204):
+        log.error(f"Whisparr: failed to remove movie id={movie_id}: {status} {resp}")
+        return False
+    return True
+
+def add_exclusion(whisparr_url, api_key, stashdb_id, title):
+    """Exclude a scene that isn't in Whisparr, so import lists never add it."""
+    body = {"foreignId": stashdb_id, "movieTitle": title, "type": "scene"}
+    status, resp = http_post_json(f"{whisparr_url}/api/v3/exclusions", body, api_key)
+    if status in (200, 201):
+        return True
+    # Already excluded is fine; Whisparr rejects the duplicate with a 400.
+    if status == 400 and "exclu" in json.dumps(resp).lower():
+        log.debug(f"Whisparr: {stashdb_id} already excluded")
+        return True
+    log.error(f"Whisparr: failed to exclude {stashdb_id}: {status} {resp}")
+    return False
+
+def remove_on_match(whisparr_url, api_key, stashdb_id, title):
+    """The scene is in Stash, so Whisparr has nothing left to download:
+    remove it (or, if Whisparr never had it, just exclude it)."""
+    try:
+        existing = find_by_stashid(whisparr_url, api_key, stashdb_id)
+    except RuntimeError as e:
+        log.error(str(e))
+        return
+    if existing:
+        if remove_movie(whisparr_url, api_key, existing["id"]):
+            log.info(f"Whisparr: removed movie id={existing['id']} (files kept, import excluded)")
+    elif add_exclusion(whisparr_url, api_key, stashdb_id, title):
+        log.info(f"Whisparr: excluded {stashdb_id} from import lists")
 
 def load_plugin_settings(stash: StashInterface) -> dict:
     """Return this plugin's settings using the manifest name."""
@@ -375,6 +431,7 @@ def main():
     whisparr_key = plugin_cfg.get("WHISPARR_API_KEY") or ""
     match_substr = plugin_cfg.get("STASHDB_ENDPOINT_SUBSTR") or "stashdb.org"
     monitored = plugin_cfg.get("MONITORED", True)
+    remove_matched = plugin_cfg.get("REMOVE_ON_MATCH", False)
 
     if not whisparr_url or not whisparr_key:
         log.error("Missing Whisparr settings (URL/API key).")
@@ -403,6 +460,10 @@ def main():
 
     if not stashdb_id:
         log.info("No matching StashDB id; skip.")
+        return
+
+    if remove_matched:
+        remove_on_match(whisparr_url, whisparr_key, stashdb_id, title)
         return
 
     # Query Whisparr for defaults it requires
