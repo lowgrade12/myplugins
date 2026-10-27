@@ -137,6 +137,14 @@ Tournament champions get a **HotOrNot Hall of Fame** row on Stash's front page, 
 - **View All** opens the full Hall of Fame, grouped by gender (also a tab in the Stats Modal)
 - Toggle on/off via **Settings → Plugins → HotOrNot → Show Hall of Fame Row** (enabled by default)
 
+### Change Performer Image
+
+Right-click a performer to pick a new profile image from any stash-box they're linked to (StashDB, TPDB, TPDB JAV, JAVStash, FansDB, …):
+- **In battles** - right-click either performer's image
+- **On performer pages and cards** - if the Stash Right Click Performers plugin is installed, its menu gets a "Change Image from …" item for each stash-box it doesn't cover itself. Without that plugin, right-clicking the image on a performer's page opens HotOrNot's own menu
+- If a stash-box can't be reached or has no images, the menu item says so
+- Images load straight from your browser, so a stash-box must be listed under `csp: connect-src` in `hotOrNot.yml`
+
 ## Installation
 
 1. Download the `/plugins/hotOrNot/` folder to your Stash plugins directory

@@ -2840,6 +2840,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     const query = `
       query FindPerformerStashIds($id: ID!) {
         findPerformer(id: $id) {
+          name
           stash_ids {
             endpoint
             stash_id
@@ -2848,7 +2849,59 @@ async function fetchPerformerCount(performerFilter = {}) {
       }
     `;
     const result = await graphqlQuery(query, { id: performerId });
-    return (result && result.findPerformer && result.findPerformer.stash_ids) || [];
+    const performer = result && result.findPerformer;
+    return {
+      name: (performer && performer.name) || null,
+      stashIds: (performer && performer.stash_ids) || [],
+    };
+  }
+
+  /**
+   * Fetch the stash-boxes configured in Stash.
+   * @returns {Promise<Array>} Array of { name, endpoint, api_key }
+   */
+  async function fetchStashBoxes() {
+    const configResult = await graphqlQuery(`
+      query Configuration {
+        configuration {
+          general {
+            stashBoxes {
+              name
+              endpoint
+              api_key
+            }
+          }
+        }
+      }
+    `);
+    return (configResult && configResult.configuration &&
+      configResult.configuration.general && configResult.configuration.general.stashBoxes) || [];
+  }
+
+  // Known stash-box endpoints with friendly names
+  const STASH_BOX_NAMES = {
+    "https://stashdb.org/graphql": "StashDB",
+    "https://theporndb.net/graphql": "TPDB",
+    "https://fansdb.cc/graphql": "FansDB",
+    "https://fansdb.xyz/graphql": "FansDB",
+    "https://javstash.org/graphql": "JAVStash",
+  };
+
+  /**
+   * Label for a stash-box: the friendly name if known, else the name it has in
+   * Stash's settings (e.g. "TBDP Jav" for theporndb.net/graphql?type=JAV), else its host.
+   * @param {string} endpoint - The stash-box endpoint URL
+   * @param {Array} stashBoxes - Stash's configured stash-boxes
+   */
+  function stashBoxLabel(endpoint, stashBoxes) {
+    if (STASH_BOX_NAMES[endpoint]) return STASH_BOX_NAMES[endpoint];
+    const box = stashBoxes.find((b) => b.endpoint === endpoint);
+    if (box && box.name) return box.name;
+    try {
+      return new URL(endpoint).hostname;
+    } catch (_) {
+      return endpoint;
+    }
   }
 
   /**
@@ -2874,20 +2927,7 @@ async function fetchPerformerCount(performerFilter = {}) {
     `;
     try {
       // Fetch the API key for this endpoint from Stash configuration
-      const configResult = await graphqlQuery(`
-        query Configuration {
-          configuration {
-            general {
-              stashBoxes {
-                endpoint
-                api_key
-              }
-            }
-          }
-        }
-      `);
-      const stashBoxes = (configResult && configResult.configuration &&
-        configResult.configuration.general && configResult.configuration.general.stashBoxes) || [];
+      const stashBoxes = await fetchStashBoxes();
       const box = stashBoxes.find((b) => b.endpoint === endpoint);
       const apiKey = box ? box.api_key : "";
 
@@ -3066,11 +3106,51 @@ async function fetchPerformerCount(performerFilter = {}) {
   }
 
   /**
-   * Show the right-click context menu for a performer during battles.
+   * Make a menu item load a performer's images from a stash-box and open the
+   * image picker. The item stays in its menu while loading so a failure or an
+   * empty result can be shown on it.
+   * @param {HTMLElement} item - The menu item element
+   * @param {Object} entry - The performer's { endpoint, stash_id }
+   * @param {string} sourceName - Label for the stash-box
+   * @param {string} performerId - The performer's local ID
+   * @param {string} performerName - The performer's name
+   * @param {Function} closeMenu - Removes the menu the item is in
+   */
+  function wireStashBoxImageItem(item, entry, sourceName, performerId, performerName, closeMenu) {
+    item.textContent = `Change Image from ${sourceName}…`;
+    item.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (item.classList.contains("hon-context-disabled") || item.classList.contains("hon-context-loading")) return;
+      item.textContent = `Loading images from ${sourceName}…`;
+      item.classList.add("hon-context-loading");
+
+      let images;
+      try {
+        images = await fetchStashBoxPerformerImages(entry.endpoint, entry.stash_id);
+      } catch (err) {
+        item.textContent = `${sourceName}: ${err.message}`;
+        item.classList.replace("hon-context-loading", "hon-context-disabled");
+        return;
+      }
+      if (images.length === 0) {
+        item.textContent = `No images on ${sourceName}`;
+        item.classList.replace("hon-context-loading", "hon-context-disabled");
+        return;
+      }
+      closeMenu();
+      showImageSelectionModal(images, performerId, performerName, sourceName);
+    });
+  }
+
+  /**
+   * Show the right-click context menu for a performer.
    * @param {MouseEvent} event - The contextmenu event
    * @param {string} performerId - The performer's local ID
+   * @param {Object} [options]
+   * @param {boolean} [options.openLink=true] - Add an "Open Performer Page" item
    */
-  async function showPerformerContextMenu(event, performerId) {
+  async function showPerformerContextMenu(event, performerId, { openLink = true } = {}) {
     event.preventDefault();
     event.stopPropagation();
 
@@ -3115,88 +3195,55 @@ async function fetchPerformerCount(performerFilter = {}) {
     }
 
     // Close on click outside
+    const closeMenu = () => {
+      menu.remove();
+      if (honContextMenu === menu) honContextMenu = null;
+      document.removeEventListener("click", handleClickOutside);
+    };
     const handleClickOutside = (e) => {
-      if (menu && !menu.contains(e.target)) {
-        menu.remove();
-        honContextMenu = null;
-        document.removeEventListener("click", handleClickOutside);
-      }
+      if (!menu.contains(e.target)) closeMenu();
     };
     // Defer so the current event doesn't immediately close it
     setTimeout(() => document.addEventListener("click", handleClickOutside), 0);
 
     // Fetch stash_ids
     try {
-      const stashIds = await fetchPerformerStashIds(performerId);
+      const [performer, stashBoxes] = await Promise.all([
+        fetchPerformerStashIds(performerId),
+        fetchStashBoxes(),
+      ]);
+      if (performer.name && performerName === `Performer #${performerId}`) {
+        performerName = performer.name;
+        menu.querySelector(".hon-context-menu-header").textContent = performerName;
+      }
 
       // Remove loading indicator
       loadingItem.remove();
 
-      if (stashIds.length === 0) {
+      if (performer.stashIds.length === 0) {
         const noSource = document.createElement("div");
         noSource.className = "hon-context-menu-item hon-context-disabled";
         noSource.textContent = "No stash-box links found";
         menu.appendChild(noSource);
       } else {
-        // Known stash-box endpoints with friendly names
-        const endpointNames = {
-          "https://stashdb.org/graphql": "StashDB",
-          "https://theporndb.net/graphql": "TPDB",
-          "https://fansdb.cc/graphql": "FansDB",
-          "https://fansdb.xyz/graphql": "FansDB",
-          "https://javstash.org/graphql": "JAVStash",
-        };
-
-        stashIds.forEach((entry) => {
-          let sourceName;
-          try {
-            sourceName = endpointNames[entry.endpoint] || new URL(entry.endpoint).hostname;
-          } catch (_) {
-            sourceName = entry.endpoint;
-          }
+        performer.stashIds.forEach((entry) => {
           const item = document.createElement("div");
           item.className = "hon-context-menu-item";
-          item.textContent = `Change Image from ${sourceName}…`;
-          item.addEventListener("click", async (e) => {
-            // Keep the menu open while loading so a failure can be shown in it
-            e.stopPropagation();
-            if (item.classList.contains("hon-context-disabled") || item.classList.contains("hon-context-loading")) return;
-            item.textContent = `Loading images from ${sourceName}…`;
-            item.classList.add("hon-context-loading");
-
-            let images;
-            try {
-              images = await fetchStashBoxPerformerImages(entry.endpoint, entry.stash_id);
-            } catch (err) {
-              item.textContent = `${sourceName}: ${err.message}`;
-              item.classList.replace("hon-context-loading", "hon-context-disabled");
-              return;
-            }
-            if (images.length === 0) {
-              item.textContent = `No images on ${sourceName}`;
-              item.classList.replace("hon-context-loading", "hon-context-disabled");
-              return;
-            }
-            menu.remove();
-            honContextMenu = null;
-            document.removeEventListener("click", handleClickOutside);
-            showImageSelectionModal(images, performerId, performerName, sourceName);
-          });
+          wireStashBoxImageItem(item, entry, stashBoxLabel(entry.endpoint, stashBoxes), performerId, performerName, closeMenu);
           menu.appendChild(item);
         });
       }
 
-      // Always add "Open Performer Page" link
-      const openLink = document.createElement("div");
-      openLink.className = "hon-context-menu-item hon-context-menu-separator";
-      openLink.textContent = "Open Performer Page";
-      openLink.addEventListener("click", () => {
-        window.open(`/performers/${performerId}`, "_blank");
-        menu.remove();
-        honContextMenu = null;
-        document.removeEventListener("click", handleClickOutside);
-      });
-      menu.appendChild(openLink);
+      if (openLink) {
+        const openItem = document.createElement("div");
+        openItem.className = "hon-context-menu-item hon-context-menu-separator";
+        openItem.textContent = "Open Performer Page";
+        openItem.addEventListener("click", () => {
+          window.open(`/performers/${performerId}`, "_blank");
+          closeMenu();
+        });
+        menu.appendChild(openItem);
+      }
 
       // Reposition after content loads
       const newRect = menu.getBoundingClientRect();
@@ -3211,6 +3258,81 @@ async function fetchPerformerCount(performerFilter = {}) {
       loadingItem.textContent = "Error loading sources";
       loadingItem.classList.add("hon-context-disabled");
     }
+  }
+
+  // Stash-boxes the Stash Right Click Performers plugin already offers images from
+  const RIGHT_CLICK_PLUGIN_BOXES = ["https://stashdb.org/graphql", "https://theporndb.net/graphql"];
+
+  /**
+   * Add "Change Image from …" items for the performer's other stash-boxes to
+   * the Stash Right Click Performers menu, after its own TPDB item.
+   * @param {HTMLElement} menu - That plugin's #performers-custom-menu
+   * @param {string} performerId - The performer's local ID
+   */
+  async function addStashBoxItemsToRightClickMenu(menu, performerId) {
+    if (menu.dataset.honStashBoxes) return;
+    menu.dataset.honStashBoxes = "1";
+
+    let performer, stashBoxes;
+    try {
+      [performer, stashBoxes] = await Promise.all([
+        fetchPerformerStashIds(performerId),
+        fetchStashBoxes(),
+      ]);
+    } catch (err) {
+      console.error("[HotOrNot] Error loading performer stash-boxes:", err);
+      return;
+    }
+    if (!menu.isConnected) return;
+
+    const links = Array.from(menu.querySelectorAll("a"));
+    const after = links.find((a) => a.textContent.startsWith("Change Image from TPDB")) ||
+      links.find((a) => a.textContent.startsWith("Change Image from StashDB"));
+    let anchor = after ? after.nextSibling : null;
+    const performerName = performer.name || `Performer #${performerId}`;
+
+    performer.stashIds
+      .filter((entry) => !RIGHT_CLICK_PLUGIN_BOXES.includes(entry.endpoint))
+      .forEach((entry) => {
+        const item = document.createElement("a");
+        item.href = "#";
+        item.className = "hon-stashbox-link";
+        wireStashBoxImageItem(item, entry, stashBoxLabel(entry.endpoint, stashBoxes), performerId, performerName, () => menu.remove());
+        menu.insertBefore(item, anchor);
+      });
+  }
+
+  /**
+   * On performer cards and the performer page image, offer images from every
+   * stash-box the performer is linked to. If the Stash Right Click Performers
+   * plugin opened its menu, the missing stash-boxes are added to it; otherwise
+   * the page image gets HotOrNot's own menu.
+   */
+  function initPerformerImageMenu() {
+    document.addEventListener("contextmenu", (event) => {
+      const card = event.target.closest(".performer-card");
+      const headerImage = !card && event.target.closest(".detail-header-image");
+      let match = null;
+      if (card) {
+        const link = card.querySelector("a[href*='/performers/']");
+        match = link && link.getAttribute("href").match(/\/performers\/(\d+)/);
+      } else if (headerImage) {
+        match = window.location.pathname.match(/\/performers\/(\d+)/);
+      }
+      if (!match) return;
+      const performerId = match[1];
+      if (headerImage) event.preventDefault();
+
+      // Let the other plugin's handler build its menu first
+      setTimeout(() => {
+        const rightClickMenu = document.getElementById("performers-custom-menu");
+        if (rightClickMenu) {
+          addStashBoxItemsToRightClickMenu(rightClickMenu, performerId);
+        } else if (headerImage) {
+          showPerformerContextMenu(event, performerId, { openLink: false });
+        }
+      }, 0);
+    });
   }
 
   /**
@@ -6160,6 +6282,7 @@ function addFloatingButton() {
     console.log("[HotOrNot] Initialized");
     
     addFloatingButton();
+    initPerformerImageMenu();
     
     // Inject battle rank badge if on a single performer page
     if (isOnSinglePerformerPage()) {
