@@ -37,9 +37,11 @@ The plugin offers five distinct comparison modes:
 - The system picks the performer whose rating it is **least confident** about (fewest matches) and focuses on them
 - It then uses a binary-search approach to zero in on their correct position:
   - **Starting range**: Unrated performers start with the full 1–100 range. Rated performers start in a window around their current rating (±25 points after one match, narrowing to ±10 with more matches), so calibrating an established performer refines their rating instead of resetting it
-  - The performer is compared against well-established "anchor" performers near the midpoint of their estimated rating range
+  - The performer is compared against well-established "anchor" performers near the midpoint of their estimated rating range (inside the range whenever there's anyone there)
   - If the target performer **wins**, the lower bound of their rating range moves up (they're at least this good)
   - If the target performer **loses**, the upper bound moves down (they're no better than this)
+  - After each match the target's rating is set to the middle of the remaining range, so it can dip after a win when the range was lopsided (a performer rated 95 starts at 70–100, is tested near 85, and moves to 93 if they win)
+  - Anchors keep their rating — the match only counts in their stats — and skips don't change either rating
   - Each match narrows the range until the rating converges
   - If the range closes against an edge of the starting window (e.g. the performer keeps winning), that edge widens by 20 points (up to 100 or down to 1) so a misrated performer can still move past it
 - **Step counter (e.g. "Step 3/10")**: Shows how many comparisons have been made for the current target performer, up to a maximum of 10
