@@ -15,7 +15,7 @@ A plugin for [Stash](https://stashapp.cc/) that automatically adds scenes to [Wh
 - **Detects existing scenes** - Recognizes 409 Conflict and MovieExistsValidator errors
 - **Automatic refresh** - When a scene already exists, triggers a metadata refresh instead
 - **Unmonitor existing** - With "Monitor after add" off, scenes already in Whisparr are set to unmonitored so they aren't upgraded or re-downloaded
-- **Remove once matched** - With "Remove from Whisparr once matched" on, a scene matched in Stash is removed from Whisparr instead (its files are kept) and added to Whisparr's import exclusions, so import lists don't add it back. A matched scene Whisparr never had is just excluded. Use this if you only use Whisparr to download scenes you don't have yet: it keeps the Whisparr library small, which keeps its daily refresh fast
+- **Remove once matched** - With "Remove from Whisparr once matched" on, a scene matched in Stash is removed from Whisparr instead (its files are kept) and added to Whisparr's import exclusions, so import lists don't add it back. A matched scene Whisparr never had is just excluded. Use this if you only use Whisparr to download scenes you don't have yet: it keeps the Whisparr library small, which keeps its daily refresh fast. While Whisparr's scheduled library refresh is running, matched scenes are unmonitored instead of removed, because removing a scene mid-refresh makes the refresh fail
 - **Multiple lookup methods** - Uses stashId parameter and foreignId fallback to find existing movies
 
 ### Configurable Settings

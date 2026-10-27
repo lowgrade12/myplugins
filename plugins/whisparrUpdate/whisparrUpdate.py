@@ -236,6 +236,25 @@ def add_exclusion(whisparr_url, api_key, stashdb_id, title):
     log.error(f"Whisparr: failed to exclude {stashdb_id}: {status} {resp}")
     return False
 
+def full_refresh_running(whisparr_url, api_key):
+    """True while Whisparr's scheduled library refresh is running.
+
+    That refresh lists every movie id when it starts and loads them in chunks
+    as it goes, so removing a movie part way through makes it fail with
+    "Movie with ID ... does not exist" and lose hours of work.
+    """
+    status, resp = http_get_json(f"{whisparr_url}/api/v3/command", api_key)
+    if status != 200 or not isinstance(resp, list):
+        # Can't tell, so assume it is: unmonitoring is always safe.
+        log.debug(f"Whisparr: cannot list commands: {status}")
+        return True
+    return any(
+        c.get("name") == "RefreshMovie"
+        and c.get("status") == "started"
+        and not (c.get("body") or {}).get("movieIds")
+        for c in resp
+    )
+
 def remove_on_match(whisparr_url, api_key, stashdb_id, title):
     """The scene is in Stash, so Whisparr has nothing left to download:
     remove it (or, if Whisparr never had it, just exclude it)."""
@@ -245,6 +264,13 @@ def remove_on_match(whisparr_url, api_key, stashdb_id, title):
         log.error(str(e))
         return
     if existing:
+        if full_refresh_running(whisparr_url, api_key):
+            # Unmonitor instead, so it still won't download anything.
+            if unmonitor_movie(whisparr_url, api_key, existing["id"]):
+                log.info(f"Whisparr: library refresh running; unmonitored id={existing['id']} instead of removing")
+            else:
+                log.info(f"Whisparr: library refresh running; left id={existing['id']} in place")
+            return
         if remove_movie(whisparr_url, api_key, existing["id"]):
             log.info(f"Whisparr: removed movie id={existing['id']} (files kept, import excluded)")
     elif add_exclusion(whisparr_url, api_key, stashdb_id, title):
