@@ -12,7 +12,7 @@ Restash reads the behavioural log Stash keeps for every Scene and Performer — 
 - **Low write churn** — jitter re-rolls weekly and small score changes are not written, so a daily refresh touches a small fraction of the library
 - **Scale-aware wildcards** — a fixed handful of wildcards per day is placed by rank just under the top real scenes, so they surface in a descending sort even in very large libraries
 - **HotOrNot's Hall of Fame as a taste prior** — performers with HotOrNot tournament titles (read from `hotornot_stats`) get a lift to their taste weight, like favorites: each title closes half the gap to *Hall of Fame strength* (default 0.75; the favorite bonus is 1.0), halving every 180 days since their last title. It lifts their scenes, owned and in "Not in your library". Applied when Recompute All rebuilds the taste model; 0 turns it off.
-- **"Not in your library" on performer pages** — the performer's StashDB scenes you don't have, ranked by the score Restash would give each one, with a link to where to get it, a link to StashDB and, when the Whisparr Update plugin is enabled, a Whisparr button (add monitored and search; shows Downloaded / Wanted / In Whisparr). StashDB is asked on the server with the stash-box key from Stash's settings, so the key never reaches the browser. Turn it off with *Hide 'Not in your library' on performer pages*.
+- **"Not in your library" on performer pages** — the performer's StashDB scenes you don't have, ranked by the score Restash would give each one, with a link to where to get it, a link to StashDB and, when the Whisparr Update plugin is enabled, a Whisparr button (add monitored and search; shows Downloaded / Wanted / In Whisparr). StashDB is asked on the server with the stash-box key from Stash's settings, so the key never reaches the browser. Turn it off with *Hide 'Not in your library' on performer pages*. Scenes carrying a tag listed in *Hide StashDB tags in Not in your library* (Virtual Reality by default, matched by tag name or alias) are left out entirely, and the row keeps looking further down the performer's list to fill up.
 - **Rating model** — learns performer, studio and tag weights from your own scene ratings (ported from Cherry Pick's Your score) and uses them for each scene's taste term, so a scene you haven't watched — or one just created — is scored by how you rate scenes like it
 
 ## Install
@@ -52,6 +52,7 @@ Add this repository as a Stash plugin source:
 | Blend manual ratings | off | Nudge taste model from manual ratings |
 | Exclusion tag name | [Restash: Exclude] | Tag to exclude entities from scoring |
 | Ignored performer genders | MALE | Performers with these Stash genders are treated like the exclusion tag, without tagging them (`NONE` = ignore no one) |
+| Hide StashDB tags in Not in your library | Virtual Reality | StashDB scenes with any of these tags (by name or alias) are left out of a performer's "Not in your library" row (`NONE` = show everything) |
 | Mirror to rating100 | off | Also write score to native rating (destructive) |
 | Disable other plugins before run | off | Disable all other plugins during scoring tasks |
 | Jitter period (days) | 7 | How often the ordering jitter is re-rolled (1 = daily) |

@@ -15,6 +15,7 @@ _PLUGIN_KEY_MAP = {
     "mirrorToRating100": "mirror_to_rating100",
     "excludeTagName": "exclude_tag_name",
     "ignoredGenders": "ignored_genders",
+    "missingHiddenTags": "missing_hidden_tags",
     "dryRun": "dry_run",
     "disablePluginsBeforeRun": "disable_plugins_before_run",
     "directHalfLifeDays": "direct_half_life_days",
@@ -46,6 +47,9 @@ class Settings:
     # Performers of these Stash genders are treated like the exclude tag
     # (comma-separated GenderEnum values; NONE disables).
     ignored_genders: str = "MALE"
+    # StashDB scenes carrying any of these tags (by name or alias) are left out
+    # of "Not in your library" (comma-separated; NONE shows everything).
+    missing_hidden_tags: str = "Virtual Reality"
     dry_run: bool = True
     disable_plugins_before_run: bool = False
     # --- algorithm constants (spec §4 defaults), exposed for tuning ---
@@ -114,6 +118,12 @@ class Settings:
                 out.add(value)
         return frozenset(out)
 
+    def missing_hidden_tag_set(self) -> frozenset[str]:
+        """missing_hidden_tags, lowercased for name/alias matching; NONE or an
+        empty list hides nothing."""
+        out = {part.strip().lower() for part in str(self.missing_hidden_tags).split(",")}
+        return frozenset(out - {"", "none"})
+
     @classmethod
     def from_plugin_settings(cls, plugin_cfg: dict | None) -> "Settings":
         s = cls()
@@ -128,7 +138,8 @@ class Settings:
                 continue
             if field_name in bool_fields:
                 value = bool(value)
-            elif field_name in ("exclude_tag_name", "ignored_genders"):
+            elif field_name in ("exclude_tag_name", "ignored_genders",
+                                "missing_hidden_tags"):
                 value = str(value)
             else:
                 try:

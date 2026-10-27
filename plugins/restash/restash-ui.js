@@ -380,7 +380,8 @@
             'div',
             { className: 'text-muted small' },
             `${result.missing} of the ${result.looked_at} most popular of their ${result.total} StashDB scenes` +
-              (result.scored ? ', ranked by Restash' : ' (run Recompute All to rank them)'),
+              (result.scored ? ', ranked by Restash' : ' (run Recompute All to rank them)') +
+              (result.hidden ? ` · ${result.hidden} hidden by tag` : ''),
           )
         : null,
     )
