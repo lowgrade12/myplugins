@@ -137,6 +137,14 @@
   }
 
   /**
+   * The middle of the calibration search window: the target's current
+   * estimate, and the rating its next anchor is picked near.
+   */
+  function calibrationMidpoint() {
+    return Math.max(1, Math.min(100, Math.round((calibrationLow + calibrationHigh) / 2)));
+  }
+
+  /**
    * Reset tournament mode state.
    */
   function resetTournamentState() {
@@ -1651,7 +1659,13 @@
     return Math.max(1, Math.round(baseGain * ceilingFactor));
   }
 
-  async function handleComparison(winnerId, loserId, winnerCurrentRating, loserCurrentRating, loserRank = null, winnerObj = null, loserObj = null) {
+  /**
+   * Record a match: work out both rating changes and save ratings and stats.
+   * @param {Object|null} calibration - In calibration mode, { targetId, targetRating }:
+   *   the target moves to targetRating (the middle of its search window) and the
+   *   other performer, the anchor, keeps its rating
+   */
+  async function handleComparison(winnerId, loserId, winnerCurrentRating, loserCurrentRating, loserRank = null, winnerObj = null, loserObj = null, calibration = null) {
     const winnerRating = winnerCurrentRating || 50;
     const loserRating = loserCurrentRating || 50;
     
@@ -1713,24 +1727,15 @@
     // Calculate single rating change for zero-sum (winner gains what loser loses)
     const baseChange = Math.max(0, Math.round(avgK * (1 - expectedWinner)));
     
-    // Calibration mode uses asymmetric rating changes:
-    // Winners rise aggressively toward the defeated performer's level,
-    // while losers are cushioned to prevent dropping lower than they deserve.
-    // Swiss/tournament mode is zero-sum with a soft ceiling above rating 85.
+    // Calibration measures the target against the anchor, so only the target
+    // moves, to the middle of its search window. Anchors are picked for being
+    // well established; moving them too made them drift upward the more they
+    // were used. Swiss/tournament mode is zero-sum with a soft ceiling above
+    // rating 85.
     let winnerGain, loserLoss;
-    if (currentMode === "calibration") {
-      if (baseChange <= 0) {
-        winnerGain = 0;
-        loserLoss = 0;
-      } else {
-        // Soft ceiling dampening: full gain below rating 80, then linear taper
-        // to 15% at rating 100. Prevents too many performers clustering at 100.
-        const ceilingFactor = winnerRating < 80 ? 1.0 : Math.max(0.15, (100 - winnerRating) / 20);
-        winnerGain = Math.max(1, Math.round(baseChange * ceilingFactor));
-
-        // Loser drops at 40% rate — prioritizes winner rising over loser falling
-        loserLoss = Math.max(1, Math.round(baseChange * 0.4));
-      }
+    if (calibration) {
+      winnerGain = calibration.targetId === winnerId ? calibration.targetRating - winnerRating : 0;
+      loserLoss = calibration.targetId === loserId ? loserRating - calibration.targetRating : 0;
     } else {
       winnerGain = applySoftCeiling(winnerRating, baseChange);
       loserLoss = winnerGain; // Zero-sum: loser loses exactly what winner gains
@@ -1855,6 +1860,13 @@
       }
     }
     
+    // A skip says nothing about where the calibration target belongs, and the
+    // anchor keeps its rating in calibration, so only the draw is recorded
+    if (currentMode === "calibration") {
+      leftChange = 0;
+      rightChange = 0;
+    }
+
     let newLeftRating = Math.min(100, Math.max(1, leftRating + leftChange));
     let newRightRating = Math.min(100, Math.max(1, rightRating + rightChange));
     
@@ -2474,8 +2486,7 @@ async function fetchPerformerCount(performerFilter = {}) {
       const targetEntry = withStats.find(ws => ws.performer.id === calibrationTarget.id);
       if (targetEntry) {
         // Find an anchor near the binary-search midpoint
-        const midpoint = Math.round((calibrationLow + calibrationHigh) / 2);
-        const anchor = findAnchorNearRating(withStats, midpoint, calibrationTarget.id);
+        const anchor = findAnchorNearRating(withStats, calibrationMidpoint(), calibrationTarget.id);
         if (anchor) {
           return {
             performers: [targetEntry.performer, anchor.performer],
@@ -2502,9 +2513,11 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     startCalibrationTarget(target.performer);
 
-    // Find an anchor near the target's current rating (starting point of binary search)
-    const midpoint = target.rating;
-    const anchor = findAnchorNearRating(withStats, midpoint, target.performer.id);
+    // Find an anchor near the middle of the starting window. That's the
+    // target's rating unless the window is cut off at 1 or 100: a performer
+    // rated 95 starts at 70–100 and is tested near 85, so one result can't
+    // finish them at 98 or drop them straight to 83.
+    const anchor = findAnchorNearRating(withStats, calibrationMidpoint(), target.performer.id);
 
     if (!anchor) {
       // Fallback: just pick any other performer
@@ -2526,7 +2539,10 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   /**
    * Find an anchor performer near a given target rating.
-   * Prefers well-established performers (high confidence) as anchors.
+   * Prefers well-established performers (high confidence) as anchors, and
+   * only uses ones strictly inside the calibration window when there are any:
+   * a result against an anchor outside it either tells us nothing or
+   * collapses the window onto that anchor.
    * @param {Array} withStats - Array of { performer, confidence, rating, ... }
    * @param {number} targetRating - Rating to search near
    * @param {string} excludeId - ID to exclude (the calibration target)
@@ -2534,8 +2550,9 @@ async function fetchPerformerCount(performerFilter = {}) {
    */
   function findAnchorNearRating(withStats, targetRating, excludeId) {
     // Find performers near the target rating, preferring high-confidence ones
-    const candidates = withStats
-      .filter(ws => ws.performer.id !== excludeId)
+    const others = withStats.filter(ws => ws.performer.id !== excludeId);
+    const inWindow = others.filter(ws => ws.rating > calibrationLow && ws.rating < calibrationHigh);
+    const candidates = (inWindow.length > 0 ? inWindow : others)
       .map(ws => ({
         ...ws,
         distance: Math.abs(ws.rating - targetRating),
@@ -5509,38 +5526,42 @@ async function fetchPerformerCount(performerFilter = {}) {
 
     // Handle calibration mode — update binary search bounds after each match
     if (currentMode === "calibration") {
-      let { newWinnerRating, newLoserRating, winnerChange, loserChange } = await handleComparison(
-        winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem
-      );
-
-      // Update binary search bounds for the calibration target
+      let calibration = null;
+      let preCalibrationRating = null;
+      let boundsBefore = null;
       if (calibrationTarget) {
         const targetId = calibrationTarget.id;
         const targetIsWinner = (targetId === winnerId);
-        const preCalibrationRating = targetIsWinner ? winnerRating : loserRating;
+        preCalibrationRating = targetIsWinner ? winnerRating : loserRating;
         const anchorRating = Math.max(1, Math.min(100, targetIsWinner ? loserRating : winnerRating));
 
+        boundsBefore = {
+          low: calibrationLow, high: calibrationHigh,
+          lowOpen: calibrationLowOpen, highOpen: calibrationHighOpen, step: calibrationStep
+        };
         applyCalibrationResult(targetIsWinner, anchorRating);
+        // The target's rating becomes the middle of its search window after every step
+        calibration = { targetId, targetRating: calibrationMidpoint() };
+      }
 
-        // Override the target's rating with the binary search midpoint after every step.
-        // The ELO changes from handleComparison are for pairing guidance only;
-        // the binary search midpoint is the true calibrated rating estimate.
-        const currentMidpoint = Math.max(1, Math.min(100, Math.round((calibrationLow + calibrationHigh) / 2)));
-
-        if (battleType === "performers") {
-          await updatePerformerRatingSimple(targetId, currentMidpoint);
-        } else {
-          await updateImageRating(targetId, currentMidpoint);
+      let result;
+      try {
+        result = await handleComparison(winnerId, loserId, winnerRating, loserRating, null, winnerItem, loserItem, calibration);
+      } catch (error) {
+        // The step only counts once the match is saved, so picking again doesn't count it twice
+        if (boundsBefore) {
+          calibrationLow = boundsBefore.low;
+          calibrationHigh = boundsBefore.high;
+          calibrationLowOpen = boundsBefore.lowOpen;
+          calibrationHighOpen = boundsBefore.highOpen;
+          calibrationStep = boundsBefore.step;
         }
+        throw error;
+      }
+      const { newWinnerRating, newLoserRating, winnerChange, loserChange } = result;
 
-        // Update animation to show the midpoint-based change instead of the ELO change
-        if (targetIsWinner) {
-          newWinnerRating = currentMidpoint;
-          winnerChange = currentMidpoint - preCalibrationRating;
-        } else {
-          newLoserRating = currentMidpoint;
-          loserChange = currentMidpoint - preCalibrationRating;
-        }
+      if (calibration) {
+        const currentMidpoint = calibration.targetRating;
 
         // Check if calibration is done (converged or max steps reached)
         if (calibrationStep >= CALIBRATION_MAX_STEPS || (calibrationHigh - calibrationLow) <= CALIBRATION_CONVERGENCE_THRESHOLD) {
