@@ -2289,6 +2289,8 @@
 .hon-context-menu-item.hon-context-disabled {
   color: #666;
   cursor: default;
+  max-width: 320px;
+  white-space: normal;
 }
 
 .hon-context-menu-item.hon-context-disabled:hover {

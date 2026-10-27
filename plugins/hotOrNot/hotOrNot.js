@@ -2853,9 +2853,12 @@ async function fetchPerformerCount(performerFilter = {}) {
 
   /**
    * Fetch performer images from a StashDB-compatible endpoint.
+   * The browser only lets the plugin reach endpoints listed under csp:
+   * connect-src in hotOrNot.yml, so a stash-box missing there fails here.
    * @param {string} endpoint - The stash-box endpoint URL
    * @param {string} stashId - The performer's stash_id on that endpoint
-   * @returns {Promise<Array>} Array of { url, width, height }
+   * @returns {Promise<Array>} Array of { url, width, height } (empty if the performer has none)
+   * @throws {Error} If the endpoint can't be reached or returns an error
    */
   async function fetchStashBoxPerformerImages(endpoint, stashId) {
     const query = `
@@ -2888,25 +2891,31 @@ async function fetchPerformerCount(performerFilter = {}) {
       const box = stashBoxes.find((b) => b.endpoint === endpoint);
       const apiKey = box ? box.api_key : "";
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ApiKey": apiKey,
-        },
-        body: JSON.stringify({ query, variables: { id: stashId } }),
-      });
+      let response;
+      try {
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "ApiKey": apiKey,
+          },
+          body: JSON.stringify({ query, variables: { id: stashId } }),
+        });
+      } catch (networkErr) {
+        // A CSP block and an offline host look the same from here
+        throw new Error("couldn't connect (if it's a new stash-box, add it to csp connect-src in hotOrNot.yml)");
+      }
       if (!response.ok) {
-        throw new Error(`StashBox request failed: ${response.status}`);
+        throw new Error(`request failed (HTTP ${response.status})`);
       }
       const json = await response.json();
-      if (json.data && json.data.findPerformer && json.data.findPerformer.images) {
-        return json.data.findPerformer.images;
+      if (json.errors && json.errors.length) {
+        throw new Error(json.errors[0].message);
       }
-      return [];
+      return (json.data && json.data.findPerformer && json.data.findPerformer.images) || [];
     } catch (err) {
       console.error("[HotOrNot] Error fetching stash-box images:", err);
-      return [];
+      throw err;
     }
   }
 
@@ -3135,6 +3144,7 @@ async function fetchPerformerCount(performerFilter = {}) {
           "https://theporndb.net/graphql": "TPDB",
           "https://fansdb.cc/graphql": "FansDB",
           "https://fansdb.xyz/graphql": "FansDB",
+          "https://javstash.org/graphql": "JAVStash",
         };
 
         stashIds.forEach((entry) => {
@@ -3147,17 +3157,30 @@ async function fetchPerformerCount(performerFilter = {}) {
           const item = document.createElement("div");
           item.className = "hon-context-menu-item";
           item.textContent = `Change Image from ${sourceName}…`;
-          item.addEventListener("click", async () => {
+          item.addEventListener("click", async (e) => {
+            // Keep the menu open while loading so a failure can be shown in it
+            e.stopPropagation();
+            if (item.classList.contains("hon-context-disabled") || item.classList.contains("hon-context-loading")) return;
+            item.textContent = `Loading images from ${sourceName}…`;
+            item.classList.add("hon-context-loading");
+
+            let images;
+            try {
+              images = await fetchStashBoxPerformerImages(entry.endpoint, entry.stash_id);
+            } catch (err) {
+              item.textContent = `${sourceName}: ${err.message}`;
+              item.classList.replace("hon-context-loading", "hon-context-disabled");
+              return;
+            }
+            if (images.length === 0) {
+              item.textContent = `No images on ${sourceName}`;
+              item.classList.replace("hon-context-loading", "hon-context-disabled");
+              return;
+            }
             menu.remove();
             honContextMenu = null;
             document.removeEventListener("click", handleClickOutside);
-
-            const images = await fetchStashBoxPerformerImages(entry.endpoint, entry.stash_id);
-            if (images.length > 0) {
-              showImageSelectionModal(images, performerId, performerName, sourceName);
-            } else {
-              console.warn(`[HotOrNot] No images found on ${sourceName} for performer ${performerId}`);
-            }
+            showImageSelectionModal(images, performerId, performerName, sourceName);
           });
           menu.appendChild(item);
         });

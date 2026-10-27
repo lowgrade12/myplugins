@@ -1,6 +1,6 @@
 name: HotOrNot
 description: Adds an ELO based ranking system for performers and images
-version: 2.3.2
+version: 2.3.3
 url: https://github.com/lowgrade12/hot-or-not
 ui:
   javascript:
@@ -13,6 +13,7 @@ ui:
       - https://theporndb.net/graphql
       - https://fansdb.cc/graphql
       - https://fansdb.xyz/graphql
+      - https://javstash.org/graphql
 settings:
   showBattleRankBadge:
     displayName: Show Battle Rank Badge
