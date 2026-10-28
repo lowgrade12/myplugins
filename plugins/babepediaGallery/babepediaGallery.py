@@ -261,6 +261,17 @@ def validate_babepedia_url(url):
     return url
 
 
+def is_babepedia_link(href, path_prefix):
+    """True for relative or babepedia.com links under path_prefix (partner sites reuse /gallery/ paths)."""
+    parsed = urlparse(str(href or "").strip())
+    host = str(parsed.netloc or "").split("@")[-1].casefold()
+    if parsed.scheme not in ("", "http", "https"):
+        return False
+    if host and host not in ALLOWED_BABEPEDIA_HOSTS:
+        return False
+    return parsed.path.startswith(path_prefix)
+
+
 def normalize_babepedia_url(url):
     parsed = urlparse(str(url or "").strip())
     scheme = str(parsed.scheme or "")
@@ -881,7 +892,7 @@ class BabepediaGalleryListParser(HTMLParser):
         attrs = dict(attrs)
         if tag == "a":
             href = str(attrs.get("href") or "").strip()
-            if urlparse(href).path.startswith("/gallery/"):
+            if is_babepedia_link(href, "/gallery/"):
                 self._current = {"href": href, "title": "", "thumbnail": ""}
                 self.galleries.append(self._current)
             else:
@@ -917,7 +928,7 @@ class BabepediaGalleryPageParser(HTMLParser):
         if tag == "a":
             classes = str(attrs.get("class") or "").split()
             href = str(attrs.get("href") or "").strip()
-            if "img" in classes and urlparse(href).path.startswith("/galleries/"):
+            if "img" in classes and is_babepedia_link(href, "/galleries/"):
                 self._current_image = {"href": href, "thumbnail": ""}
                 self.images.append(self._current_image)
             else:
