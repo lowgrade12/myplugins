@@ -869,6 +869,76 @@ class BabepediaSearchResultParser(HTMLParser):
         self.links.append(href)
 
 
+class BabepediaGalleryListParser(HTMLParser):
+    """Collects gallery thumbnails (div.thumbshot > a[href^=/gallery/]) from a performer page."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.galleries = []
+        self._current = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "a":
+            href = str(attrs.get("href") or "").strip()
+            if urlparse(href).path.startswith("/gallery/"):
+                self._current = {"href": href, "title": "", "thumbnail": ""}
+                self.galleries.append(self._current)
+            else:
+                self._current = None
+            return
+        if tag == "img" and self._current is not None:
+            src = str(attrs.get("data-src") or attrs.get("src") or "").strip()
+            if src and not src.startswith("data:") and not self._current["thumbnail"]:
+                self._current["thumbnail"] = src
+            if not self._current["title"]:
+                self._current["title"] = str(attrs.get("alt") or "").strip()
+
+    def handle_endtag(self, tag):
+        if tag == "a":
+            self._current = None
+
+
+class BabepediaGalleryPageParser(HTMLParser):
+    """Collects the title and full-size image links (#gallery a.img) from a gallery page."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.title = ""
+        self.images = []
+        self._current_image = None
+        self._in_h1 = False
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "h1" and not self.title:
+            self._in_h1 = True
+            return
+        if tag == "a":
+            classes = str(attrs.get("class") or "").split()
+            href = str(attrs.get("href") or "").strip()
+            if "img" in classes and urlparse(href).path.startswith("/galleries/"):
+                self._current_image = {"href": href, "thumbnail": ""}
+                self.images.append(self._current_image)
+            else:
+                self._current_image = None
+            return
+        if tag == "img" and self._current_image is not None and not self._current_image["thumbnail"]:
+            src = str(attrs.get("data-src") or attrs.get("src") or "").strip()
+            if src and not src.startswith("data:"):
+                self._current_image["thumbnail"] = src
+
+    def handle_endtag(self, tag):
+        if tag == "h1":
+            self._in_h1 = False
+        elif tag == "a":
+            self._current_image = None
+
+    def handle_data(self, data):
+        if self._in_h1:
+            self.title += data
+
+
 class BabepediaClient:
     def __init__(self):
         self.ssl_context = ssl.create_default_context()
@@ -1079,6 +1149,15 @@ class BabepediaClient:
         performer["url"] = final_url
         return performer
 
+    def load_gallery(self, url, referer=None):
+        validate_babepedia_url(url)
+        if not urlparse(url).path.startswith("/gallery/"):
+            raise RuntimeError("Not a Babepedia gallery URL: " + str(url))
+        html_text, final_url = self.get_text(url, referer=referer or (BASE_URL + "/"))
+        gallery = parse_babepedia_gallery(html_text, final_url)
+        gallery["url"] = final_url
+        return gallery
+
 
 def strip_tags(value):
     text = re.sub(r"<br\s*/?>", "\n", str(value or ""), flags=re.IGNORECASE)
@@ -1233,6 +1312,21 @@ def parse_babepedia_performer(html_text, page_url):
             "thumbnail": absolute,
         })
 
+    gallery_parser = BabepediaGalleryListParser()
+    gallery_parser.feed(html_text)
+    galleries = []
+    seen_galleries = set()
+    for item in gallery_parser.galleries:
+        gallery_url = normalize_babepedia_url(urljoin(page_url, item["href"]))
+        if gallery_url in seen_galleries:
+            continue
+        seen_galleries.add(gallery_url)
+        galleries.append({
+            "url": gallery_url,
+            "title": item["title"] or Path(urlparse(gallery_url).path).name,
+            "thumbnail": normalize_babepedia_url(urljoin(page_url, item["thumbnail"])) if item["thumbnail"] else "",
+        })
+
     performer_urls = [page_url]
     for social_url in social_urls:
         if social_url not in performer_urls:
@@ -1258,6 +1352,32 @@ def parse_babepedia_performer(html_text, page_url):
         "urls": performer_urls,
         "images": image_urls,
         "image_count": len(image_urls),
+        "galleries": galleries,
+        "gallery_count": len(galleries),
+    }
+
+
+def parse_babepedia_gallery(html_text, page_url):
+    parser = BabepediaGalleryPageParser()
+    parser.feed(html_text)
+    images = []
+    seen_urls = set()
+    for item in parser.images:
+        absolute = normalize_babepedia_url(urljoin(page_url, item["href"]))
+        if absolute in seen_urls:
+            continue
+        seen_urls.add(absolute)
+        thumbnail = normalize_babepedia_url(urljoin(page_url, item["thumbnail"])) if item["thumbnail"] else absolute
+        images.append({
+            "url": absolute,
+            "thumbnail": thumbnail,
+        })
+
+    title = re.sub(r"\s+", " ", parser.title or "").strip()
+    return {
+        "title": title or Path(urlparse(page_url).path).name,
+        "images": images,
+        "image_count": len(images),
     }
 
 
@@ -1362,6 +1482,30 @@ def normalize_selection(selection, base_url=None):
     return normalized
 
 
+def selection_gallery_urls(selection, base_url=None):
+    """Map each selected image URL to the Babepedia gallery page it came from (None for profile images)."""
+    mapping = {}
+
+    for item in selection or []:
+        if not isinstance(item, dict):
+            continue
+        source = normalize_selection([item], base_url=base_url)
+        gallery_url = str(item.get("gallery_url") or "").strip()
+        if not source or not gallery_url:
+            continue
+        gallery_url = normalize_babepedia_url(urljoin(base_url or BASE_URL, gallery_url))
+        if not urlparse(gallery_url).path.startswith("/gallery/"):
+            raise RuntimeError("Not a Babepedia gallery URL: " + gallery_url)
+        mapping.setdefault(source[0], gallery_url)
+
+    return mapping
+
+
+def gallery_folder_name(gallery_url, title):
+    gallery_id = Path(urlparse(gallery_url).path).name
+    return sanitize_component((gallery_id + " - " + str(title or "")).strip(" -"), max_length=80)
+
+
 def parse_json_arg(args, key, default):
     raw = args.get(key)
     if raw in (None, ""):
@@ -1401,6 +1545,16 @@ def load_performer(client, stash, url, performer_id=None, request_id=None):
             "id": target.get("id"),
             "name": target.get("name"),
         } if target else None,
+    }
+
+
+def load_gallery(client, url, performer_url=None, request_id=None):
+    write_progress(request_id, "gallery", "Loading Babepedia gallery", detail=url)
+    gallery = client.load_gallery(url, referer=performer_url)
+    return {
+        "status": "ok",
+        "mode": "load_gallery",
+        "gallery": gallery,
     }
 
 
@@ -1460,7 +1614,26 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
         raise RuntimeError("No Babepedia images are selected.")
 
     image_lookup = {item.get("url"): item for item in performer.get("images") or [] if item.get("url")}
-    missing_from_page = [url for url in selected_urls if url not in image_lookup]
+    requested_galleries = selection_gallery_urls(selection, base_url=performer.get("url"))
+    known_galleries = {item.get("url") for item in performer.get("galleries") or [] if item.get("url")}
+    galleries_by_url = {}
+    image_gallery = {}
+
+    gallery_urls = list(dict.fromkeys(
+        requested_galleries[url] for url in selected_urls
+        if url not in image_lookup and url in requested_galleries
+    ))
+    for index, gallery_url in enumerate(gallery_urls, start=1):
+        if gallery_url not in known_galleries:
+            raise RuntimeError("Gallery is not listed on the Babepedia performer page: " + gallery_url)
+        write_progress(request_id, "gallery", "Loading Babepedia gallery", current=index, total=len(gallery_urls), detail=gallery_url)
+        gallery = client.load_gallery(gallery_url, referer=performer.get("url"))
+        galleries_by_url[gallery_url] = gallery
+        for item in gallery.get("images") or []:
+            if item.get("url"):
+                image_gallery.setdefault(item["url"], gallery_url)
+
+    missing_from_page = [url for url in selected_urls if url not in image_lookup and url not in image_gallery]
     if missing_from_page:
         raise RuntimeError("Some selected images are no longer present on the Babepedia page.")
 
@@ -1475,6 +1648,8 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
     for index, source_url in enumerate(selected_urls, start=1):
         validate_babepedia_url(source_url)
         write_progress(request_id, "download", "Preparing selected image", current=index, total=len(selected_urls), detail=source_url)
+        gallery_url = None if source_url in image_lookup else image_gallery.get(source_url)
+        gallery_title = (galleries_by_url.get(gallery_url) or {}).get("title") if gallery_url else None
         existing_image = stash.find_image_by_url(source_url)
         if existing_image:
             reused += 1
@@ -1482,6 +1657,8 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
                 "source_url": source_url,
                 "path": existing_path_from_image(existing_image),
                 "existing_image_id": existing_image.get("id"),
+                "gallery_url": gallery_url,
+                "gallery_title": gallery_title,
             })
             continue
 
@@ -1493,6 +1670,8 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
                 "source_url": source_url,
                 "path": history_path,
                 "existing_image_id": None,
+                "gallery_url": gallery_url,
+                "gallery_title": gallery_title,
             }
             entries.append(entry)
             if history_path and not stash.find_image_by_path(history_path):
@@ -1500,10 +1679,12 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
             continue
 
         filename = Path(urlparse(source_url).path).name.strip() or ("image-" + str(index) + ".jpg")
-        destination = safe_destination_path(performer_folder, filename, source_url)
+        # Gallery images are numbered 001.jpg, 002.jpg... so each set needs its own folder.
+        folder = performer_folder / gallery_folder_name(gallery_url, gallery_title) if gallery_url else performer_folder
+        destination = safe_destination_path(folder, filename, source_url)
 
         try:
-            result = client.download(source_url, destination, referer=performer.get("url"))
+            result = client.download(source_url, destination, referer=gallery_url or performer.get("url"))
             if result.get("downloaded"):
                 downloaded += 1
             else:
@@ -1513,6 +1694,8 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
                 "source_url": source_url,
                 "path": path,
                 "existing_image_id": None,
+                "gallery_url": gallery_url,
+                "gallery_title": gallery_title,
             })
             if path and not stash.find_image_by_path(path):
                 scan_paths.append(path)
@@ -1602,36 +1785,47 @@ def finalize_import(stash, import_id, request_id=None):
     history = load_import_history()
     gallery_id = None
     gallery_title = None
+    entries = manifest.get("entries") or []
 
-    performer_url = str(manifest.get("performer_url") or "").strip()
-    if performer_url:
-        write_progress(request_id, "gallery", "Preparing Stash gallery", detail=performer_url)
-        gallery_title = str(target.get("name") or "Babepedia").strip() + " · Babepedia"
+    def sync_stash_gallery(url, title):
+        write_progress(request_id, "gallery", "Preparing Stash gallery", detail=url)
         try:
-            existing_gallery = stash.find_gallery_by_url(performer_url, performer_id=target.get("id"))
+            existing_gallery = stash.find_gallery_by_url(url, performer_id=target.get("id"))
             if existing_gallery:
                 updated_gallery = stash.update_gallery_metadata(
                     gallery=existing_gallery,
-                    title=gallery_title,
-                    url=performer_url,
+                    title=title,
+                    url=url,
                     performer_ids=[target.get("id")],
                     organized=manifest.get("organized"),
                 )
             else:
                 updated_gallery = stash.create_gallery(
-                    title=gallery_title,
-                    url=performer_url,
+                    title=title,
+                    url=url,
                     performer_ids=[target.get("id")],
                     organized=manifest.get("organized"),
                 )
-            gallery_id = updated_gallery.get("id")
-            gallery_title = updated_gallery.get("title") or gallery_title
+            return updated_gallery.get("id"), updated_gallery.get("title") or title
         except Exception as error:
-            gallery_id = None
-            gallery_title = None
             log("Gallery metadata sync failed and was skipped: " + str(error))
+            return None, None
 
-    entries = manifest.get("entries") or []
+    # Profile images go into one "<Name> · Babepedia" gallery; each Babepedia set gets its own.
+    performer_url = str(manifest.get("performer_url") or "").strip()
+    if performer_url and any(not entry.get("gallery_url") for entry in entries):
+        gallery_id, gallery_title = sync_stash_gallery(
+            performer_url,
+            str(target.get("name") or "Babepedia").strip() + " · Babepedia",
+        )
+
+    set_galleries = {}
+    for entry in entries:
+        set_url = entry.get("gallery_url")
+        if not set_url or set_url in set_galleries:
+            continue
+        set_galleries[set_url] = sync_stash_gallery(set_url, entry.get("gallery_title") or Path(urlparse(set_url).path).name)
+
     for index, entry in enumerate(entries, start=1):
         write_progress(request_id, "finalize", "Applying Stash metadata", current=index, total=len(entries), detail=entry.get("source_url"))
         image = None
@@ -1658,7 +1852,7 @@ def finalize_import(stash, import_id, request_id=None):
             source_url=source_url,
             performer_ids=[target.get("id")],
             organized=manifest.get("organized"),
-            gallery_id=gallery_id,
+            gallery_id=set_galleries[entry["gallery_url"]][0] if entry.get("gallery_url") else gallery_id,
         )
         updated_count += 1
 
@@ -1690,6 +1884,11 @@ def finalize_import(stash, import_id, request_id=None):
         "performer_updated": performer_updated,
         "gallery_id": gallery_id,
         "gallery_title": gallery_title,
+        "set_galleries": [
+            {"id": set_id, "title": set_title}
+            for set_id, set_title in set_galleries.values()
+            if set_id
+        ],
     }
 
 
@@ -1760,6 +1959,12 @@ def main():
             if not url:
                 raise ValueError("No Babepedia performer URL was provided.")
             payload = load_performer(client, stash, url, performer_id=performer_id or None, request_id=request_id)
+        elif mode == "load_gallery":
+            url = str(args.get("url") or "").strip()
+            performer_url = str(args.get("performer_url") or "").strip()
+            if not url:
+                raise ValueError("No Babepedia gallery URL was provided.")
+            payload = load_gallery(client, url, performer_url=performer_url or None, request_id=request_id)
         elif mode == "preflight_import":
             performer_id = str(args.get("performer_id") or "").strip()
             performer_url = str(args.get("performer_url") or "").strip()

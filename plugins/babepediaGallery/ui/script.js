@@ -15,6 +15,40 @@
   let injectScheduled = false;
   let observerStarted = false;
   const selectedUrls = new Set();
+  // Selected image URL -> Babepedia gallery page it came from (absent for profile images).
+  const selectedGalleryFor = new Map();
+  const loadedGalleries = new Map();
+  let openGalleryUrl = null;
+  let loadingGalleryUrl = null;
+
+  function clearSelection() {
+    selectedUrls.clear();
+    selectedGalleryFor.clear();
+  }
+
+  function resetGalleryState() {
+    clearSelection();
+    loadedGalleries.clear();
+    openGalleryUrl = null;
+    loadingGalleryUrl = null;
+  }
+
+  function toggleSelection(url, galleryUrl, checked) {
+    if (typeof checked === "undefined") {
+      checked = !selectedUrls.has(url);
+    }
+
+    if (checked) {
+      selectedUrls.add(url);
+
+      if (galleryUrl) {
+        selectedGalleryFor.set(url, galleryUrl);
+      }
+    } else {
+      selectedUrls.delete(url);
+      selectedGalleryFor.delete(url);
+    }
+  }
 
   function escapeHtml(value) {
     if (value === null || typeof value === "undefined") {
@@ -544,6 +578,152 @@
     setStatus("", "");
   }
 
+  function imageCardHtml(image, index, galleryUrl) {
+    const checked = selectedUrls.has(image.url);
+    const galleryAttr = galleryUrl ? ' data-gallery-url="' + escapeHtml(galleryUrl) + '"' : "";
+    return ''
+      + '<article class="babepedia-card' + (checked ? ' babepedia-is-selected' : '') + '" data-url="' + escapeHtml(image.url) + '">'
+      + '  <button class="babepedia-image-button" type="button" data-url="' + escapeHtml(image.url) + '"' + galleryAttr + '>'
+      + '    <img loading="lazy" src="' + escapeHtml(image.thumbnail || image.url) + '" alt="Babepedia image ' + String(index + 1) + '">'
+      + '  </button>'
+      + '  <label class="babepedia-select-row">'
+      + '    <input class="babepedia-select" type="checkbox" data-url="' + escapeHtml(image.url) + '"' + galleryAttr + (checked ? ' checked' : '') + '>'
+      + '    <span>Select image ' + String(index + 1) + '</span>'
+      + '  </label>'
+      + '</article>';
+  }
+
+  function selectedCountForGallery(galleryUrl) {
+    let count = 0;
+
+    selectedGalleryFor.forEach(function (value) {
+      if (value === galleryUrl) {
+        count += 1;
+      }
+    });
+
+    return count;
+  }
+
+  function openGalleryHtml() {
+    if (!openGalleryUrl) {
+      return "";
+    }
+
+    const gallery = loadedGalleries.get(openGalleryUrl);
+
+    if (!gallery) {
+      return '<div class="babepedia-gallery-panel"><div class="babepedia-empty">Loading gallery…</div></div>';
+    }
+
+    const imagesHtml = (gallery.images || []).map(function (image, index) {
+      return imageCardHtml(image, index, openGalleryUrl);
+    }).join("");
+
+    return ''
+      + '<div class="babepedia-gallery-panel">'
+      + '  <div class="babepedia-toolbar">'
+      + '    <div class="babepedia-gallery-panel-title">'
+      + '      <a href="' + escapeHtml(gallery.url || openGalleryUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(gallery.title || "Gallery") + '</a>'
+      + '      <span class="babepedia-gallery-count">' + escapeHtml(String((gallery.images || []).length)) + ' images</span>'
+      + '    </div>'
+      + '    <div class="babepedia-toolbar-actions">'
+      + '      <button class="babepedia-button" type="button" data-action="select-gallery">Select gallery</button>'
+      + '      <button class="babepedia-button" type="button" data-action="clear-gallery">Clear gallery</button>'
+      + '      <button class="babepedia-button" type="button" data-action="close-gallery">Close</button>'
+      + '    </div>'
+      + '  </div>'
+      + '  <div class="babepedia-grid">'
+      +      (imagesHtml || '<div class="babepedia-empty">No images found in this gallery.</div>')
+      + '  </div>'
+      + '</div>';
+  }
+
+  function galleriesSectionHtml(galleries) {
+    if (!galleries.length) {
+      return "";
+    }
+
+    const cardsHtml = galleries.map(function (gallery) {
+      const selectedCount = selectedCountForGallery(gallery.url);
+      const isOpen = gallery.url === openGalleryUrl;
+      const isLoading = gallery.url === loadingGalleryUrl;
+      return ''
+        + '<button class="babepedia-gallery-card' + (isOpen ? ' babepedia-is-open' : '') + (selectedCount ? ' babepedia-is-selected' : '') + '" type="button" data-gallery-url="' + escapeHtml(gallery.url) + '">'
+        + (gallery.thumbnail ? '  <img loading="lazy" src="' + escapeHtml(gallery.thumbnail) + '" alt="">' : '')
+        + '  <span class="babepedia-gallery-title">' + escapeHtml(gallery.title || "Gallery") + '</span>'
+        + (isLoading ? '  <span class="babepedia-gallery-count">Loading…</span>' : '')
+        + (selectedCount ? '  <span class="babepedia-gallery-count">' + escapeHtml(String(selectedCount)) + ' selected</span>' : '')
+        + '</button>';
+    }).join("");
+
+    return ''
+      + '<h3 class="babepedia-section-title">Galleries (' + escapeHtml(String(galleries.length)) + ')</h3>'
+      + openGalleryHtml()
+      + '<div class="babepedia-gallery-list">'
+      +   cardsHtml
+      + '</div>';
+  }
+
+  async function openGallery(galleryUrl) {
+    if (!galleryUrl || !currentBabepediaPerformer) {
+      return;
+    }
+
+    if (openGalleryUrl === galleryUrl) {
+      openGalleryUrl = null;
+      renderPerformer(currentBabepediaPerformer);
+      return;
+    }
+
+    openGalleryUrl = galleryUrl;
+
+    if (loadedGalleries.has(galleryUrl)) {
+      renderPerformer(currentBabepediaPerformer);
+      return;
+    }
+
+    const performer = currentBabepediaPerformer;
+    loadingGalleryUrl = galleryUrl;
+    renderPerformer(performer);
+    setStatus("Loading Babepedia gallery…", "info");
+
+    let errorMessage = null;
+
+    try {
+      const data = await requestData({
+        mode: "load_gallery",
+        url: galleryUrl,
+        performer_url: performer.url
+      }, function (progress) {
+        setStatus(formatProgress(progress), "info");
+      }, 180000);
+
+      loadedGalleries.set(galleryUrl, data.gallery || { url: galleryUrl, images: [] });
+    } catch (error) {
+      console.error("[Babepedia] Gallery load failed", error);
+      errorMessage = error.message || "Babepedia gallery load failed.";
+
+      if (openGalleryUrl === galleryUrl) {
+        openGalleryUrl = null;
+      }
+    }
+
+    if (loadingGalleryUrl === galleryUrl) {
+      loadingGalleryUrl = null;
+    }
+
+    if (currentBabepediaPerformer !== performer) {
+      return;
+    }
+
+    renderPerformer(performer);
+
+    if (errorMessage) {
+      setStatus(errorMessage, "error");
+    }
+  }
+
   function renderPerformer(performer) {
     const root = contentRoot();
 
@@ -556,18 +736,9 @@
       : "";
 
     const imagesHtml = (performer.images || []).map(function (image, index) {
-      const checked = selectedUrls.has(image.url);
-      return ''
-        + '<article class="babepedia-card' + (checked ? ' babepedia-is-selected' : '') + '" data-url="' + escapeHtml(image.url) + '">'
-        + '  <button class="babepedia-image-button" type="button" data-url="' + escapeHtml(image.url) + '">'
-        + '    <img loading="lazy" src="' + escapeHtml(image.thumbnail || image.url) + '" alt="Babepedia image ' + String(index + 1) + '">'
-        + '  </button>'
-        + '  <label class="babepedia-select-row">'
-        + '    <input class="babepedia-select" type="checkbox" data-url="' + escapeHtml(image.url) + '"' + (checked ? ' checked' : '') + '>'
-        + '    <span>Select image ' + String(index + 1) + '</span>'
-        + '  </label>'
-        + '</article>';
+      return imageCardHtml(image, index, null);
     }).join("");
+    const galleries = performer.galleries || [];
 
     root.innerHTML = ''
       + '<div class="babepedia-browser">'
@@ -578,7 +749,7 @@
       +        aliases
       + '      <p class="babepedia-subtitle"><a href="' + escapeHtml(performer.url) + '" target="_blank" rel="noopener noreferrer">Open on Babepedia</a></p>'
       + '    </div>'
-      + '    <div class="babepedia-badge">' + escapeHtml(String((performer.images || []).length)) + ' images</div>'
+      + '    <div class="babepedia-badge">' + escapeHtml(String((performer.images || []).length)) + ' images · ' + escapeHtml(String(galleries.length)) + ' galleries</div>'
       + '  </div>'
       + '  <form class="babepedia-search-form">'
       + '    <input class="babepedia-search-input" name="query" placeholder="Search another Babepedia performer" value="'
@@ -602,9 +773,11 @@
       + '          <button class="babepedia-button babepedia-button-primary" type="button" data-action="import">Import selected</button>'
       + '        </div>'
       + '      </div>'
+      + '      <h3 class="babepedia-section-title">Profile images</h3>'
       + '      <div class="babepedia-grid">'
-      +         imagesHtml
+      +         (imagesHtml || '<div class="babepedia-empty">No profile images.</div>')
       + '      </div>'
+      +       galleriesSectionHtml(galleries)
       + '    </section>'
       + '  </div>'
       + '</div>';
@@ -654,12 +827,7 @@
           return;
         }
 
-        if (checkbox.checked) {
-          selectedUrls.add(url);
-        } else {
-          selectedUrls.delete(url);
-        }
-
+        toggleSelection(url, checkbox.getAttribute("data-gallery-url"), checkbox.checked);
         renderPerformer(currentBabepediaPerformer);
       });
     });
@@ -672,25 +840,27 @@
           return;
         }
 
-        if (selectedUrls.has(url)) {
-          selectedUrls.delete(url);
-        } else {
-          selectedUrls.add(url);
-        }
-
+        toggleSelection(url, button.getAttribute("data-gallery-url"));
         renderPerformer(currentBabepediaPerformer);
+      });
+    });
+
+    root.querySelectorAll(".babepedia-gallery-card").forEach(function (button) {
+      button.addEventListener("click", function () {
+        openGallery(button.getAttribute("data-gallery-url"));
       });
     });
 
     root.querySelectorAll("[data-action]").forEach(function (button) {
       button.addEventListener("click", function () {
         const action = button.getAttribute("data-action");
+        const openGalleryData = openGalleryUrl ? loadedGalleries.get(openGalleryUrl) : null;
 
         if (action === "select-all") {
-          selectedUrls.clear();
+          clearSelection();
           (currentBabepediaPerformer.images || []).forEach(function (image) {
             if (image.url) {
-              selectedUrls.add(image.url);
+              toggleSelection(image.url, null, true);
             }
           });
           renderPerformer(currentBabepediaPerformer);
@@ -698,7 +868,23 @@
         }
 
         if (action === "clear-selection") {
-          selectedUrls.clear();
+          clearSelection();
+          renderPerformer(currentBabepediaPerformer);
+          return;
+        }
+
+        if (action === "select-gallery" || action === "clear-gallery") {
+          ((openGalleryData && openGalleryData.images) || []).forEach(function (image) {
+            if (image.url) {
+              toggleSelection(image.url, openGalleryUrl, action === "select-gallery");
+            }
+          });
+          renderPerformer(currentBabepediaPerformer);
+          return;
+        }
+
+        if (action === "close-gallery") {
+          openGalleryUrl = null;
           renderPerformer(currentBabepediaPerformer);
           return;
         }
@@ -776,7 +962,7 @@
       return;
     }
 
-    selectedUrls.clear();
+    resetGalleryState();
     setStatus("Loading Babepedia performer…", "info");
 
     try {
@@ -818,7 +1004,8 @@
     }
 
     const selection = Array.from(selectedUrls.values()).map(function (url) {
-      return { url: url };
+      const galleryUrl = selectedGalleryFor.get(url);
+      return galleryUrl ? { url: url, gallery_url: galleryUrl } : { url: url };
     });
 
     if (!selection.length) {
@@ -891,6 +1078,14 @@
       }
       if (finalized.gallery_id) {
         message.push("Images were added to gallery \"" + String(finalized.gallery_title || finalized.gallery_id) + "\".");
+      }
+
+      if (finalized.set_galleries && finalized.set_galleries.length) {
+        message.push(
+          "Gallery images were added to "
+          + String(finalized.set_galleries.length)
+          + (finalized.set_galleries.length === 1 ? " Stash gallery." : " Stash galleries.")
+        );
       }
 
       setStatus(message.join(" "), "success");
@@ -983,7 +1178,7 @@
       currentTargetPerformer = null;
       currentBabepediaPerformer = null;
       lastSearchQuery = "";
-      selectedUrls.clear();
+      resetGalleryState();
       deactivateBabepediaView();
       return;
     }
@@ -995,7 +1190,7 @@
       currentTargetPerformer = null;
       currentBabepediaPerformer = null;
       lastSearchQuery = "";
-      selectedUrls.clear();
+      resetGalleryState();
     }
 
     ensureMount();
