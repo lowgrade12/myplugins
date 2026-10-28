@@ -8,8 +8,11 @@
   const ROUTE_POLL_MS = 750;
   const TARGET_LANGUAGE = "en";
   const TRANSLATE_MAX_CHARS = 1200;
+  const JAV_TAG_NAME = "JAV";
+  const TAG_OPTION_WAIT_MS = 6000;
 
   let processing = false;
+  let javTagId = null;
   let lastPathname = "";
   let observerStarted = false;
 
@@ -237,6 +240,9 @@
           title
           details
           code
+          tags {
+            id
+          }
         }
       }
     `;
@@ -244,7 +250,32 @@
     return data.findScene || null;
   }
 
-  async function updateSceneForBulkWorkflow(sceneId, title, details) {
+  async function getJavTagId() {
+    if (javTagId) {
+      return javTagId;
+    }
+
+    const query = `
+      query FindJavTagForTranslateRetitle($name: String!) {
+        findTags(tag_filter: { name: { value: $name, modifier: EQUALS } }) {
+          tags {
+            id
+            name
+          }
+        }
+      }
+    `;
+    const data = await graphqlQuery(query, { name: JAV_TAG_NAME });
+    const tag = (data.findTags?.tags || []).find((candidate) => candidate.name === JAV_TAG_NAME);
+    if (!tag) {
+      throw new Error(`Tag "${JAV_TAG_NAME}" not found.`);
+    }
+
+    javTagId = tag.id;
+    return javTagId;
+  }
+
+  async function updateSceneForBulkWorkflow(sceneId, title, details, tagIds) {
     const mutation = `
       mutation SceneUpdateForTranslateRetitle($input: SceneUpdateInput!) {
         sceneUpdate(input: $input) {
@@ -257,8 +288,53 @@
         id: sceneId,
         title,
         details,
+        tag_ids: tagIds,
       },
     });
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function getTagChipNames(tagField) {
+    return Array.from(tagField.querySelectorAll(".react-select__multi-value__label")).map((label) => normalizeSpace(label.textContent));
+  }
+
+  // Adds a tag to the edit form's Tags select the way a user would (type the
+  // name, pick the option), so it's saved with the rest of the form instead of
+  // being overwritten by the form's stale tag list on Save.
+  async function addTagToEditForm(tagName) {
+    const tagField = document.querySelector("[data-field='tag_ids']");
+    const input = tagField?.querySelector("input");
+    if (!input) {
+      return false;
+    }
+
+    if (getTagChipNames(tagField).includes(tagName)) {
+      return true;
+    }
+
+    input.focus();
+    setFieldValue(input, tagName);
+
+    let option = null;
+    for (let elapsed = 0; elapsed < TAG_OPTION_WAIT_MS && !option; elapsed += 200) {
+      await wait(200);
+      option = Array.from(document.querySelectorAll(".react-select__option")).find(
+        (candidate) => normalizeSpace(candidate.textContent) === tagName
+      );
+    }
+
+    if (option) {
+      option.click();
+      await wait(100);
+    }
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    input.blur();
+
+    return getTagChipNames(tagField).includes(tagName);
   }
 
   function setFieldValue(field, value) {
@@ -352,9 +428,14 @@
 
       setFieldValue(fields.detailsField, translatedDetails);
       setFieldValue(fields.titleField, code);
+      const tagged = await addTagToEditForm(JAV_TAG_NAME);
       fields.titleField.focus();
 
-      showToast("Details translated and title replaced with code.");
+      if (tagged) {
+        showToast(`Details translated, title replaced with code, ${JAV_TAG_NAME} tag added.`);
+      } else {
+        showToast(`Details translated and title replaced with code, but couldn't add the ${JAV_TAG_NAME} tag.`, "error");
+      }
     } catch (error) {
       logError("Workflow failed.", error);
       showToast(`Automation failed: ${error.message || "Unknown error"}`, "error");
@@ -452,6 +533,15 @@
     let failed = 0;
 
     try {
+      let javId;
+      try {
+        javId = await getJavTagId();
+      } catch (error) {
+        logError("JAV tag lookup failed.", error);
+        showToast(`Bulk translate stopped: ${error.message || "JAV tag lookup failed"}`, "error");
+        return;
+      }
+
       for (let i = 0; i < sceneIds.length; i += 1) {
         const sceneId = sceneIds[i];
         button.textContent = `Translating ${i + 1}/${sceneIds.length}…`;
@@ -478,7 +568,8 @@
             continue;
           }
 
-          await updateSceneForBulkWorkflow(sceneId, code, translatedDetails);
+          const tagIds = Array.from(new Set([...(scene.tags || []).map((tag) => tag.id), javId]));
+          await updateSceneForBulkWorkflow(sceneId, code, translatedDetails, tagIds);
           updated += 1;
         } catch (error) {
           failed += 1;
