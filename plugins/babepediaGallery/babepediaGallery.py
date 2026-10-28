@@ -1501,6 +1501,25 @@ def selection_gallery_urls(selection, base_url=None):
     return mapping
 
 
+def whole_gallery_urls(selection, base_url=None):
+    """Gallery pages selected as a whole ({"gallery_url": ...} with no image "url")."""
+    urls = []
+
+    for item in selection or []:
+        if not isinstance(item, dict) or str(item.get("url") or "").strip():
+            continue
+        gallery_url = str(item.get("gallery_url") or "").strip()
+        if not gallery_url:
+            continue
+        gallery_url = normalize_babepedia_url(urljoin(base_url or BASE_URL, gallery_url))
+        if not urlparse(gallery_url).path.startswith("/gallery/"):
+            raise RuntimeError("Not a Babepedia gallery URL: " + gallery_url)
+        if gallery_url not in urls:
+            urls.append(gallery_url)
+
+    return urls
+
+
 def gallery_folder_name(gallery_url, title):
     gallery_id = Path(urlparse(gallery_url).path).name
     return sanitize_component((gallery_id + " - " + str(title or "")).strip(" -"), max_length=80)
@@ -1566,7 +1585,8 @@ def preflight_import(stash, performer_id, selection, performer_url=None, request
         raise RuntimeError("The active Stash performer could not be found.")
 
     selected_urls = normalize_selection(selection, base_url=performer_url)
-    if not selected_urls:
+    whole_galleries = whole_gallery_urls(selection, base_url=performer_url)
+    if not selected_urls and not whole_galleries:
         raise RuntimeError("No Babepedia images are selected.")
 
     history = load_import_history()
@@ -1591,6 +1611,7 @@ def preflight_import(stash, performer_id, selection, performer_url=None, request
         "status": "ok",
         "mode": "preflight_import",
         "selection_count": len(selected_urls),
+        "gallery_count": len(whole_galleries),
         "existing_count": existing_count,
         "reusable_file_count": reusable_file_count,
         "new_count": new_count,
@@ -1610,7 +1631,8 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
 
     performer = client.load_performer(performer_url)
     selected_urls = normalize_selection(selection, base_url=performer.get("url"))
-    if not selected_urls:
+    whole_galleries = whole_gallery_urls(selection, base_url=performer.get("url"))
+    if not selected_urls and not whole_galleries:
         raise RuntimeError("No Babepedia images are selected.")
 
     image_lookup = {item.get("url"): item for item in performer.get("images") or [] if item.get("url")}
@@ -1619,10 +1641,10 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
     galleries_by_url = {}
     image_gallery = {}
 
-    gallery_urls = list(dict.fromkeys(
+    gallery_urls = list(dict.fromkeys(whole_galleries + [
         requested_galleries[url] for url in selected_urls
         if url not in image_lookup and url in requested_galleries
-    ))
+    ]))
     for index, gallery_url in enumerate(gallery_urls, start=1):
         if gallery_url not in known_galleries:
             raise RuntimeError("Gallery is not listed on the Babepedia performer page: " + gallery_url)
@@ -1632,6 +1654,15 @@ def prepare_import(client, stash, performer_id, performer_url, selection, reques
         for item in gallery.get("images") or []:
             if item.get("url"):
                 image_gallery.setdefault(item["url"], gallery_url)
+
+    # Whole-gallery selections expand to every image on the gallery page.
+    for gallery_url in whole_galleries:
+        for item in galleries_by_url[gallery_url].get("images") or []:
+            if item.get("url") and item["url"] not in selected_urls:
+                selected_urls.append(item["url"])
+
+    if not selected_urls:
+        raise RuntimeError("The selected Babepedia galleries contain no images.")
 
     missing_from_page = [url for url in selected_urls if url not in image_lookup and url not in image_gallery]
     if missing_from_page:

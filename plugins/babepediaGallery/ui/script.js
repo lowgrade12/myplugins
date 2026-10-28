@@ -17,6 +17,8 @@
   const selectedUrls = new Set();
   // Selected image URL -> Babepedia gallery page it came from (absent for profile images).
   const selectedGalleryFor = new Map();
+  // Gallery pages selected as a whole; the backend expands them to every image on import.
+  const selectedWholeGalleries = new Set();
   const loadedGalleries = new Map();
   let openGalleryUrl = null;
   let loadingGalleryUrl = null;
@@ -24,6 +26,30 @@
   function clearSelection() {
     selectedUrls.clear();
     selectedGalleryFor.clear();
+    selectedWholeGalleries.clear();
+  }
+
+  function isImageSelected(url, galleryUrl) {
+    return selectedUrls.has(url) || Boolean(galleryUrl && selectedWholeGalleries.has(galleryUrl));
+  }
+
+  function removeGalleryImageSelections(galleryUrl) {
+    Array.from(selectedGalleryFor.entries()).forEach(function (entry) {
+      if (entry[1] === galleryUrl) {
+        selectedUrls.delete(entry[0]);
+        selectedGalleryFor.delete(entry[0]);
+      }
+    });
+  }
+
+  function setGallerySelected(galleryUrl, checked) {
+    removeGalleryImageSelections(galleryUrl);
+
+    if (checked) {
+      selectedWholeGalleries.add(galleryUrl);
+    } else {
+      selectedWholeGalleries.delete(galleryUrl);
+    }
   }
 
   function resetGalleryState() {
@@ -35,7 +61,24 @@
 
   function toggleSelection(url, galleryUrl, checked) {
     if (typeof checked === "undefined") {
-      checked = !selectedUrls.has(url);
+      checked = !isImageSelected(url, galleryUrl);
+    }
+
+    if (galleryUrl && selectedWholeGalleries.has(galleryUrl)) {
+      if (checked) {
+        return;
+      }
+
+      // Deselecting one image from a whole-gallery selection keeps the rest selected individually.
+      const gallery = loadedGalleries.get(galleryUrl);
+      selectedWholeGalleries.delete(galleryUrl);
+      ((gallery && gallery.images) || []).forEach(function (image) {
+        if (image.url && image.url !== url) {
+          selectedUrls.add(image.url);
+          selectedGalleryFor.set(image.url, galleryUrl);
+        }
+      });
+      return;
     }
 
     if (checked) {
@@ -524,7 +567,13 @@
   }
 
   function selectionCountText() {
-    return String(selectedUrls.size) + (selectedUrls.size === 1 ? " image selected" : " images selected");
+    const parts = [String(selectedUrls.size) + (selectedUrls.size === 1 ? " image" : " images")];
+
+    if (selectedWholeGalleries.size) {
+      parts.push(String(selectedWholeGalleries.size) + (selectedWholeGalleries.size === 1 ? " gallery" : " galleries"));
+    }
+
+    return parts.join(" + ") + " selected";
   }
 
   function renderSearchResults(results) {
@@ -579,7 +628,7 @@
   }
 
   function imageCardHtml(image, index, galleryUrl) {
-    const checked = selectedUrls.has(image.url);
+    const checked = isImageSelected(image.url, galleryUrl);
     const galleryAttr = galleryUrl ? ' data-gallery-url="' + escapeHtml(galleryUrl) + '"' : "";
     return ''
       + '<article class="babepedia-card' + (checked ? ' babepedia-is-selected' : '') + '" data-url="' + escapeHtml(image.url) + '">'
@@ -645,16 +694,31 @@
     }
 
     const cardsHtml = galleries.map(function (gallery) {
+      const isWhole = selectedWholeGalleries.has(gallery.url);
       const selectedCount = selectedCountForGallery(gallery.url);
       const isOpen = gallery.url === openGalleryUrl;
       const isLoading = gallery.url === loadingGalleryUrl;
+      let countText = "";
+
+      if (isWhole) {
+        countText = "Whole gallery selected";
+      } else if (selectedCount) {
+        countText = String(selectedCount) + " selected";
+      }
+
       return ''
-        + '<button class="babepedia-gallery-card' + (isOpen ? ' babepedia-is-open' : '') + (selectedCount ? ' babepedia-is-selected' : '') + '" type="button" data-gallery-url="' + escapeHtml(gallery.url) + '">'
-        + (gallery.thumbnail ? '  <img loading="lazy" src="' + escapeHtml(gallery.thumbnail) + '" alt="">' : '')
-        + '  <span class="babepedia-gallery-title">' + escapeHtml(gallery.title || "Gallery") + '</span>'
-        + (isLoading ? '  <span class="babepedia-gallery-count">Loading…</span>' : '')
-        + (selectedCount ? '  <span class="babepedia-gallery-count">' + escapeHtml(String(selectedCount)) + ' selected</span>' : '')
-        + '</button>';
+        + '<div class="babepedia-gallery-card' + (isOpen ? ' babepedia-is-open' : '') + (isWhole || selectedCount ? ' babepedia-is-selected' : '') + '">'
+        + '  <button class="babepedia-gallery-open" type="button" title="Show images" data-gallery-url="' + escapeHtml(gallery.url) + '">'
+        + (gallery.thumbnail ? '    <img loading="lazy" src="' + escapeHtml(gallery.thumbnail) + '" alt="">' : '')
+        + '    <span class="babepedia-gallery-title">' + escapeHtml(gallery.title || "Gallery") + '</span>'
+        + (isLoading ? '    <span class="babepedia-gallery-count">Loading…</span>' : '')
+        + (countText ? '    <span class="babepedia-gallery-count">' + escapeHtml(countText) + '</span>' : '')
+        + '  </button>'
+        + '  <label class="babepedia-gallery-select-row">'
+        + '    <input class="babepedia-gallery-select" type="checkbox" data-gallery-url="' + escapeHtml(gallery.url) + '"' + (isWhole ? ' checked' : '') + '>'
+        + '    <span>Select gallery</span>'
+        + '  </label>'
+        + '</div>';
     }).join("");
 
     return ''
@@ -768,7 +832,8 @@
       + '      <div class="babepedia-toolbar">'
       + '        <div class="babepedia-selection-count">' + escapeHtml(selectionCountText()) + '</div>'
       + '        <div class="babepedia-toolbar-actions">'
-      + '          <button class="babepedia-button" type="button" data-action="select-all">Select all</button>'
+      + '          <button class="babepedia-button" type="button" data-action="select-all">Select all images</button>'
+      + '          <button class="babepedia-button" type="button" data-action="select-all-galleries">Select all galleries</button>'
       + '          <button class="babepedia-button" type="button" data-action="clear-selection">Clear</button>'
       + '          <button class="babepedia-button babepedia-button-primary" type="button" data-action="import">Import selected</button>'
       + '        </div>'
@@ -845,9 +910,16 @@
       });
     });
 
-    root.querySelectorAll(".babepedia-gallery-card").forEach(function (button) {
+    root.querySelectorAll(".babepedia-gallery-open").forEach(function (button) {
       button.addEventListener("click", function () {
         openGallery(button.getAttribute("data-gallery-url"));
+      });
+    });
+
+    root.querySelectorAll(".babepedia-gallery-select").forEach(function (checkbox) {
+      checkbox.addEventListener("change", function () {
+        setGallerySelected(checkbox.getAttribute("data-gallery-url"), checkbox.checked);
+        renderPerformer(currentBabepediaPerformer);
       });
     });
 
@@ -857,7 +929,6 @@
         const openGalleryData = openGalleryUrl ? loadedGalleries.get(openGalleryUrl) : null;
 
         if (action === "select-all") {
-          clearSelection();
           (currentBabepediaPerformer.images || []).forEach(function (image) {
             if (image.url) {
               toggleSelection(image.url, null, true);
@@ -873,10 +944,16 @@
           return;
         }
 
-        if (action === "select-gallery" || action === "clear-gallery") {
-          ((openGalleryData && openGalleryData.images) || []).forEach(function (image) {
-            if (image.url) {
-              toggleSelection(image.url, openGalleryUrl, action === "select-gallery");
+        if ((action === "select-gallery" || action === "clear-gallery") && openGalleryData) {
+          setGallerySelected(openGalleryUrl, action === "select-gallery");
+          renderPerformer(currentBabepediaPerformer);
+          return;
+        }
+
+        if (action === "select-all-galleries") {
+          (currentBabepediaPerformer.galleries || []).forEach(function (gallery) {
+            if (gallery.url) {
+              setGallerySelected(gallery.url, true);
             }
           });
           renderPerformer(currentBabepediaPerformer);
@@ -1008,8 +1085,12 @@
       return galleryUrl ? { url: url, gallery_url: galleryUrl } : { url: url };
     });
 
+    selectedWholeGalleries.forEach(function (galleryUrl) {
+      selection.push({ gallery_url: galleryUrl });
+    });
+
     if (!selection.length) {
-      setStatus("Select at least one Babepedia image to import.", "warning");
+      setStatus("Select at least one Babepedia image or gallery to import.", "warning");
       return;
     }
 
@@ -1026,8 +1107,10 @@
 
       setStatus(
         "Starting import for "
-        + String(preflight.selection_count || selection.length)
-        + " image(s)… "
+        + String(preflight.selection_count || 0)
+        + " image(s)"
+        + (preflight.gallery_count ? " and " + String(preflight.gallery_count) + " whole gallery(s)" : "")
+        + "… "
         + "Existing: " + String(preflight.existing_count || 0)
         + ", Reusable: " + String(preflight.reusable_file_count || 0)
         + ", New: " + String(preflight.new_count || 0),
