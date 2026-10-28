@@ -1,6 +1,6 @@
 name: Babepedia Gallery Importer
 description: Search Babepedia performers and import selected gallery images into Stash.
-version: 0.2.0
+version: 0.3.0
 url: https://github.com/lowgrade12/myplugins
 
 exec:
