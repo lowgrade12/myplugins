@@ -14,6 +14,7 @@ When you click **Translate + Retitle**, it:
 3. Translates that text to English
 4. Replaces Details with the translated result
 5. Replaces Title with Code
+6. Adds the **JAV** tag to the Tags field
 
 ## Notes
 
@@ -22,4 +23,5 @@ When you click **Translate + Retitle**, it:
 - The button is injected near the edit fields instead of the native save actions.
 - On scene list pages, a **Translate Selected Scenes** button appears in the bottom-right once scene selection checkboxes are available.
 - The bulk button stays disabled until at least one scene is selected.
+- The bulk workflow saves directly and adds the **JAV** tag alongside each scene's existing tags.
 - Translation uses `https://translate.googleapis.com/translate_a/single`.
