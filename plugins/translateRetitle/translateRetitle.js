@@ -113,6 +113,11 @@
     return { detailsField, titleField, codeField };
   }
 
+  // Empty details are fine: the title alone becomes the details.
+  function composeDetails(title, details) {
+    return details ? `${title}\n\n${details}` : title;
+  }
+
   function getFieldContainer(field) {
     if (!field) {
       return null;
@@ -403,17 +408,12 @@
       return;
     }
 
-    if (!details) {
-      showToast("Details are empty.", "error");
-      return;
-    }
-
     if (!code) {
       showToast("Code is empty.", "error");
       return;
     }
 
-    const composedDetails = `${title}\n\n${details}`;
+    const composedDetails = composeDetails(title, details);
 
     processing = true;
     const originalText = button.textContent;
@@ -556,12 +556,12 @@
           const title = normalizeSpace(scene.title);
           const details = normalizeSpace(scene.details);
           const code = normalizeSpace(scene.code);
-          if (!title || !details || !code) {
+          if (!title || !code) {
             skipped += 1;
             continue;
           }
 
-          const composedDetails = `${title}\n\n${details}`;
+          const composedDetails = composeDetails(title, details);
           const translatedDetails = await translateText(composedDetails);
           if (!translatedDetails) {
             failed += 1;
