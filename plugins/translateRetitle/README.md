@@ -10,7 +10,7 @@ When you click **Translate + Retitle**, it:
 2. Builds details as:
    - Title
    - blank line
-   - existing details
+   - existing details (if Details is empty, just the title)
 3. Translates that text to English
 4. Replaces Details with the translated result
 5. Replaces Title with Code
