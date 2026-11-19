@@ -1,5 +1,6 @@
 import json
 import random
+import subprocess
 import sys
 import tempfile
 import types
@@ -465,6 +466,30 @@ class HookTest(TempPathsMixin, unittest.TestCase):
             self.run_hook(stash, sid)
             self.assertIn("restash_score", scene["custom_fields"], sid)
 
+    def test_organized_update_scores_scene_and_its_performers(self):
+        stash = FakeStash()
+        self.run_task(stash, "full")
+        stash.add_performer("77")                      # created by Identify: no hook
+        scene = stash.add_scene("500", random.Random(3), datetime.now(timezone.utc))
+        scene.update(performers=[], tags=[], studio=None)
+        self.run_hook(stash, "500")                    # scan create: left unscored
+        self.assertEqual(scene["custom_fields"], {})
+
+        scene.update(performers=[{"id": "77"}], tags=[{"id": "2"}],
+                     studio={"id": "1"}, organized=True)
+        self.assertEqual(self.run_hook(stash, "500", "Scene.Update.Post"), 0)
+        self.assertIn("restash_score", scene["custom_fields"])
+        self.assertIn("restash_score", stash.performers["77"]["custom_fields"])
+
+    def test_update_hook_ignores_unorganized_scene(self):
+        stash = FakeStash()
+        self.run_task(stash, "full")
+        scene = stash.add_scene("500", random.Random(3), datetime.now(timezone.utc))
+        stash.calls.clear()
+        self.run_hook(stash, "500", "Scene.Update.Post")
+        self.assertEqual(stash.mutations(), [])
+        self.assertEqual(scene["custom_fields"], {})
+
     def test_hook_without_cache_skips(self):
         stash = FakeStash()
         self.assertEqual(self.run_hook(stash, "1"), 0)
@@ -654,6 +679,48 @@ class IgnoredGendersTest(TempPathsMixin, unittest.TestCase):
                                lambda s, pid: {"ignoredGenders": "NONE"}):
             self.run_task(stash, "full")
         self.assertIn("restash_score", stash.performers["2"]["custom_fields"])
+
+
+class EntryFilterTest(unittest.TestCase):
+    """entry.py drops uninteresting Scene.Update.Post events before restash loads."""
+
+    def hook(self, typ, fields=None, inp=None):
+        ctx = {"type": typ, "id": 1}
+        if fields is not None:
+            ctx["inputFields"] = fields
+        if inp is not None:
+            ctx["input"] = inp
+        return {"args": {"hookContext": ctx}}
+
+    def test_wanted(self):
+        import entry
+        self.assertTrue(entry.wanted({"args": {"mode": "refresh"}}))
+        self.assertTrue(entry.wanted(self.hook("Scene.Create.Post")))
+        self.assertTrue(entry.wanted(self.hook("Performer.Create.Post")))
+        self.assertTrue(entry.wanted(self.hook(
+            "Scene.Update.Post", ["id", "organized"], {"id": "1", "organized": True})))
+        self.assertTrue(entry.wanted(self.hook(          # Identify-style, no field list
+            "Scene.Update.Post", None, {"organized": True})))
+        # Restash's own score writes, an un-organize, and other edits are dropped
+        self.assertFalse(entry.wanted(self.hook(
+            "Scene.Update.Post", ["id", "custom_fields", "rating100"],
+            {"id": "1", "custom_fields": {"partial": {}}, "rating100": 50})))
+        self.assertFalse(entry.wanted(self.hook(
+            "Scene.Update.Post", ["id", "organized"], {"id": "1", "organized": False})))
+        self.assertFalse(entry.wanted(self.hook(
+            "Scene.Update.Post", ["id", "title"], {"id": "1", "title": "x",
+                                                   "organized": True})))
+
+    def test_dropped_event_never_imports_restash(self):
+        payload = json.dumps(self.hook("Scene.Update.Post", ["id", "custom_fields"],
+                                       {"id": "1", "custom_fields": {}}))
+        code = ("import io, sys; sys.path.insert(0, sys.argv[1]); import entry; "
+                "rc = entry.main(io.StringIO(sys.argv[2])); "
+                "loaded = [m for m in ('restash', 'stashapi', 'algorithm') if m in sys.modules]; "
+                "print(rc, loaded)")
+        out = subprocess.run([sys.executable, "-I", "-c", code, str(RESTASH_DIR), payload],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(out, "0 []")
 
 
 class DisablePluginsTest(TempPathsMixin, unittest.TestCase):

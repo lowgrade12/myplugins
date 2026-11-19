@@ -1,10 +1,10 @@
 name: Restash
 description: Computes a freshness score for scenes and performers into custom fields.
-version: 0.12.1
+version: 0.13.0
 url: https://github.com/lowgrade12/myplugins
 exec:
   - python
-  - "{pluginDir}/restash.py"
+  - "{pluginDir}/entry.py"
 interface: raw
 # "Not in your library" on performer pages (restash-ui.js, missing.py)
 ui:
@@ -63,7 +63,8 @@ tasks:
     defaultArgs: { mode: disable-plugins }
 hooks:
   - name: Score new scenes and performers
-    description: Scores a newly created scene (and re-scores its performers) or a newly created performer against the cached taste model. Targeted reads and writes only; no library re-read.
+    description: Scores a newly created or newly organized scene (and re-scores its performers) or a newly created performer against the cached taste model. Targeted reads and writes only; no library re-read. Other scene updates exit before any work.
     triggeredBy:
       - Scene.Create.Post
+      - Scene.Update.Post
       - Performer.Create.Post

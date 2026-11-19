@@ -153,7 +153,7 @@ def build_settings(plugin_cfg: dict | None, args: dict) -> config.Settings:
 
 # --- Hook handling ---
 
-HOOK_TYPES = ("Scene.Create.Post", "Performer.Create.Post")
+HOOK_TYPES = ("Scene.Create.Post", "Scene.Update.Post", "Performer.Create.Post")
 
 
 def _handle_hook(payload: dict) -> int:
@@ -162,8 +162,11 @@ def _handle_hook(payload: dict) -> int:
     re-read, so a scan importing thousands of scenes stays cheap.
 
     Scene.Create.Post scores the new scene, then re-scores its performers (a scrape
-    usually links performers right as the scene is created). Performer.Create.Post
-    scores the new performer. Without a valid cache nothing is scored and the next
+    usually links performers right as the scene is created). Scene.Update.Post does
+    the same once a scene is marked organized: a scan creates scenes bare, and
+    Identify fills them in and sets organized afterwards (entry.py drops every
+    other update before this module loads). Performer.Create.Post scores the new
+    performer. Without a valid cache nothing is scored and the next
     Quick Refresh / Recompute All picks the entities up."""
     hook_context = (payload.get("args") or {}).get("hookContext") or {}
     hook_type = hook_context.get("type", "")
@@ -192,8 +195,9 @@ def _handle_hook(payload: dict) -> int:
 
     failed = 0
     if kind == "scene":
-        scene_failed, performer_ids = _hook_score_scene(stash, settings, st, entity_id,
-                                                        exclude_id, now)
+        scene_failed, performer_ids = _hook_score_scene(
+            stash, settings, st, entity_id, exclude_id, now,
+            on_organized=hook_type == "Scene.Update.Post")
         failed += scene_failed
     else:
         performer_ids = [entity_id]
@@ -201,11 +205,15 @@ def _handle_hook(payload: dict) -> int:
     return 1 if failed else 0
 
 
-def _hook_score_scene(stash, settings, st, scene_id, exclude_id, now) -> tuple[int, list]:
-    """Score one new scene. Returns (failed writes, its performer ids to re-score)."""
+def _hook_score_scene(stash, settings, st, scene_id, exclude_id, now,
+                      on_organized: bool = False) -> tuple[int, list]:
+    """Score one new (or newly organized) scene. Returns (failed writes, its
+    performer ids to re-score)."""
     scene = stash_io.fetch_scene(stash, scene_id)
     if scene is None or not scene.has_file:
         log.info(f"[Restash] hook: scene {scene_id} missing or has no file; skipped.")
+        return 0, []
+    if on_organized and not scene.organized:
         return 0, []
     if exclude_id is not None and exclude_id in scene.tag_ids:
         return 0, []
@@ -235,7 +243,8 @@ def _hook_score_scene(stash, settings, st, scene_id, exclude_id, now) -> tuple[i
     stats = writer.write_scores(stash, "scene", {scene.id: sc},
                                 {scene.id: scene.custom_fields}, settings,
                                 _iso_now(now), **kw)
-    log.info(f"[Restash] hook: scored new scene {scene.id} → {sc.restash_score}.")
+    what = "organized" if on_organized else "new"
+    log.info(f"[Restash] hook: scored {what} scene {scene.id} → {sc.restash_score}.")
     return stats["failed"], scene.performer_ids
 
 
