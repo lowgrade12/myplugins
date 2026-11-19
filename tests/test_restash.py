@@ -438,6 +438,33 @@ class HookTest(TempPathsMixin, unittest.TestCase):
         self.assertEqual(self.run_hook(stash, "77", "Performer.Create.Post"), 0)
         self.assertEqual(stash.mutations(), [])
 
+    def test_scene_hook_leaves_bare_scan_scene_for_refresh(self):
+        stash = FakeStash()
+        self.run_task(stash, "full")
+        scene = stash.add_scene("500", random.Random(3), datetime.now(timezone.utc))
+        scene.update(performers=[], tags=[], studio=None)   # fresh scan, pre-Identify
+        stash.calls.clear()
+
+        self.assertEqual(self.run_hook(stash, "500"), 0)
+        self.assertEqual(stash.mutations(), [])
+        self.assertEqual(scene["custom_fields"], {})
+
+        # Identify fills it in; the next Quick Refresh scores it
+        scene.update(performers=[{"id": "1"}], tags=[{"id": "2"}], studio={"id": "1"})
+        self.run_task(stash, "refresh")
+        self.assertIn("restash_score", scene["custom_fields"])
+
+    def test_scene_hook_scores_scene_with_any_metadata(self):
+        stash = FakeStash()
+        self.run_task(stash, "full")
+        for sid, meta in (("501", {"performers": [], "studio": None}),
+                          ("502", {"tags": [], "studio": None}),
+                          ("503", {"performers": [], "tags": []})):
+            scene = stash.add_scene(sid, random.Random(int(sid)), datetime.now(timezone.utc))
+            scene.update(meta)
+            self.run_hook(stash, sid)
+            self.assertIn("restash_score", scene["custom_fields"], sid)
+
     def test_hook_without_cache_skips(self):
         stash = FakeStash()
         self.assertEqual(self.run_hook(stash, "1"), 0)

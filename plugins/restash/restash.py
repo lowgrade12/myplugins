@@ -209,6 +209,14 @@ def _hook_score_scene(stash, settings, st, scene_id, exclude_id, now) -> tuple[i
         return 0, []
     if exclude_id is not None and exclude_id in scene.tag_ids:
         return 0, []
+    if not (scene.performer_ids or scene.tag_ids or scene.studio_id):
+        # A scan creates the scene bare; Identify adds performers, tags and studio
+        # moments later without a create event. Scored now it would rest on file
+        # quality and novelty alone and land far too low, so leave it unscored
+        # for the next Quick Refresh / Recompute All instead.
+        log.info(f"[Restash] hook: scene {scene.id} has no performers, tags or "
+                 f"studio yet; left for the next Quick Refresh.")
+        return 0, []
 
     scene_ratings, _ = _manual_ratings(
         settings,

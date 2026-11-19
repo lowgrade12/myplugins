@@ -96,7 +96,7 @@ The Dry Run Report's **RATING MODEL** section shows how many ratings it learned 
 
 ## Hooks (automatic triggers)
 
-- **Scene.Create.Post** — scores just the new scene: its raw score is computed from the cached taste model (rating model included) and placed against the library score distribution saved by the last Recompute All / Quick Refresh. The library is never re-read, so large scans stay cheap. If no valid cache exists yet, the scene is left for the next Quick Refresh.
+- **Scene.Create.Post** — scores just the new scene: its raw score is computed from the cached taste model (rating model included) and placed against the library score distribution saved by the last Recompute All / Quick Refresh. The library is never re-read, so large scans stay cheap. If no valid cache exists yet, the scene is left for the next Quick Refresh. A scene with no performers, tags or studio yet (a fresh scan, before Identify fills it in) is also left for the next Quick Refresh, since a score from file quality alone lands far too low.
 
   It then re-scores that scene's performers, so a performer created by the same scrape gets a score that reflects the scene.
 - **Performer.Create.Post** — scores just the new performer from their own scenes' stored scores (usually none yet), the cached taste model, and the performer score distribution saved by the last Recompute All / Quick Refresh. A brand-new performer with no scenes lands mid-pack (favorites get the usual floor); their scene-based score arrives when a scene featuring them is created or on the next Quick Refresh.
